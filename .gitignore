@@ -28,3 +28,6 @@
 # Test/build scratch
 /tmp/
 /coverage.out
+
+# Dev-time CSS toolchain (downloaded by `make css`)
+/.tools/

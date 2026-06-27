@@ -1,79 +1,107 @@
 {{define "page_start"}}<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dim">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
+  {{/* theme.js runs before paint to apply the saved theme (no FOUC); both are
+       self-hosted so they load under script-src 'self'. */}}
+  <script src="/static/theme.js"></script>
   <script src="/static/htmx.min.js" defer></script>
 </head>
-<body>
-<div class="app">
-  <aside class="sidebar">
-    <div class="brand"><a href="/">msgbrowse</a></div>
-    <nav class="sidebar-nav">
-      <a href="/search">Search</a>
-      <a href="/gallery">Media</a>
-      <a href="/status">Status &amp; backups</a>
-    </nav>
-    <div class="conv-list">
-      {{- range .Conversations}}
-      <a class="conv {{if eq .ID $.ActiveID}}active{{end}}" href="/c/{{.ID}}">
-        <div class="conv-top">
-          <span class="conv-name">{{.Name}}</span>
-          <span class="conv-count">{{.MessageCount}}</span>
-        </div>
-        <div class="conv-preview">
-          {{- if .LastSender}}<span class="conv-sender">{{.LastSender}}:</span> {{end}}{{.LastPreview}}
-        </div>
-        <div class="conv-badges">
-          {{- if gt .ImageCount 0}}<span class="badge" title="images">🖼 {{.ImageCount}}</span>{{end}}
-          {{- if gt .FileCount 0}}<span class="badge" title="files">📎 {{.FileCount}}</span>{{end}}
-          {{- if gt .LinkCount 0}}<span class="badge" title="links">🔗 {{.LinkCount}}</span>{{end}}
-        </div>
-      </a>
-      {{- end}}
-    </div>
-  </aside>
-  <main class="content">
+<body class="bg-base-100 text-base-content">
+<div class="drawer lg:drawer-open">
+  <input id="nav-drawer" type="checkbox" class="drawer-toggle">
+  <div class="drawer-content flex flex-col min-h-screen">
+    <header class="navbar sticky top-0 z-30 bg-base-200/90 backdrop-blur border-b border-base-300">
+      <label for="nav-drawer" class="btn btn-ghost btn-square lg:hidden" aria-label="Open menu">{{template "icon-menu" .}}</label>
+      <a href="/" class="btn btn-ghost text-lg font-semibold normal-case gap-2">{{template "icon-home" .}} msgbrowse</a>
+      <div class="flex-1"></div>
+      <button type="button" data-theme-toggle class="btn btn-ghost btn-square" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
+    </header>
+    <main class="flex-1">
 {{end}}
 
 {{define "page_end"}}
-  </main>
+    </main>
+  </div>
+  <div class="drawer-side z-40">
+    <label for="nav-drawer" class="drawer-overlay" aria-label="Close menu"></label>
+    <aside class="w-80 min-h-full bg-base-200 border-r border-base-300 flex flex-col">
+      <ul class="menu w-full gap-0.5 p-2">
+        <li><a href="/search">{{template "icon-search" .}} Search</a></li>
+        <li><a href="/gallery">{{template "icon-photo" .}} Media</a></li>
+        <li><a href="/status">{{template "icon-server" .}} Status &amp; backups</a></li>
+      </ul>
+      <div class="px-4 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide opacity-50">Conversations</div>
+      <ul class="menu w-full gap-0.5 p-2 pt-0 overflow-y-auto flex-1">
+        {{- range .Conversations}}
+        <li>
+          <a href="/c/{{.ID}}" class="flex-col items-stretch gap-0.5 {{if eq .ID $.ActiveID}}menu-active{{end}}">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-medium truncate">{{.Name}}</span>
+              <span class="badge badge-sm badge-ghost shrink-0">{{.MessageCount}}</span>
+            </div>
+            <div class="text-xs opacity-60 truncate">
+              {{- if .LastSender}}<span class="font-medium">{{.LastSender}}:</span> {{end}}{{.LastPreview}}
+            </div>
+            {{- if or (gt .ImageCount 0) (gt .FileCount 0) (gt .LinkCount 0)}}
+            <div class="flex gap-2 text-xs opacity-60">
+              {{- if gt .ImageCount 0}}<span title="images">{{template "icon-photo" .}} {{.ImageCount}}</span>{{end}}
+              {{- if gt .FileCount 0}}<span title="files">{{template "icon-paperclip" .}} {{.FileCount}}</span>{{end}}
+              {{- if gt .LinkCount 0}}<span title="links">{{template "icon-link" .}} {{.LinkCount}}</span>{{end}}
+            </div>
+            {{- end}}
+          </a>
+        </li>
+        {{- end}}
+      </ul>
+    </aside>
+  </div>
 </div>
 </body>
 </html>{{end}}
 
 {{define "message_list"}}
 {{- range .Messages}}
-  <article class="msg {{if .IsOwner}}owner{{else if .IsSystem}}system{{end}}{{if and $.HighlightID (eq .ID $.HighlightID)}} target{{end}}" id="m{{.ID}}">
-    {{- if not .IsSystem}}
-    <div class="msg-meta"><span class="msg-sender">{{.Sender}}</span> <span class="msg-time">{{.TS}}</span></div>
-    {{- end}}
-    {{- $body := renderBody .Body}}
-    {{- if $body}}<div class="msg-body">{{$body}}</div>{{end}}
-    {{- if .Attachments}}
-    <div class="msg-media">
-      {{- range .Attachments}}
-        {{- if eq .Kind "image"}}
-        <a href="{{mediaURL $.ActiveID .RelPath}}" target="_blank" rel="noopener noreferrer nofollow">
-          <img class="thumb" loading="lazy" src="{{mediaURL $.ActiveID .RelPath}}" alt="{{.OriginalName}}">
-        </a>
-        {{- else}}
-        <a class="file" href="{{mediaURL $.ActiveID .RelPath}}">📎 {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+  {{- $body := renderBody .Body}}
+  {{- if .IsSystem}}
+  <div class="text-center text-xs italic opacity-60 my-2" id="m{{.ID}}">{{if $body}}{{$body}}{{else}}—{{end}}</div>
+  {{- else}}
+  <div class="chat {{if .IsOwner}}chat-end{{else}}chat-start{{end}}{{if and $.HighlightID (eq .ID $.HighlightID)}} target{{end}}" id="m{{.ID}}">
+    <div class="chat-header text-xs opacity-70 mb-0.5">
+      <span class="font-medium">{{.Sender}}</span>
+      <time class="ml-1 tabular-nums">{{.TS}}</time>
+    </div>
+    <div class="chat-bubble {{if .IsOwner}}chat-bubble-primary{{end}} max-w-prose">
+      {{- if $body}}<div class="whitespace-pre-wrap break-words">{{$body}}</div>{{end}}
+      {{- if .Attachments}}
+      <div class="flex flex-wrap gap-2 mt-2">
+        {{- range .Attachments}}
+          {{- if eq .Kind "image"}}
+          <a href="{{mediaURL $.ActiveID .RelPath}}" target="_blank" rel="noopener noreferrer nofollow">
+            <img class="thumb rounded-lg" loading="lazy" src="{{mediaURL $.ActiveID .RelPath}}" alt="{{.OriginalName}}">
+          </a>
+          {{- else}}
+          <a class="btn btn-sm btn-outline gap-1" href="{{mediaURL $.ActiveID .RelPath}}">{{template "icon-document" $}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+          {{- end}}
         {{- end}}
+      </div>
+      {{- end}}
+      {{- if .Links}}
+      <div class="flex flex-wrap gap-2 mt-2">
+        {{- range .Links}}<a class="badge badge-outline gap-1" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{template "icon-link" $}} {{.Domain}}</a>{{end}}
+      </div>
       {{- end}}
     </div>
-    {{- end}}
-    {{- if .Links}}
-    <div class="msg-links">
-      {{- range .Links}}<a class="link" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.Domain}}</a>{{end}}
-    </div>
-    {{- end}}
-  </article>
+  </div>
+  {{- end}}
 {{- end}}
 {{- if .HasMore}}
-<div class="load-more" hx-get="/c/{{.ActiveID}}/messages?after_ts={{.NextTSUnix}}&after_id={{.NextID}}"
-     hx-trigger="revealed" hx-swap="outerHTML">Loading more…</div>
+<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?after_ts={{.NextTSUnix}}&after_id={{.NextID}}"
+     hx-trigger="revealed" hx-swap="outerHTML">
+  <span class="loading loading-dots loading-md opacity-60"></span>
+</div>
 {{- end}}
 {{end}}

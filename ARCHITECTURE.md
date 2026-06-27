@@ -75,11 +75,22 @@ media-first journal (Slice 6).
 ## Web UI
 
 `net/http` with Go 1.22 pattern routing, `html/template` (auto-escaping all
-untrusted message content), HTMX for partials (live search, infinite scroll), and
-hand-written CSS. No SPA, no build step, vendored htmx pinned by SHA. A strict
-`Content-Security-Policy` (`default-src 'none'`) plus `nosniff`, `no-referrer`,
-and frame denial harden every response; media is served with correct
-`Content-Type`/`Content-Disposition` and path-traversal containment.
+untrusted message content), HTMX for partials (live search, infinite scroll). No
+SPA, no Node; vendored htmx pinned by SHA.
+
+Styling is **Tailwind CSS + daisyUI** (drawer/navbar layout, `chat` bubbles for
+transcripts, `card`/`menu`/`tabs`/`stat` components) with a dim (dark) / winter
+(light) **theme toggle** (`internal/web/static/theme.js`, self-hosted, persists
+to `localStorage`). Icons are vendored **Hero Icons** inline SVG. The stylesheet
+is built by the Tailwind **standalone CLI + daisyUI** at dev time (`make css`,
+no Node) and the resulting `app.css` is committed and `go:embed`-served, so the
+runtime and Docker image need no toolchain and stay CDN-free.
+
+A strict `Content-Security-Policy` (`default-src 'none'`, `script-src 'self'`,
+`style-src 'self'`, `img-src 'self' data:`) plus `nosniff`, `no-referrer`, and
+frame denial harden every response; media is served with correct
+`Content-Type`/`Content-Disposition` and path-traversal containment. Everything
+the UI loads — CSS, htmx, the theme script, icons — is same-origin.
 
 ## Key decisions (ADRs)
 

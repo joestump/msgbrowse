@@ -1,18 +1,33 @@
 {{define "index"}}{{template "page_start" .}}
-  <div class="welcome">
-    <h1>msgbrowse</h1>
+  <div class="p-6 lg:p-10 max-w-3xl">
+    <h1 class="text-3xl font-bold mb-2">msgbrowse</h1>
     {{if .HasArchive}}
-    <p class="muted">A local, read-only window into your Signal archive.</p>
-    <dl class="stats">
-      <div><dt>Conversations</dt><dd>{{len .Conversations}}</dd></div>
-      <div><dt>Messages</dt><dd>{{.TotalMessages}}</dd></div>
-      <div><dt>Newest message</dt><dd>{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</dd></div>
-    </dl>
-    <p class="hint">Pick a conversation on the left to read its transcript, or open
-      <a href="/status">Status &amp; backups</a>.</p>
+    <p class="opacity-70 mb-6">A local, read-only window into your message archive.</p>
+    <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-200 mb-6">
+      <div class="stat">
+        <div class="stat-title">Conversations</div>
+        <div class="stat-value text-2xl">{{len .Conversations}}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Messages</div>
+        <div class="stat-value text-2xl">{{.TotalMessages}}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Newest message</div>
+        <div class="stat-value text-base font-medium">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div>
+      </div>
+    </div>
+    <p class="opacity-70">Pick a conversation from the sidebar to read its transcript, or open
+      <a class="link link-primary" href="/search">Search</a>,
+      <a class="link link-primary" href="/gallery">Media</a>, or
+      <a class="link link-primary" href="/status">Status &amp; backups</a>.</p>
     {{else}}
-    <p class="muted">No messages have been ingested yet.</p>
-    <p class="hint">Run <code>msgbrowse ingest</code> against your archive, then refresh.</p>
+    <div class="alert bg-base-200 border border-base-300">
+      <div>
+        <p class="font-medium">No messages have been ingested yet.</p>
+        <p class="text-sm opacity-70">Run <code class="kbd kbd-sm">msgbrowse signal-import</code> against your archive, then refresh.</p>
+      </div>
+    </div>
     {{end}}
   </div>
 {{template "page_end" .}}{{end}}

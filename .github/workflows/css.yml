@@ -1,0 +1,40 @@
+name: CSS
+
+# Guards against a stale committed app.css: when templates or the Tailwind source
+# change, rebuild the stylesheet and fail if the committed output differs. Runs
+# only when the UI source changes, so the 100+ MB Tailwind binary download
+# doesn't slow down every PR.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/web/templates/**"
+      - "internal/web/tailwind/**"
+      - "internal/web/static/app.css"
+      - "Makefile"
+  pull_request:
+    paths:
+      - "internal/web/templates/**"
+      - "internal/web/tailwind/**"
+      - "internal/web/static/app.css"
+      - "Makefile"
+
+permissions:
+  contents: read
+
+jobs:
+  css-fresh:
+    name: app.css is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild CSS
+        run: make css
+      - name: Fail if app.css is stale
+        run: |
+          if ! git diff --quiet -- internal/web/static/app.css; then
+            echo "::error::internal/web/static/app.css is out of date — run 'make css' and commit the result."
+            git diff -- internal/web/static/app.css | head -40
+            exit 1
+          fi
+          echo "app.css is up to date."

@@ -1,98 +1,104 @@
 {{define "gallery"}}{{template "page_start" .}}
-  <header class="conv-header">
-    <h1>Media</h1>
-    <div class="muted">Images, files, and links across your archive.</div>
-  </header>
+  <div class="p-4 lg:p-6 max-w-5xl">
+    <h1 class="text-2xl font-bold mb-1">Media</h1>
+    <p class="opacity-60 mb-4">Images, files, and links across your archive.</p>
 
-  <form class="gallery-filter" action="/gallery" method="get">
-    <input type="hidden" name="tab" value="{{.Filter.Tab}}">
-    <label>Conversation
-      <select name="conversation">
-        <option value="">Any</option>
-        {{- range .Conversations}}
-        <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{.Name}}</option>
-        {{- end}}
-      </select>
-    </label>
-    <label>Source
-      <select name="source">
-        <option value="">Any</option>
-        {{- range .Sources}}
-        <option value="{{.}}" {{if eq . $.Filter.Source}}selected{{end}}>{{.}}</option>
-        {{- end}}
-      </select>
-    </label>
-    <label>From <input type="date" name="start" value="{{.Filter.Start}}"></label>
-    <label>To <input type="date" name="end" value="{{.Filter.End}}"></label>
-    <button type="submit">Apply</button>
-  </form>
+    <form class="flex flex-wrap items-end gap-3 mb-4" action="/gallery" method="get">
+      <input type="hidden" name="tab" value="{{.Filter.Tab}}">
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">Conversation</span>
+        <select name="conversation" class="select select-bordered select-sm">
+          <option value="">Any</option>
+          {{- range .Conversations}}
+          <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{.Name}}</option>
+          {{- end}}
+        </select>
+      </label>
+      <label class="form-control">
+        <span class="label-text text-xs opacity-60">Source</span>
+        <select name="source" class="select select-bordered select-sm">
+          <option value="">Any</option>
+          {{- range .Sources}}
+          <option value="{{.}}" {{if eq . $.Filter.Source}}selected{{end}}>{{.}}</option>
+          {{- end}}
+        </select>
+      </label>
+      <label class="form-control"><span class="label-text text-xs opacity-60">From</span><input type="date" name="start" value="{{.Filter.Start}}" class="input input-bordered input-sm"></label>
+      <label class="form-control"><span class="label-text text-xs opacity-60">To</span><input type="date" name="end" value="{{.Filter.End}}" class="input input-bordered input-sm"></label>
+      <button type="submit" class="btn btn-sm">Apply</button>
+    </form>
 
-  <nav class="gallery-tabs">
-    <a class="{{if eq .Filter.Tab "images"}}active{{end}}" href="{{.Filter.GalleryQuery "images"}}">Images <span class="muted">{{.Counts.Images}}</span></a>
-    <a class="{{if eq .Filter.Tab "files"}}active{{end}}" href="{{.Filter.GalleryQuery "files"}}">Files <span class="muted">{{.Counts.Files}}</span></a>
-    <a class="{{if eq .Filter.Tab "links"}}active{{end}}" href="{{.Filter.GalleryQuery "links"}}">Links <span class="muted">{{.Counts.Links}}</span></a>
-  </nav>
+    <div role="tablist" class="tabs tabs-bordered mb-4">
+      <a role="tab" class="tab {{if eq .Filter.Tab "images"}}tab-active{{end}}" href="{{.Filter.GalleryQuery "images"}}">Images <span class="badge badge-sm badge-ghost ml-1">{{.Counts.Images}}</span></a>
+      <a role="tab" class="tab {{if eq .Filter.Tab "files"}}tab-active{{end}}" href="{{.Filter.GalleryQuery "files"}}">Files <span class="badge badge-sm badge-ghost ml-1">{{.Counts.Files}}</span></a>
+      <a role="tab" class="tab {{if eq .Filter.Tab "links"}}tab-active{{end}}" href="{{.Filter.GalleryQuery "links"}}">Links <span class="badge badge-sm badge-ghost ml-1">{{.Counts.Links}}</span></a>
+    </div>
 
-  <section class="gallery">
-    {{- if eq .Filter.Tab "files"}}
-      {{- if .Files}}
-      <ul class="file-list">
-        {{- range .Files}}
-        <li class="file-row">
-          <a class="file-name" href="{{mediaURL .ConversationID .RelPath}}">📎 {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
-          <span class="file-meta muted">
-            {{- if .ContentType}}{{.ContentType}}{{else}}unknown{{end}}
-            {{- if .SizeHuman}} · {{.SizeHuman}}{{end}}
-            · <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.ConversationName}}</a>
-            · {{.TS}} · {{.Source}}
-          </span>
-        </li>
-        {{- end}}
-      </ul>
-      {{- else}}<p class="muted gallery-empty">No files match.</p>{{end}}
-
-    {{- else if eq .Filter.Tab "links"}}
-      {{- if .Groups}}
-      {{- range .Groups}}
-      <div class="link-group">
-        <h3 class="link-domain">{{.Domain}} <span class="muted">{{len .Links}}</span></h3>
-        <ul class="link-list">
-          {{- range .Links}}
-          <li class="link-row">
-            <a class="link-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
-            <span class="link-meta muted">
-              {{- if gt .Count 1}}×{{.Count}} · {{end}}
-              <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.ConversationName}}</a>
-              · {{.TS}} · {{.Source}}
-            </span>
+    <section>
+      {{- if eq .Filter.Tab "files"}}
+        {{- if .Files}}
+        <ul class="flex flex-col gap-2">
+          {{- range .Files}}
+          <li class="card card-compact bg-base-200 border border-base-300">
+            <div class="card-body">
+              <a class="link link-hover font-medium inline-flex items-center gap-1" href="{{mediaURL .ConversationID .RelPath}}">{{template "icon-document" .}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+              <span class="text-xs opacity-60">
+                {{- if .ContentType}}{{.ContentType}}{{else}}unknown{{end}}
+                {{- if .SizeHuman}} · {{.SizeHuman}}{{end}}
+                · <a class="link" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.ConversationName}}</a>
+                · {{.TS}} · {{.Source}}
+              </span>
+            </div>
           </li>
           {{- end}}
         </ul>
-      </div>
-      {{- end}}
-      {{- else}}<p class="muted gallery-empty">No links match.</p>{{end}}
+        {{- else}}<p class="opacity-60">No files match.</p>{{end}}
 
-    {{- else}}
-      {{- if .Images}}
-      <div class="image-grid">
-        {{- range $i, $img := .Images}}
-        <a class="image-cell" href="#lb-{{$i}}" title="{{$img.OriginalName}}">
-          <img loading="lazy" src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
-        </a>
-        {{- end}}
-      </div>
-      {{/* CSS :target lightboxes — no JavaScript, CSP-safe. */}}
-      {{- range $i, $img := .Images}}
-      <div class="lightbox" id="lb-{{$i}}">
-        <a class="lightbox-close" href="#" title="close">×</a>
-        <img src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
-        <div class="lightbox-meta">
-          <a href="/c/{{$img.ConversationID}}/at/{{$img.MessageID}}#m{{$img.MessageID}}">{{$img.ConversationName}}</a>
-          · {{$img.TS}} · {{$img.Source}}
+      {{- else if eq .Filter.Tab "links"}}
+        {{- if .Groups}}
+        {{- range .Groups}}
+        <div class="link-group mb-5">
+          <h3 class="font-semibold mb-1 flex items-center gap-2">{{.Domain}} <span class="badge badge-sm badge-ghost">{{len .Links}}</span></h3>
+          <ul class="flex flex-col gap-1">
+            {{- range .Links}}
+            <li class="card card-compact bg-base-200 border border-base-300">
+              <div class="card-body">
+                <a class="link link-primary break-all text-sm" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
+                <span class="text-xs opacity-60">
+                  {{- if gt .Count 1}}×{{.Count}} · {{end}}
+                  <a class="link" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.ConversationName}}</a>
+                  · {{.TS}} · {{.Source}}
+                </span>
+              </div>
+            </li>
+            {{- end}}
+          </ul>
         </div>
-      </div>
+        {{- end}}
+        {{- else}}<p class="opacity-60">No links match.</p>{{end}}
+
+      {{- else}}
+        {{- if .Images}}
+        <div class="image-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+          {{- range $i, $img := .Images}}
+          <a class="aspect-square overflow-hidden rounded-lg bg-base-300 hover:opacity-80 transition-opacity" href="#lb-{{$i}}" title="{{$img.OriginalName}}">
+            <img class="w-full h-full object-cover" loading="lazy" src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
+          </a>
+          {{- end}}
+        </div>
+        {{/* CSS :target lightboxes — no JavaScript, CSP-safe. */}}
+        {{- range $i, $img := .Images}}
+        <div class="lightbox" id="lb-{{$i}}">
+          <a class="btn btn-circle btn-ghost absolute top-4 right-4 text-2xl text-white" href="#" title="close">✕</a>
+          <img src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
+          <div class="text-sm text-neutral-content/80">
+            <a class="link" href="/c/{{$img.ConversationID}}/at/{{$img.MessageID}}#m{{$img.MessageID}}">{{$img.ConversationName}}</a>
+            · {{$img.TS}} · {{$img.Source}}
+          </div>
+        </div>
+        {{- end}}
+        {{- else}}<p class="opacity-60">No images match.</p>{{end}}
       {{- end}}
-      {{- else}}<p class="muted gallery-empty">No images match.</p>{{end}}
-    {{- end}}
-  </section>
+    </section>
+  </div>
 {{template "page_end" .}}{{end}}
