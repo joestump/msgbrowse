@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,11 @@ import (
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
 )
+
+// ErrExportDirNotFound is returned when archive_root has no export/ subdirectory.
+// It is a sentinel so the CLI can attach an actionable hint (the most common
+// misconfiguration is pointing archive_root at the wrong level).
+var ErrExportDirNotFound = errors.New("export directory not found")
 
 // ExportDir is the archive subdirectory holding per-conversation folders.
 const ExportDir = "export"
@@ -63,13 +69,14 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	start := now()
 
 	run := store.IngestRun{Source: source.Signal, StartedAt: start}
+	log.Info("importing signal archive", "archive", opts.ArchiveRoot, "full", opts.Full)
 
 	// 1. Conversations.
 	convRoot := filepath.Join(opts.ArchiveRoot, ExportDir)
 	entries, err := os.ReadDir(convRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return run, fmt.Errorf("export directory not found at %s", convRoot)
+			return run, fmt.Errorf("%w at %s", ErrExportDirNotFound, convRoot)
 		}
 		return run, fmt.Errorf("read export dir: %w", err)
 	}
@@ -98,6 +105,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 		if changed {
 			run.ConversationsChanged++
 			run.MessagesAdded += added
+			log.Info("imported conversation", "conversation", name, "messages", added, "skipped_lines", skipped)
 		}
 	}
 
@@ -207,7 +215,6 @@ func ingestConversation(
 	}); err != nil {
 		return false, 0, 0, err
 	}
-	log.Debug("conversation ingested", "conversation", name, "messages", added, "skipped_lines", len(skips))
 	return true, added, len(skips), nil
 }
 

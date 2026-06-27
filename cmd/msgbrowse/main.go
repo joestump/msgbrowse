@@ -17,15 +17,15 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/joestump/msgbrowse/internal/cli"
 )
 
 func main() {
+	// Execute renders any error through the logger (with hints); main only sets
+	// the exit status so the failure isn't printed twice.
 	if err := cli.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "msgbrowse:", err)
 		os.Exit(1)
 	}
 }

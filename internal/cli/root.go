@@ -6,10 +6,13 @@
 package cli
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 
+	charmlog "github.com/charmbracelet/log"
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -64,8 +67,39 @@ func NewRootCommand() *cobra.Command {
 }
 
 // Execute runs the root command. It is the single entry point used by main.
+//
+// It installs a pretty default logger up front (so even config-load failures,
+// which happen before per-command config resolution, render nicely) and reports
+// the final error through that logger rather than as a bare line.
 func Execute() error {
-	return NewRootCommand().Execute()
+	configureLogger("info")
+	if err := NewRootCommand().Execute(); err != nil {
+		renderError(err)
+		return err
+	}
+	return nil
+}
+
+// renderError prints a command failure as a styled error, appending an
+// actionable hint for the failure modes users actually hit.
+func renderError(err error) {
+	if hint := errorHint(err); hint != "" {
+		slog.Error(err.Error(), "hint", hint)
+		return
+	}
+	slog.Error(err.Error())
+}
+
+// errorHint maps known failures to an actionable next step. Matching is on
+// sentinel errors (errors.Is), not strings, so it stays robust as messages
+// evolve.
+func errorHint(err error) string {
+	switch {
+	case errors.Is(err, ingest.ErrExportDirNotFound):
+		return "archive_root must be the folder that CONTAINS export/ — e.g. .../Signal-Archive, not .../Signal-Archive/export. " +
+			"In Docker, point MSGBROWSE_ARCHIVE_HOST in .env at that folder."
+	}
+	return ""
 }
 
 // initConfig loads Viper and binds the persistent flags onto their config keys.
@@ -104,19 +138,29 @@ func resolveConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-// configureLogger installs a slog logger at the requested level as the default.
+// configureLogger installs a charmbracelet/log logger (pretty, colorized,
+// leveled) as the slog default. charmbracelet/log implements slog.Handler, so
+// every existing slog call across import/serve/mcp gets the styled output with
+// no call-site changes. Output goes to STDERR — important for `mcp` over stdio,
+// whose JSON-RPC stream must stay on stdout uncorrupted.
 func configureLogger(level string) {
-	var lvl slog.Level
+	slog.SetDefault(slog.New(newLogHandler(level)))
+}
+
+// newLogHandler builds the charmbracelet/log handler at the requested level.
+func newLogHandler(level string) slog.Handler {
+	lvl := charmlog.InfoLevel
 	switch level {
 	case "debug":
-		lvl = slog.LevelDebug
+		lvl = charmlog.DebugLevel
 	case "warn":
-		lvl = slog.LevelWarn
+		lvl = charmlog.WarnLevel
 	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
+		lvl = charmlog.ErrorLevel
 	}
-	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})
-	slog.SetDefault(slog.New(h))
+	return charmlog.NewWithOptions(os.Stderr, charmlog.Options{
+		Level:           lvl,
+		ReportTimestamp: true,
+		TimeFormat:      "15:04:05",
+	})
 }
