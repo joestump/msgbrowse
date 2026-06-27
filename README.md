@@ -39,9 +39,11 @@ and data-handling model.
 
 ```sh
 cp .env.example .env
-# edit .env: set MSGBROWSE_ARCHIVE_HOST to your archive's absolute path
+# edit .env:
+#   MSGBROWSE_ARCHIVE_HOST  → your archive's absolute path
+#   MSGBROWSE_LLM_BASE_URL  → your LiteLLM proxy (…/v1), MSGBROWSE_LLM_API_KEY → its key
 
-make up            # build + start msgbrowse and the LiteLLM proxy
+make up            # build + start msgbrowse (points at your external LiteLLM)
 make signal-import # import the signal-export archive into the local DB
 make embed         # compute embeddings for semantic search (optional)
 # open http://127.0.0.1:8787
@@ -51,11 +53,18 @@ make embed         # compute embeddings for semantic search (optional)
 read-only, app data lives in a named volume, and the UI is published to host
 loopback only.
 
-> The default LiteLLM route is fully local via Ollama. Uncomment the `ollama`
-> service in `docker-compose.yml`, then
-> `docker compose exec ollama ollama pull nomic-embed-text` and
-> `… pull llama3.1`. Until a model backend is reachable, `make embed` and the
-> journal will fail; browsing and keyword search work without any LLM.
+> **LLM endpoint.** By default msgbrowse talks to **your own** OpenAI-compatible
+> LiteLLM proxy via `MSGBROWSE_LLM_BASE_URL` / `MSGBROWSE_LLM_API_KEY` in `.env`.
+> If LiteLLM runs on the same host as Docker, use
+> `http://host.docker.internal:4000/v1`.
+>
+> Don't have one? Run the **bundled** LiteLLM (fully local via Ollama) with
+> `make up-bundled` and set `MSGBROWSE_LLM_BASE_URL=http://litellm:4000/v1`; then
+> uncomment the `ollama` service in `docker-compose.yml` and
+> `docker compose exec ollama ollama pull nomic-embed-text` / `… pull llama3.1`.
+>
+> Until an endpoint is reachable, `make embed` and the journal fail; browsing and
+> keyword search work without any LLM.
 
 ## Quickstart (local binary)
 

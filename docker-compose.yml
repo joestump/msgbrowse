@@ -1,15 +1,25 @@
-# msgbrowse local stack: the app + a LiteLLM proxy.
+# msgbrowse local stack.
 #
-# - The archive is bind-mounted READ-ONLY; msgbrowse never writes to it.
-# - App data (SQLite DB, embeddings) lives in a named volume, never in the archive.
-# - The web UI is published to host LOOPBACK only (127.0.0.1). LiteLLM is not
-#   published to the host at all — only msgbrowse reaches it on the internal network.
-# - Hardening: read-only root filesystem, all capabilities dropped, no privilege
-#   escalation, non-root user (baked into the image).
+# By default this runs ONLY msgbrowse and points it at an EXTERNAL,
+# OpenAI-compatible LLM endpoint (your own LiteLLM proxy) configured via .env:
 #
-# Configure paths/keys in a .env file next to this one (see .env.example):
 #   MSGBROWSE_ARCHIVE_HOST=/Users/you/Managed Files/Signal-Archive
-#   MSGBROWSE_LLM_API_KEY=...        # only if your LiteLLM route needs one
+#   MSGBROWSE_LLM_BASE_URL=https://litellm.example.com/v1   # must end in /v1
+#   MSGBROWSE_LLM_API_KEY=sk-your-litellm-key               # LiteLLM master/virtual key
+#   MSGBROWSE_LLM_CHAT_MODEL=...                             # a model_name LiteLLM serves
+#   MSGBROWSE_LLM_EMBED_MODEL=...
+#
+# If your LiteLLM runs on the SAME host as Docker, use
+#   MSGBROWSE_LLM_BASE_URL=http://host.docker.internal:4000/v1
+# (host.docker.internal is wired up below for Linux too).
+#
+# Prefer the bundled LiteLLM instead? Start it with its profile:
+#   docker compose --profile bundled-llm up -d   (or: make up-bundled)
+# and set MSGBROWSE_LLM_BASE_URL=http://litellm:4000/v1 in .env.
+#
+# Security: archive bind-mounted READ-ONLY, app data in a named volume, UI
+# published to host LOOPBACK only, read-only root filesystem, all capabilities
+# dropped, no privilege escalation, non-root user.
 
 services:
   msgbrowse:
@@ -18,10 +28,13 @@ services:
       args:
         VERSION: ${MSGBROWSE_VERSION:-docker}
     image: msgbrowse:local
-    depends_on:
-      - litellm
     ports:
       - "127.0.0.1:8787:8787"   # host loopback only
+    extra_hosts:
+      # Lets MSGBROWSE_LLM_BASE_URL=http://host.docker.internal:... reach a
+      # LiteLLM running on the Docker host (already available on Docker Desktop;
+      # this makes it work on Linux too).
+      - "host.docker.internal:host-gateway"
     volumes:
       - "${MSGBROWSE_ARCHIVE_HOST:?set MSGBROWSE_ARCHIVE_HOST in .env}:/archive:ro"
       - msgbrowse-data:/data
@@ -29,7 +42,11 @@ services:
       MSGBROWSE_ARCHIVE_ROOT: /archive
       MSGBROWSE_DATA_DIR: /data
       MSGBROWSE_LISTEN_ADDR: 0.0.0.0:8787      # in-container; host mapping is loopback
-      MSGBROWSE_LLM_BASE_URL: http://litellm:4000/v1
+      # Required (must end in /v1): your external LiteLLM, or
+      # http://litellm:4000/v1 when running `make up-bundled`. Required rather
+      # than silently defaulted so a missing value fails at `up` with a clear
+      # message, not as a confusing connection error at the first embed call.
+      MSGBROWSE_LLM_BASE_URL: ${MSGBROWSE_LLM_BASE_URL:?set MSGBROWSE_LLM_BASE_URL in .env (your LiteLLM /v1 URL, or http://litellm:4000/v1 with make up-bundled)}
       MSGBROWSE_LLM_API_KEY: ${MSGBROWSE_LLM_API_KEY:-}
       MSGBROWSE_LLM_CHAT_MODEL: ${MSGBROWSE_LLM_CHAT_MODEL:-local-chat}
       MSGBROWSE_LLM_EMBED_MODEL: ${MSGBROWSE_LLM_EMBED_MODEL:-local-embed}
@@ -42,14 +59,20 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  # Bundled LiteLLM proxy — OPT-IN. It only starts under the "bundled-llm"
+  # profile, so the default `docker compose up` assumes you bring your own
+  # endpoint. Enable with `docker compose --profile bundled-llm up` and set
+  # MSGBROWSE_LLM_BASE_URL=http://litellm:4000/v1.
   litellm:
+    profiles: ["bundled-llm"]
     image: ghcr.io/berriai/litellm:main-stable
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
     environment:
-      # Pass through any provider keys your litellm.config.yaml references.
-      # For a fully-local route (Ollama) none are needed.
+      # The key clients must present; set MSGBROWSE_LLM_API_KEY to the same value.
+      LITELLM_MASTER_KEY: ${MSGBROWSE_LLM_API_KEY:-}
+      # Provider keys your litellm.config.yaml references (none for local Ollama).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     # Not published to the host — reachable only by msgbrowse on the internal net.
@@ -57,11 +80,13 @@ services:
       - "4000"
     restart: unless-stopped
 
-  # Optional fully-local model backend. Uncomment, then point litellm.config.yaml
-  # at http://ollama:11434. Pull models with:
+  # Optional fully-local model backend behind the bundled LiteLLM. Enable it
+  # alongside litellm with the same profile, point litellm.config.yaml at
+  # http://ollama:11434, and pull models:
   #   docker compose exec ollama ollama pull nomic-embed-text
   #   docker compose exec ollama ollama pull llama3.1
   # ollama:
+  #   profiles: ["bundled-llm"]
   #   image: ollama/ollama:latest
   #   volumes:
   #     - ollama:/root/.ollama
