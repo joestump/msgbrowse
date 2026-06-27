@@ -53,6 +53,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(
 		newSignalImportCommand(),
 		newIngestAliasCommand(),
+		newEmbedCommand(),
 		newServeCommand(),
 		newMCPCommand(),
 		newWatchCommand(),

@@ -1,0 +1,288 @@
+package llm
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// base64Std standard-base64-encodes b (for data: URLs).
+func base64Std(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+// OpenAIClient is an OpenAI-compatible implementation of Client. It targets any
+// endpoint that speaks the OpenAI REST shapes (/v1/embeddings, /v1/chat/
+// completions, /v1/audio/transcriptions) — OpenAI itself, a LiteLLM proxy,
+// Ollama, vLLM, etc.
+type OpenAIClient struct {
+	baseURL    string
+	apiKey     string
+	chatModel  string
+	embedModel string
+	httpClient *http.Client
+}
+
+// Options configures an OpenAIClient.
+type Options struct {
+	BaseURL    string // e.g. http://127.0.0.1:4000/v1 (no trailing slash required)
+	APIKey     string
+	ChatModel  string
+	EmbedModel string
+	Timeout    time.Duration
+	HTTPClient *http.Client // optional; for tests
+}
+
+// New constructs an OpenAIClient. BaseURL and the model names are required for
+// the corresponding operations; an empty APIKey is allowed (some local
+// proxies/Ollama accept any or no key).
+func New(opts Options) *OpenAIClient {
+	hc := opts.HTTPClient
+	if hc == nil {
+		timeout := opts.Timeout
+		if timeout <= 0 {
+			timeout = 60 * time.Second
+		}
+		hc = &http.Client{Timeout: timeout}
+	}
+	return &OpenAIClient{
+		baseURL:    strings.TrimRight(opts.BaseURL, "/"),
+		apiKey:     opts.APIKey,
+		chatModel:  opts.ChatModel,
+		embedModel: opts.EmbedModel,
+		httpClient: hc,
+	}
+}
+
+// --- Embeddings ---
+
+type embedRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+type embedResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+}
+
+// Embed implements Client.
+func (c *OpenAIClient) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+	if c.embedModel == "" {
+		return nil, fmt.Errorf("llm: embed model not configured")
+	}
+	var resp embedResponse
+	if err := c.postJSON(ctx, "/embeddings", embedRequest{Model: c.embedModel, Input: inputs}, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Data) != len(inputs) {
+		return nil, fmt.Errorf("llm: embeddings count mismatch: got %d, want %d", len(resp.Data), len(inputs))
+	}
+	// Reorder defensively by the provider-reported index.
+	out := make([][]float32, len(inputs))
+	for _, d := range resp.Data {
+		if d.Index < 0 || d.Index >= len(out) {
+			return nil, fmt.Errorf("llm: embedding index %d out of range", d.Index)
+		}
+		out[d.Index] = d.Embedding
+	}
+	for i, v := range out {
+		if len(v) == 0 {
+			return nil, fmt.Errorf("llm: missing embedding for input %d", i)
+		}
+	}
+	return out, nil
+}
+
+// --- Chat ---
+
+type chatRequest struct {
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Temperature float32       `json:"temperature,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatResponse struct {
+	Choices []struct {
+		Message chatMessage `json:"message"`
+	} `json:"choices"`
+}
+
+// Chat implements Client.
+func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (string, error) {
+	model := req.Model
+	if model == "" {
+		model = c.chatModel
+	}
+	if model == "" {
+		return "", fmt.Errorf("llm: chat model not configured")
+	}
+	body := chatRequest{Model: model, Temperature: req.Temperature, MaxTokens: req.MaxTokens}
+	for _, m := range req.Messages {
+		body.Messages = append(body.Messages, chatMessage{Role: string(m.Role), Content: m.Content})
+	}
+	var resp chatResponse
+	if err := c.postJSON(ctx, "/chat/completions", body, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("llm: chat returned no choices")
+	}
+	return resp.Choices[0].Message.Content, nil
+}
+
+// --- Transcription ---
+
+// Transcribe implements Client using the OpenAI /audio/transcriptions endpoint
+// (multipart form). The model name "whisper-1" is the OpenAI default; a LiteLLM
+// proxy maps it to whatever local/hosted ASR is configured.
+func (c *OpenAIClient) Transcribe(ctx context.Context, audio []byte, filename string) (string, error) {
+	if filename == "" {
+		filename = "audio.m4a"
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", filename)
+	if err != nil {
+		return "", err
+	}
+	if _, err := fw.Write(audio); err != nil {
+		return "", err
+	}
+	if err := mw.WriteField("model", "whisper-1"); err != nil {
+		return "", err
+	}
+	if err := mw.Close(); err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/audio/transcriptions", &buf)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	c.setAuth(req)
+
+	respBody, err := c.do(req)
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return "", fmt.Errorf("llm: decode transcription: %w", err)
+	}
+	return resp.Text, nil
+}
+
+// --- Vision ---
+
+// Vision implements Client using a chat completion with an image_url content
+// part (OpenAI vision shape; data: URL so no external fetch). mimeType is the
+// image's content type (e.g. "image/jpeg").
+func (c *OpenAIClient) Vision(ctx context.Context, image []byte, mimeType, prompt string) (string, error) {
+	if c.chatModel == "" {
+		return "", fmt.Errorf("llm: chat model not configured")
+	}
+	if prompt == "" {
+		prompt = "Briefly describe this image in one sentence."
+	}
+	dataURL := "data:" + mimeType + ";base64," + base64Std(image)
+	// Vision uses the array-content message shape, which differs from the plain
+	// chat shape, so it is built inline here.
+	payload := map[string]any{
+		"model": c.chatModel,
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": prompt},
+					map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL}},
+				},
+			},
+		},
+	}
+	var resp chatResponse
+	if err := c.postJSON(ctx, "/chat/completions", payload, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("llm: vision returned no choices")
+	}
+	return resp.Choices[0].Message.Content, nil
+}
+
+// --- HTTP plumbing ---
+
+// postJSON marshals body to JSON, POSTs it to baseURL+path, and decodes the
+// response into out.
+func (c *OpenAIClient) postJSON(ctx context.Context, path string, body, out any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.setAuth(req)
+
+	respBody, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return fmt.Errorf("llm: decode response from %s: %w", path, err)
+	}
+	return nil
+}
+
+func (c *OpenAIClient) setAuth(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+}
+
+// do executes the request and returns the body, mapping non-2xx to an error
+// that includes a (truncated) response body for diagnosis.
+func (c *OpenAIClient) do(req *http.Request) ([]byte, error) {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: request to %s: %w", req.URL.Path, err)
+	}
+	defer resp.Body.Close()
+	// Cap the response body to bound memory against a misbehaving endpoint. The
+	// largest legitimate response is an embeddings batch: max batch (512) ×
+	// large dims (e.g. 3072) as JSON ≈ ~14 MiB, so 64 MiB leaves ample headroom
+	// while still bounding pathological responses.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := string(body)
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
+		}
+		return nil, fmt.Errorf("llm: %s returned %d: %s", req.URL.Path, resp.StatusCode, snippet)
+	}
+	return body, nil
+}

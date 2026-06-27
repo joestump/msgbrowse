@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
@@ -24,6 +25,18 @@ func openStore(cfg *config.Config) (*store.Store, error) {
 		return nil, fmt.Errorf("create data dir %q: %w", cfg.DataDir, err)
 	}
 	return store.Open(dbPath(cfg))
+}
+
+// newLLMClient builds the OpenAI-compatible LLM client from config. This is the
+// only component that performs network egress.
+func newLLMClient(cfg *config.Config) *llm.OpenAIClient {
+	return llm.New(llm.Options{
+		BaseURL:    cfg.LLM.BaseURL,
+		APIKey:     cfg.LLM.APIKey,
+		ChatModel:  cfg.LLM.ChatModel,
+		EmbedModel: cfg.LLM.EmbedModel,
+		Timeout:    cfg.LLM.Timeout,
+	})
 }
 
 // requireArchive verifies the archive root is configured and present.
