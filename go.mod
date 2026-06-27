@@ -1,8 +1,9 @@
 module github.com/joestump/sigbrowse
 
-go 1.26.4
+go 1.23.0
 
 require (
+	github.com/mattn/go-sqlite3 v1.14.47
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 )

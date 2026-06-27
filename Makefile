@@ -20,21 +20,26 @@ LDFLAGS     := -X $(PKG)/internal/cli.Version=$(VERSION) \
 
 GO          ?= go
 
+# The SQLite driver (mattn/go-sqlite3) needs cgo and the sqlite_fts5 build tag
+# to enable the FTS5 full-text search extension used by keyword search.
+TAGS        := sqlite_fts5
+export CGO_ENABLED = 1
+
 .PHONY: all build run test cover check fmt fmt-check vet tidy clean up down ingest journal
 
 all: check build
 
 build: ## Build the binary
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/sigbrowse
+	$(GO) build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/sigbrowse
 
 run: build ## Build then run the web UI
 	$(BIN_DIR)/$(BINARY) serve
 
 test: ## Run all tests
-	$(GO) test ./...
+	$(GO) test -tags "$(TAGS)" ./...
 
 cover: ## Run tests with coverage
-	$(GO) test -coverprofile=coverage.out ./...
+	$(GO) test -tags "$(TAGS)" -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -1
 
 fmt: ## Format the code
@@ -44,7 +49,7 @@ fmt-check: ## Fail if any file is not gofmt-clean
 	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 vet: ## Run go vet
-	$(GO) vet ./...
+	$(GO) vet -tags "$(TAGS)" ./...
 
 tidy: ## Tidy go.mod/go.sum
 	$(GO) mod tidy
