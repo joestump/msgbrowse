@@ -62,6 +62,10 @@ sends raw media off-device. The default local route keeps it on the machine.
 - Strict `Content-Security-Policy: default-src 'none'` (plus `script-src 'self'`,
   `img-src 'self' data:`), `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `frame-ancestors 'none'`.
+- Everything the UI loads is **same-origin and self-hosted** — the stylesheet
+  (Tailwind + daisyUI, built at dev time and committed), htmx, the theme-toggle
+  script, and Hero Icons (inline SVG). No CDN, no external fonts/scripts, so the
+  strict CSP holds and nothing about your browsing is fetched off-device.
 - All message content is untrusted and **HTML-escaped** via `html/template`;
   attachment markdown is stripped, URLs are linkified with
   `rel="noopener noreferrer nofollow"`, and search snippets are escaped before

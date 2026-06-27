@@ -1,52 +1,63 @@
 {{define "status"}}{{template "page_start" .}}
-  <header class="conv-header"><h1>Status &amp; backups</h1></header>
+  <div class="p-6 lg:p-8 max-w-4xl space-y-6">
+    <h1 class="text-2xl font-bold">Status &amp; backups</h1>
 
-  <section class="panel">
-    <h2>Archive freshness</h2>
-    <dl class="stats">
-      <div><dt>Conversations</dt><dd>{{len .Conversations}}</dd></div>
-      <div><dt>Messages</dt><dd>{{.TotalMessages}}</dd></div>
-      <div><dt>Newest message</dt><dd>{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</dd></div>
-    </dl>
-  </section>
+    <div class="card bg-base-200 shadow">
+      <div class="card-body">
+        <h2 class="card-title text-base">Archive freshness</h2>
+        <div class="stats stats-vertical sm:stats-horizontal bg-base-100">
+          <div class="stat"><div class="stat-title">Conversations</div><div class="stat-value text-2xl">{{len .Conversations}}</div></div>
+          <div class="stat"><div class="stat-title">Messages</div><div class="stat-value text-2xl">{{.TotalMessages}}</div></div>
+          <div class="stat"><div class="stat-title">Newest message</div><div class="stat-value text-base font-medium">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div></div>
+        </div>
+      </div>
+    </div>
 
-  <section class="panel">
-    <h2>Last ingest</h2>
-    {{if .Run}}
-    <dl class="stats">
-      <div><dt>Finished</dt><dd>{{.Run.FinishedAt.Format "2006-01-02 15:04:05"}}</dd></div>
-      <div><dt>Duration</dt><dd>{{.Run.DurationMS}} ms</dd></div>
-      <div><dt>Conversations</dt><dd>{{.Run.ConversationsChanged}} changed / {{.Run.ConversationsScanned}} scanned</dd></div>
-      <div><dt>Messages</dt><dd>{{.Run.MessagesTotal}} total ({{.Run.MessagesAdded}} added)</dd></div>
-      <div><dt>Skipped lines</dt><dd>{{.Run.SkippedLines}}</dd></div>
-      <div><dt>Errors</dt><dd>{{.Run.Errors}}</dd></div>
-    </dl>
-    {{else}}
-    <p class="muted">No ingest has been recorded yet.</p>
-    {{end}}
-  </section>
+    <div class="card bg-base-200 shadow">
+      <div class="card-body">
+        <h2 class="card-title text-base">Last ingest</h2>
+        {{if .Run}}
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          <div><div class="opacity-60">Finished</div><div class="font-medium">{{.Run.FinishedAt.Format "2006-01-02 15:04:05"}}</div></div>
+          <div><div class="opacity-60">Duration</div><div class="font-medium">{{.Run.DurationMS}} ms</div></div>
+          <div><div class="opacity-60">Conversations</div><div class="font-medium">{{.Run.ConversationsChanged}} changed / {{.Run.ConversationsScanned}} scanned</div></div>
+          <div><div class="opacity-60">Messages</div><div class="font-medium">{{.Run.MessagesTotal}} total ({{.Run.MessagesAdded}} added)</div></div>
+          <div><div class="opacity-60">Skipped lines</div><div class="font-medium">{{.Run.SkippedLines}}</div></div>
+          <div><div class="opacity-60">Errors</div><div class="font-medium">{{.Run.Errors}}</div></div>
+        </div>
+        {{else}}
+        <p class="opacity-60">No ingest has been recorded yet.</p>
+        {{end}}
+      </div>
+    </div>
 
-  <section class="panel">
-    <h2>Encrypted DB snapshots</h2>
-    <p class="muted">Total footprint: {{humanSize .SnapshotFootprint}} across {{len .Snapshots}} snapshots.
-      These are SQLCipher-encrypted raw database backups for disaster recovery —
-      msgbrowse lists them but never opens or decrypts them.</p>
-    {{if .Snapshots}}
-    <table class="snapshots">
-      <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Retention tier</th></tr></thead>
-      <tbody>
-        {{- range .Snapshots}}
-        <tr>
-          <td>{{.Filename}}</td>
-          <td>{{.TakenAt.Format "2006-01-02 15:04"}}</td>
-          <td>{{humanSize .SizeBytes}}</td>
-          <td><span class="tier tier-{{.Tier}}">{{.Tier}}</span></td>
-        </tr>
-        {{- end}}
-      </tbody>
-    </table>
-    {{else}}
-    <p class="muted">No snapshots found under <code>.snapshots/</code>.</p>
-    {{end}}
-  </section>
+    <div class="card bg-base-200 shadow">
+      <div class="card-body">
+        <h2 class="card-title text-base">Encrypted DB snapshots</h2>
+        <p class="text-sm opacity-70">Total footprint: {{humanSize .SnapshotFootprint}} across {{len .Snapshots}} snapshots.
+          These are SQLCipher-encrypted raw database backups for disaster recovery —
+          msgbrowse lists them but never opens or decrypts them.</p>
+        {{if .Snapshots}}
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Retention tier</th></tr></thead>
+            <tbody>
+              {{- range .Snapshots}}
+              <tr>
+                <td class="font-mono text-xs">{{.Filename}}</td>
+                <td class="whitespace-nowrap">{{.TakenAt.Format "2006-01-02 15:04"}}</td>
+                <td class="whitespace-nowrap tabular-nums">{{humanSize .SizeBytes}}</td>
+                <td><span class="badge badge-sm tier-{{.Tier}}
+                  {{- if eq .Tier "daily"}} badge-info{{else if eq .Tier "monthly"}} badge-success{{else if eq .Tier "quarterly"}} badge-warning{{else}} badge-error{{end}}">{{.Tier}}</span></td>
+              </tr>
+              {{- end}}
+            </tbody>
+          </table>
+        </div>
+        {{else}}
+        <p class="opacity-60">No snapshots found under <code class="kbd kbd-sm">.snapshots/</code>.</p>
+        {{end}}
+      </div>
+    </div>
+  </div>
 {{template "page_end" .}}{{end}}

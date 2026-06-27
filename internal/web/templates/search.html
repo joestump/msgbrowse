@@ -1,79 +1,89 @@
 {{define "search"}}{{template "page_start" .}}
-  <header class="conv-header">
-    <h1>Search</h1>
-    <div class="muted">Full-text keyword search across all messages.</div>
-  </header>
+  <div class="p-4 lg:p-6 max-w-4xl">
+    <h1 class="text-2xl font-bold mb-1">Search</h1>
+    <p class="opacity-60 mb-4">Full-text keyword search across all messages.</p>
 
-  {{/* The form submits to /search (works without JS); HTMX upgrades it to live,
-       partial updates into #search-results as you type or change a filter. */}}
-  <form class="search-form" action="/search" method="get"
-        hx-get="/search/results" hx-target="#search-results" hx-swap="innerHTML"
-        hx-trigger="input changed delay:300ms, change">
-    <input class="search-q" type="search" name="q" value="{{.Form.Q}}"
-           placeholder="Search messages…" autofocus autocomplete="off">
+    {{/* Submits to /search (works without JS); HTMX upgrades it to live, partial
+         updates into #search-results as you type or change a filter. */}}
+    <form action="/search" method="get"
+          hx-get="/search/results" hx-target="#search-results" hx-swap="innerHTML"
+          hx-trigger="input changed delay:300ms, change">
+      <label class="input input-bordered flex items-center gap-2 w-full">
+        {{template "icon-search" .}}
+        <input type="search" name="q" value="{{.Form.Q}}" class="grow" placeholder="Search messages…" autofocus autocomplete="off">
+      </label>
 
-    <div class="search-filters">
-      <label>Conversation
-        <select name="conversation">
-          <option value="">Any</option>
-          {{- range .Conversations}}
-          <option value="{{.ID}}" {{if eq .ID $.Form.ConversationID}}selected{{end}}>{{.Name}}</option>
-          {{- end}}
-        </select>
-      </label>
-      <label>Source
-        <select name="source">
-          <option value="">Any</option>
-          {{- range .Sources}}
-          <option value="{{.}}" {{if eq . $.Form.Source}}selected{{end}}>{{.}}</option>
-          {{- end}}
-        </select>
-      </label>
-      <label>Sender
-        <input type="text" name="sender" value="{{.Form.Sender}}" placeholder="exact name" autocomplete="off">
-      </label>
-      <label>From
-        <input type="date" name="start" value="{{.Form.Start}}">
-      </label>
-      <label>To
-        <input type="date" name="end" value="{{.Form.End}}">
-      </label>
-      <label class="check"><input type="checkbox" name="has_attachment" value="1" {{if .Form.HasAttachment}}checked{{end}}> Has attachment</label>
-      <label class="check"><input type="checkbox" name="has_link" value="1" {{if .Form.HasLink}}checked{{end}}> Has link</label>
-      <button type="submit">Search</button>
-    </div>
-  </form>
+      <div class="flex flex-wrap items-end gap-3 mt-3">
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">Conversation</span>
+          <select name="conversation" class="select select-bordered select-sm">
+            <option value="">Any</option>
+            {{- range .Conversations}}
+            <option value="{{.ID}}" {{if eq .ID $.Form.ConversationID}}selected{{end}}>{{.Name}}</option>
+            {{- end}}
+          </select>
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">Source</span>
+          <select name="source" class="select select-bordered select-sm">
+            <option value="">Any</option>
+            {{- range .Sources}}
+            <option value="{{.}}" {{if eq . $.Form.Source}}selected{{end}}>{{.}}</option>
+            {{- end}}
+          </select>
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">Sender</span>
+          <input type="text" name="sender" value="{{.Form.Sender}}" class="input input-bordered input-sm" placeholder="exact name" autocomplete="off">
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">From</span>
+          <input type="date" name="start" value="{{.Form.Start}}" class="input input-bordered input-sm">
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">To</span>
+          <input type="date" name="end" value="{{.Form.End}}" class="input input-bordered input-sm">
+        </label>
+        <label class="label cursor-pointer gap-2"><input type="checkbox" name="has_attachment" value="1" class="checkbox checkbox-sm" {{if .Form.HasAttachment}}checked{{end}}> <span class="label-text">Has attachment</span></label>
+        <label class="label cursor-pointer gap-2"><input type="checkbox" name="has_link" value="1" class="checkbox checkbox-sm" {{if .Form.HasLink}}checked{{end}}> <span class="label-text">Has link</span></label>
+        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+      </div>
+    </form>
 
-  <section id="search-results">
-    {{template "search_results" .}}
-  </section>
+    <section id="search-results" class="mt-5">
+      {{template "search_results" .}}
+    </section>
+  </div>
 {{template "page_end" .}}{{end}}
 
 {{define "search_results"}}
   {{- if .Ran}}
     {{- if .Hits}}
-    <div class="search-count muted">{{.Count}} result{{if ne .Count 1}}s{{end}}{{if eq .Count 200}} (showing first 200){{end}}</div>
-    <ol class="search-hits">
+    <div class="text-sm opacity-60 mb-2">{{.Count}} result{{if ne .Count 1}}s{{end}}{{if eq .Count 200}} (showing first 200){{end}}</div>
+    <ol class="flex flex-col gap-2">
       {{- range .Hits}}
-      <li class="hit">
-        <a class="hit-link" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">
-          <div class="hit-meta">
-            <span class="hit-conv">{{.ConversationName}}</span>
-            <span class="hit-sender">{{if .IsOwner}}Me{{else}}{{.Sender}}{{end}}</span>
-            <span class="hit-time muted">{{.TS}}</span>
-            <span class="hit-source muted">{{.Source}}</span>
-            {{- if .HasAttachment}}<span class="badge" title="has attachment">📎</span>{{end}}
-            {{- if .HasLink}}<span class="badge" title="has link">🔗</span>{{end}}
+      <li>
+        <a class="card card-compact bg-base-200 hover:bg-base-300 border border-base-300 hover:border-primary transition-colors"
+           href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">
+          <div class="card-body">
+            <div class="flex flex-wrap items-baseline gap-x-2 text-xs">
+              <span class="font-semibold">{{.ConversationName}}</span>
+              <span>{{if .IsOwner}}Me{{else}}{{.Sender}}{{end}}</span>
+              <span class="opacity-60 tabular-nums">{{.TS}}</span>
+              <span class="opacity-60">{{.Source}}</span>
+              {{- if .HasAttachment}}<span class="opacity-60" title="has attachment">{{template "icon-paperclip" .}}</span>{{end}}
+              {{- if .HasLink}}<span class="opacity-60" title="has link">{{template "icon-link" .}}</span>{{end}}
+            </div>
+            <div class="text-sm break-words [&_mark]:bg-warning [&_mark]:text-warning-content [&_mark]:rounded [&_mark]:px-0.5">{{highlightSnippet .Snippet}}</div>
           </div>
-          <div class="hit-snippet">{{highlightSnippet .Snippet}}</div>
         </a>
       </li>
       {{- end}}
     </ol>
     {{- else}}
-    <div class="search-empty muted">No messages match your search.</div>
+    <div class="opacity-60">No messages match your search.</div>
     {{- end}}
   {{- else}}
-    <div class="search-hint muted">Type a query above to search your messages.</div>
+    <div class="opacity-60">Type a query above to search your messages.</div>
   {{- end}}
 {{end}}

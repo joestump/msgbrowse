@@ -1,0 +1,38 @@
+/* msgbrowse stylesheet source — built into ../static/app.css by `make css`
+ * (Tailwind v4 standalone CLI + daisyUI, no Node; see Makefile). The BUILT
+ * app.css is committed and go:embed-served, so the runtime needs no toolchain.
+ *
+ * The @plugin path is relative to this file and points at the daisyUI package
+ * that `make css` downloads into .tools/. Themes: dim (dark, default) + winter
+ * (light); the header toggle switches data-theme between them. */
+@import "tailwindcss";
+
+@plugin "../../../.tools/daisyui/package/index.js" {
+  themes: dim --default, winter;
+}
+
+/* Tell Tailwind where utility classes are used (v4 content detection). */
+@source "../templates";
+
+/* --- small custom bits daisyUI doesn't cover --- */
+
+/* Inline media thumbnails in the transcript / gallery. */
+.thumb { max-width: 220px; max-height: 220px; }
+
+/* Pure-CSS :target lightbox for the media gallery (no JS, CSP-safe). */
+.lightbox { display: none; }
+.lightbox:target {
+  display: flex;
+  position: fixed; inset: 0; z-index: 50;
+  align-items: center; justify-content: center; flex-direction: column;
+  gap: 0.75rem; padding: 1.5rem;
+  background: color-mix(in oklab, black 85%, transparent);
+}
+.lightbox img { max-width: 92vw; max-height: 80vh; border-radius: 0.5rem; }
+
+/* Flash the jump-to-context target message briefly. */
+@keyframes target-flash {
+  0%   { background-color: color-mix(in oklab, var(--color-primary) 30%, transparent); }
+  100% { background-color: transparent; }
+}
+.target .chat-bubble { animation: target-flash 2.5s ease-out 1; }

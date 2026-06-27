@@ -21,12 +21,25 @@ LDFLAGS     := -X $(PKG)/internal/cli.Version=$(VERSION) \
 
 GO          ?= go
 
+# --- CSS toolchain (dev-time only; the built app.css is committed) ---
+# Pinned versions of the Tailwind v4 standalone CLI (single binary, no Node) and
+# the daisyUI package. Downloaded into .tools/ by `make css`; never committed.
+TAILWIND_VERSION := v4.3.1
+DAISYUI_VERSION  := 5.6.3
+TOOLS_DIR        := .tools
+# Map uname → Tailwind release asset suffix (linux/macos × x64/arm64).
+UNAME_S          := $(shell uname -s)
+UNAME_M          := $(shell uname -m)
+TW_OS            := $(if $(filter Darwin,$(UNAME_S)),macos,linux)
+TW_ARCH          := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,x64)
+TW_ASSET         := tailwindcss-$(TW_OS)-$(TW_ARCH)
+
 # The SQLite driver (mattn/go-sqlite3) needs cgo and the sqlite_fts5 build tag
 # to enable the FTS5 full-text search extension used by keyword search.
 TAGS        := sqlite_fts5
 export CGO_ENABLED = 1
 
-.PHONY: all build run test cover check fmt fmt-check vet tidy clean up up-bundled down logs signal-import embed journal
+.PHONY: all build run test cover check fmt fmt-check vet tidy clean clean-tools css up up-bundled down logs signal-import embed journal
 
 all: check build
 
@@ -57,8 +70,28 @@ tidy: ## Tidy go.mod/go.sum
 
 check: fmt-check vet test ## CI gate: format check, vet, tests
 
+css: $(TOOLS_DIR)/tailwindcss $(TOOLS_DIR)/daisyui/package/index.js ## Rebuild internal/web/static/app.css (Tailwind + daisyUI; dev-time only)
+	$(TOOLS_DIR)/tailwindcss \
+	  -i internal/web/tailwind/input.css \
+	  -o internal/web/static/app.css \
+	  --minify
+
+$(TOOLS_DIR)/tailwindcss:
+	@mkdir -p $(TOOLS_DIR)
+	@echo "downloading Tailwind $(TAILWIND_VERSION) ($(TW_ASSET))…"
+	curl -fsSL -o $@ "https://github.com/tailwindlabs/tailwindcss/releases/download/$(TAILWIND_VERSION)/$(TW_ASSET)"
+	chmod +x $@
+
+$(TOOLS_DIR)/daisyui/package/index.js:
+	@mkdir -p $(TOOLS_DIR)/daisyui
+	@echo "downloading daisyUI $(DAISYUI_VERSION)…"
+	curl -fsSL "https://registry.npmjs.org/daisyui/-/daisyui-$(DAISYUI_VERSION).tgz" | tar -xz -C $(TOOLS_DIR)/daisyui
+
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR) coverage.out
+
+clean-tools: ## Remove the downloaded CSS toolchain
+	rm -rf $(TOOLS_DIR)
 
 up: ## Start msgbrowse (points at your external LiteLLM via .env)
 	docker compose up -d --build

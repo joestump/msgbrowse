@@ -263,7 +263,16 @@ make build      # build ./bin/msgbrowse (cgo + sqlite_fts5)
 make test       # run the test suite
 make check      # gofmt + go vet + tests (the CI gate)
 make cover      # coverage summary
+make css        # rebuild internal/web/static/app.css (Tailwind + daisyUI)
 ```
+
+**UI styling.** The web UI uses Tailwind CSS + daisyUI (dim/winter themes, with a
+header light/dark toggle) and vendored Hero Icons. The built `app.css` is
+committed and `go:embed`-served, so the **runtime needs no toolchain** (no Node,
+no CDN — keeps the strict CSP intact). When you change template classes, run
+`make css` to regenerate it: that fetches the Tailwind **standalone CLI** + the
+daisyUI package into a gitignored `.tools/` (no npm) and rebuilds. CI fails if
+`app.css` is stale.
 
 Architecture decisions live in [`docs/adr/`](docs/adr/). Contributions should
 keep `make check` green and add tests for new ingest/search/MCP behavior.
