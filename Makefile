@@ -26,7 +26,7 @@ GO          ?= go
 TAGS        := sqlite_fts5
 export CGO_ENABLED = 1
 
-.PHONY: all build run test cover check fmt fmt-check vet tidy clean up down logs signal-import embed journal
+.PHONY: all build run test cover check fmt fmt-check vet tidy clean up up-bundled down logs signal-import embed journal
 
 all: check build
 
@@ -60,11 +60,14 @@ check: fmt-check vet test ## CI gate: format check, vet, tests
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR) coverage.out
 
-up: ## Start the Docker compose stack
+up: ## Start msgbrowse (points at your external LiteLLM via .env)
 	docker compose up -d --build
 
+up-bundled: ## Start msgbrowse + the bundled LiteLLM proxy
+	docker compose --profile bundled-llm up -d --build
+
 down: ## Stop the Docker compose stack
-	docker compose down
+	docker compose --profile bundled-llm down
 
 logs: ## Tail the msgbrowse container logs
 	docker compose logs -f msgbrowse
