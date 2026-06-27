@@ -1,0 +1,98 @@
+{{define "gallery"}}{{template "page_start" .}}
+  <header class="conv-header">
+    <h1>Media</h1>
+    <div class="muted">Images, files, and links across your archive.</div>
+  </header>
+
+  <form class="gallery-filter" action="/gallery" method="get">
+    <input type="hidden" name="tab" value="{{.Filter.Tab}}">
+    <label>Conversation
+      <select name="conversation">
+        <option value="">Any</option>
+        {{- range .Conversations}}
+        <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{.Name}}</option>
+        {{- end}}
+      </select>
+    </label>
+    <label>Source
+      <select name="source">
+        <option value="">Any</option>
+        {{- range .Sources}}
+        <option value="{{.}}" {{if eq . $.Filter.Source}}selected{{end}}>{{.}}</option>
+        {{- end}}
+      </select>
+    </label>
+    <label>From <input type="date" name="start" value="{{.Filter.Start}}"></label>
+    <label>To <input type="date" name="end" value="{{.Filter.End}}"></label>
+    <button type="submit">Apply</button>
+  </form>
+
+  <nav class="gallery-tabs">
+    <a class="{{if eq .Filter.Tab "images"}}active{{end}}" href="{{.Filter.GalleryQuery "images"}}">Images <span class="muted">{{.Counts.Images}}</span></a>
+    <a class="{{if eq .Filter.Tab "files"}}active{{end}}" href="{{.Filter.GalleryQuery "files"}}">Files <span class="muted">{{.Counts.Files}}</span></a>
+    <a class="{{if eq .Filter.Tab "links"}}active{{end}}" href="{{.Filter.GalleryQuery "links"}}">Links <span class="muted">{{.Counts.Links}}</span></a>
+  </nav>
+
+  <section class="gallery">
+    {{- if eq .Filter.Tab "files"}}
+      {{- if .Files}}
+      <ul class="file-list">
+        {{- range .Files}}
+        <li class="file-row">
+          <a class="file-name" href="{{mediaURL .ConversationID .RelPath}}">📎 {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+          <span class="file-meta muted">
+            {{- if .ContentType}}{{.ContentType}}{{else}}unknown{{end}}
+            {{- if .SizeHuman}} · {{.SizeHuman}}{{end}}
+            · <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.ConversationName}}</a>
+            · {{.TS}} · {{.Source}}
+          </span>
+        </li>
+        {{- end}}
+      </ul>
+      {{- else}}<p class="muted gallery-empty">No files match.</p>{{end}}
+
+    {{- else if eq .Filter.Tab "links"}}
+      {{- if .Groups}}
+      {{- range .Groups}}
+      <div class="link-group">
+        <h3 class="link-domain">{{.Domain}} <span class="muted">{{len .Links}}</span></h3>
+        <ul class="link-list">
+          {{- range .Links}}
+          <li class="link-row">
+            <a class="link-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
+            <span class="link-meta muted">
+              {{- if gt .Count 1}}×{{.Count}} · {{end}}
+              <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.ConversationName}}</a>
+              · {{.TS}} · {{.Source}}
+            </span>
+          </li>
+          {{- end}}
+        </ul>
+      </div>
+      {{- end}}
+      {{- else}}<p class="muted gallery-empty">No links match.</p>{{end}}
+
+    {{- else}}
+      {{- if .Images}}
+      <div class="image-grid">
+        {{- range $i, $img := .Images}}
+        <a class="image-cell" href="#lb-{{$i}}" title="{{$img.OriginalName}}">
+          <img loading="lazy" src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
+        </a>
+        {{- end}}
+      </div>
+      {{/* CSS :target lightboxes — no JavaScript, CSP-safe. */}}
+      {{- range $i, $img := .Images}}
+      <div class="lightbox" id="lb-{{$i}}">
+        <a class="lightbox-close" href="#" title="close">×</a>
+        <img src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
+        <div class="lightbox-meta">
+          <a href="/c/{{$img.ConversationID}}/at/{{$img.MessageID}}#m{{$img.MessageID}}">{{$img.ConversationName}}</a>
+          · {{$img.TS}} · {{$img.Source}}
+        </div>
+      </div>
+      {{- end}}
+      {{- else}}<p class="muted gallery-empty">No images match.</p>{{end}}
+    {{- end}}
+  </section>
+{{template "page_end" .}}{{end}}

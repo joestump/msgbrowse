@@ -71,6 +71,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /search/results", s.handleSearchResults)
+	mux.HandleFunc("GET /gallery", s.handleGallery)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
