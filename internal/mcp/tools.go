@@ -159,14 +159,19 @@ func (s *Server) searchMessages(ctx context.Context, _ *mcpsdk.CallToolRequest, 
 	}
 
 	// Vector half (best-effort): embed the query and retrieve. If embeddings or
-	// the LLM are unavailable, fall back to keyword-only rather than failing.
+	// the LLM are unavailable, fall back to keyword-only rather than failing —
+	// but log the reason so a silently-degraded hybrid search is diagnosable.
 	var sem []store.ScoredMessage
 	if s.llm != nil && s.embedModel != "" {
 		if vec := s.embedQuery(ctx, in.Query); vec != nil {
-			sem, _ = s.store.SemanticSearch(ctx, vec, s.embedModel, store.SemanticOptions{
+			var serr error
+			sem, serr = s.store.SemanticSearch(ctx, vec, s.embedModel, store.SemanticOptions{
 				ConversationID: convID, Source: in.Source, Sender: in.Sender,
 				StartUnix: dayStart(in.Start), EndUnix: dayEnd(in.End), K: limit,
 			})
+			if serr != nil {
+				s.log.Warn("semantic half of hybrid search failed; returning keyword results only", "error", serr)
+			}
 		}
 	}
 
@@ -420,9 +425,16 @@ func fuseResults(fts []store.SearchHit, sem []store.ScoredMessage, limit int) []
 	return out
 }
 
-// sortHitsByScoreDesc stably sorts hits by descending fused score.
+// sortHitsByScoreDesc sorts hits by descending fused score, breaking ties by
+// message_id so identical queries return a stable, reproducible order (the
+// fusion map's iteration order is otherwise random).
 func sortHitsByScoreDesc(hits []messageHit) {
-	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].Score != hits[j].Score {
+			return hits[i].Score > hits[j].Score
+		}
+		return hits[i].MessageID < hits[j].MessageID
+	})
 }
 
 // dayStart parses YYYY-MM-DD to the start-of-day UTC unix second; 0 if empty/bad.
