@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/source"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -30,11 +32,11 @@ func msg(conv, ts, sender, body string, atts []signal.Attachment, links []signal
 func TestUpsertConversationIdempotent(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	id1, err := st.UpsertConversation(ctx, "Harper")
+	id1, err := st.UpsertConversation(ctx, source.Signal, "Harper")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id2, err := st.UpsertConversation(ctx, "Harper")
+	id2, err := st.UpsertConversation(ctx, source.Signal, "Harper")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +48,7 @@ func TestUpsertConversationIdempotent(t *testing.T) {
 func TestReplaceConversationMessagesAndFTS(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	id, err := st.UpsertConversation(ctx, "Harper")
+	id, err := st.UpsertConversation(ctx, source.Signal, "Harper")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +59,7 @@ func TestReplaceConversationMessagesAndFTS(t *testing.T) {
 			[]signal.Link{{URL: "https://example.com/x"}}),
 		msg("Harper", "2022-03-01 09:01:00", "Me", "sounds good", nil, nil),
 	}
-	added, err := st.ReplaceConversationMessages(ctx, id, msgs)
+	added, err := st.ReplaceConversationMessages(ctx, id, source.Signal, msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +84,7 @@ func TestReplaceConversationMessagesAndFTS(t *testing.T) {
 	}
 
 	// Replacing with a smaller set cascades deletes and re-syncs FTS.
-	added, err = st.ReplaceConversationMessages(ctx, id,
+	added, err = st.ReplaceConversationMessages(ctx, id, source.Signal,
 		[]signal.Message{msg("Harper", "2022-03-01 09:02:00", "Me", "new content only", nil, nil)})
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +106,7 @@ func TestReplaceConversationMessagesAndFTS(t *testing.T) {
 func TestIngestStateRoundTrip(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	id, _ := st.UpsertConversation(ctx, "Harper")
+	id, _ := st.UpsertConversation(ctx, source.Signal, "Harper")
 
 	if got, err := st.GetIngestState(ctx, id); err != nil || got != nil {
 		t.Fatalf("expected no state, got %v err %v", got, err)
@@ -166,6 +168,7 @@ func TestRecordIngestRun(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	id, err := st.RecordIngestRun(ctx, IngestRun{
+		Source:    source.Signal,
 		StartedAt: now, FinishedAt: now.Add(time.Second), DurationMS: 1000,
 		ConversationsScanned: 2, MessagesTotal: 11,
 	})
@@ -174,6 +177,131 @@ func TestRecordIngestRun(t *testing.T) {
 	}
 	if id == 0 {
 		t.Error("expected non-zero run id")
+	}
+}
+
+// TestUpsertConversationBootstrapsContact confirms that the unified-contacts
+// behavior of Slice 1.5 fires on every fresh conversation: a contact is
+// auto-created with display_name = name, a contact_identifier records the
+// (source, identifier) tuple, and conversations.contact_id is linked.
+func TestUpsertConversationBootstrapsContact(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	id, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		contactID   int64
+		displayName string
+		identCount  int
+		convContact int64
+	)
+	st.DB().QueryRow(`SELECT c.id, c.display_name
+	                  FROM contacts c
+	                  JOIN contact_identifiers ci ON ci.contact_id = c.id
+	                  WHERE ci.source = ? AND ci.identifier = ?`,
+		source.Signal, "Harper").Scan(&contactID, &displayName)
+	if contactID == 0 || displayName != "Harper" {
+		t.Errorf("contact not bootstrapped: id=%d name=%q", contactID, displayName)
+	}
+	st.DB().QueryRow(`SELECT count(*) FROM contact_identifiers WHERE contact_id = ?`, contactID).Scan(&identCount)
+	if identCount != 1 {
+		t.Errorf("contact_identifiers for contact %d = %d, want 1", contactID, identCount)
+	}
+	st.DB().QueryRow(`SELECT contact_id FROM conversations WHERE id = ?`, id).Scan(&convContact)
+	if convContact != contactID {
+		t.Errorf("conversations.contact_id = %d, want %d", convContact, contactID)
+	}
+
+	// Re-upsert is idempotent: no new contact or identifier.
+	id2, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id2 != id {
+		t.Errorf("conversation id changed on re-upsert: %d → %d", id, id2)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contacts`); n != 1 {
+		t.Errorf("re-upsert created extra contacts: %d", n)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contact_identifiers`); n != 1 {
+		t.Errorf("re-upsert created extra contact_identifiers: %d", n)
+	}
+}
+
+// TestUpsertConversationConcurrent is a regression test for the deferred-tx
+// lock-upgrade hazard: a SELECT-then-INSERT inside a deferred transaction holds
+// a shared lock and then upgrades to a write lock, and SQLite returns
+// SQLITE_BUSY for an upgrade without honoring busy_timeout. The fix is
+// _txlock=immediate (see Open). Many goroutines upserting the same and distinct
+// (source, name) pairs must all succeed and converge on stable ids, with no
+// "database is locked" error and no duplicate contacts.
+func TestUpsertConversationConcurrent(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	const workers = 24
+	names := []string{"MJ", "Harper", "Group Trip"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*len(names))
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, n := range names {
+				if _, err := st.UpsertConversation(ctx, source.Signal, n); err != nil {
+					errs <- err
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent UpsertConversation: %v", err)
+	}
+
+	// Exactly one conversation and one contact per distinct name — no dupes from
+	// racing inserts.
+	if n := scalar(t, st, `SELECT count(*) FROM conversations`); n != len(names) {
+		t.Errorf("conversations = %d, want %d", n, len(names))
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contacts`); n != len(names) {
+		t.Errorf("contacts = %d, want %d", n, len(names))
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contact_identifiers`); n != len(names) {
+		t.Errorf("contact_identifiers = %d, want %d", n, len(names))
+	}
+}
+
+// TestUpsertConversationSourceScoped confirms that a conversation named "MJ"
+// can exist independently under Signal and iMessage (post-Slice-2.5 the second
+// source will exist; here we use the constants directly). Each gets its own
+// auto-contact; identifiers are scoped by source.
+func TestUpsertConversationSourceScoped(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	sigID, err := st.UpsertConversation(ctx, source.Signal, "MJ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	imID, err := st.UpsertConversation(ctx, source.IMessage, "MJ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sigID == imID {
+		t.Fatalf("expected distinct conversations across sources, both got %d", sigID)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contacts`); n != 2 {
+		t.Errorf("contacts = %d, want 2 (one auto-contact per source-side identity)", n)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM contact_identifiers WHERE identifier = 'MJ'`); n != 2 {
+		t.Errorf("contact_identifiers with identifier='MJ' = %d, want 2 (one per source)", n)
 	}
 }
 

@@ -4,6 +4,11 @@
 // content hash) is recorded in ingest_state, and a conversation is re-parsed only
 // when its chat.md actually changes. Re-running ingest over an unchanged archive
 // is a cheap no-op. The archive is only ever read.
+//
+// This package is the Signal-side importer; the equivalent iMessage importer
+// will live in a sibling internal/imessage package (Slice 2.5). Both write to
+// the same store and tag every row with their source so the unified contacts
+// and journal layers can blend them.
 package ingest
 
 import (
@@ -18,6 +23,7 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/signal"
+	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
@@ -56,7 +62,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	}
 	start := now()
 
-	run := store.IngestRun{StartedAt: start}
+	run := store.IngestRun{Source: source.Signal, StartedAt: start}
 
 	// 1. Conversations.
 	convRoot := filepath.Join(opts.ArchiveRoot, ExportDir)
@@ -142,7 +148,7 @@ func ingestConversation(
 	ctx context.Context, st *store.Store, opts Options, log *slog.Logger,
 	name, chatPath string, info os.FileInfo, at time.Time,
 ) (changed bool, added, skipped int, err error) {
-	convID, err := st.UpsertConversation(ctx, name)
+	convID, err := st.UpsertConversation(ctx, source.Signal, name)
 	if err != nil {
 		return false, 0, 0, err
 	}
@@ -186,7 +192,7 @@ func ingestConversation(
 	if perr != nil {
 		return false, 0, 0, perr
 	}
-	added, err = st.ReplaceConversationMessages(ctx, convID, msgs)
+	added, err = st.ReplaceConversationMessages(ctx, convID, source.Signal, msgs)
 	if err != nil {
 		return false, 0, 0, err
 	}

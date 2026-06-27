@@ -26,11 +26,14 @@ var v *viper.Viper
 func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "msgbrowse",
-		Short: "Browse, search, and semantically query a local signal-export archive",
-		Long: "msgbrowse is a self-hosted, local-only web app and MCP server over a\n" +
-			"signal-export archive. It treats the archive as strictly read-only and keeps\n" +
-			"all data on the machine; the only network egress is the configured\n" +
-			"OpenAI-compatible LLM endpoint.",
+		Short: "Browse, search, and editorialize your message archives locally",
+		Long: "msgbrowse is a self-hosted, local-only web app and MCP server over your\n" +
+			"message-archive exports. It treats every archive as strictly read-only and\n" +
+			"keeps all data on the machine; the only network egress is the configured\n" +
+			"OpenAI-compatible LLM endpoint.\n" +
+			"\n" +
+			"Sources today: signal-export (via signal-import). iMessage support via\n" +
+			"imessage-exporter is on the roadmap.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// PersistentPreRunE loads config and binds flags once, before any
@@ -48,7 +51,8 @@ func NewRootCommand() *cobra.Command {
 	pf.String("log-level", "", "log level: debug, info, warn, error")
 
 	root.AddCommand(
-		newIngestCommand(),
+		newSignalImportCommand(),
+		newIngestAliasCommand(),
 		newServeCommand(),
 		newMCPCommand(),
 		newWatchCommand(),

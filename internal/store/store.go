@@ -32,6 +32,16 @@ func Open(path string) (*Store, error) {
 		"_journal_mode": {"WAL"},
 		"_foreign_keys": {"ON"},
 		"_synchronous":  {"NORMAL"},
+		// Every explicit transaction in this package is a writer
+		// (UpsertConversation, ReplaceConversationMessages, ReplaceSnapshots,
+		// and the migration runner). Begin them in IMMEDIATE mode so they take
+		// the write lock up front. A deferred transaction that SELECTs then
+		// INSERTs would hold a shared lock and then try to upgrade it; SQLite
+		// returns SQLITE_BUSY for a lock UPGRADE without honoring busy_timeout,
+		// so two concurrent upserts could spuriously fail. IMMEDIATE makes
+		// busy_timeout apply to the initial acquisition instead. Autocommit
+		// read queries (QueryContext) are unaffected by this setting.
+		"_txlock": {"immediate"},
 	}.Encode()
 
 	db, err := sql.Open("sqlite3", dsn)
@@ -56,18 +66,6 @@ func (s *Store) DB() *sql.DB { return s.db }
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// migrate applies the schema and records the schema version. The schema is
-// written to be safe to re-run, so this is also how upgrades are staged.
-func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("apply schema: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-		return fmt.Errorf("set user_version: %w", err)
-	}
-	return nil
-}
-
 // IngestState is the per-conversation incremental bookkeeping that lets ingest
 // skip unchanged chat.md files.
 type IngestState struct {
@@ -89,7 +87,11 @@ type Snapshot struct {
 }
 
 // IngestRun is a summary of a single ingest pass, surfaced on the /status page.
+// Source identifies which exporter the run came from (see internal/source); the
+// /status page groups recent runs by it so one source's failures don't hide
+// another's successes.
 type IngestRun struct {
+	Source               string
 	StartedAt            time.Time
 	FinishedAt           time.Time
 	DurationMS           int64
@@ -102,19 +104,89 @@ type IngestRun struct {
 	Errors               int
 }
 
-// UpsertConversation returns the id of the conversation with the given name,
-// inserting it if absent.
-func (s *Store) UpsertConversation(ctx context.Context, name string) (int64, error) {
-	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO conversations(name) VALUES(?) ON CONFLICT(name) DO NOTHING`, name); err != nil {
-		return 0, fmt.Errorf("upsert conversation %q: %w", name, err)
+// UpsertConversation returns the id of the (source, name) conversation,
+// creating it if absent. It also ensures a contact and contact_identifier exist
+// for the source-side identity and that conversations.contact_id points at it.
+//
+// First-time identities get an auto-created contact whose display_name equals
+// the conversation name. The Slice 4.5 contacts page lets the user merge those
+// auto-contacts together (e.g. signal:MJ + imessage:+15551234567 → one person).
+// Auto-creation is intentionally cheap and never silently merges across
+// identifiers — see ADR-0003.
+func (s *Store) UpsertConversation(ctx context.Context, source, name string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
 	}
-	var id int64
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT id FROM conversations WHERE name = ?`, name).Scan(&id); err != nil {
-		return 0, fmt.Errorf("lookup conversation %q: %w", name, err)
+	rollback := true
+	defer func() {
+		if rollback {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var (
+		convID    int64
+		contactID sql.NullInt64
+	)
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, contact_id FROM conversations WHERE source = ? AND name = ?`,
+		source, name).Scan(&convID, &contactID)
+	switch {
+	case err == sql.ErrNoRows:
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO conversations(source, name) VALUES(?, ?)`, source, name)
+		if err != nil {
+			return 0, fmt.Errorf("insert conversation %s/%s: %w", source, name, err)
+		}
+		convID, err = res.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+	case err != nil:
+		return 0, fmt.Errorf("lookup conversation %s/%s: %w", source, name, err)
 	}
-	return id, nil
+
+	if !contactID.Valid {
+		// Try to find an existing contact via the (source, identifier) tuple
+		// first — handles the case where a conversation was deleted and re-
+		// ingested under the same identifier.
+		var existingCID sql.NullInt64
+		err = tx.QueryRowContext(ctx,
+			`SELECT contact_id FROM contact_identifiers WHERE source = ? AND identifier = ?`,
+			source, name).Scan(&existingCID)
+		switch {
+		case err == sql.ErrNoRows:
+			res, err := tx.ExecContext(ctx,
+				`INSERT INTO contacts(display_name) VALUES(?)`, name)
+			if err != nil {
+				return 0, fmt.Errorf("create contact: %w", err)
+			}
+			newCID, err := res.LastInsertId()
+			if err != nil {
+				return 0, err
+			}
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO contact_identifiers(contact_id, source, identifier) VALUES(?, ?, ?)`,
+				newCID, source, name); err != nil {
+				return 0, fmt.Errorf("create contact_identifier: %w", err)
+			}
+			existingCID = sql.NullInt64{Int64: newCID, Valid: true}
+		case err != nil:
+			return 0, fmt.Errorf("lookup contact_identifier: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE conversations SET contact_id = ? WHERE id = ?`,
+			existingCID.Int64, convID); err != nil {
+			return 0, fmt.Errorf("link conversation to contact: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	rollback = false
+	return convID, nil
 }
 
 // GetIngestState returns the stored state for a conversation, or (nil, nil) if
@@ -161,10 +233,14 @@ func (s *Store) SetIngestState(ctx context.Context, st IngestState) error {
 
 // ReplaceConversationMessages atomically replaces all messages (and their
 // attachments and links) for a conversation with the supplied set. This makes
-// re-ingesting a changed chat.md fully idempotent and correctly reflects edits
-// and deletions, while messages.hash still uniquely keys each message. It
-// returns the number of messages written.
-func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, msgs []signal.Message) (int, error) {
+// re-ingesting a changed source export fully idempotent and correctly reflects
+// edits and deletions, while messages.hash still uniquely keys each message.
+// It returns the number of messages written.
+//
+// source is recorded on every inserted message so cross-source filtering and
+// per-source aggregates (e.g. journal mechanical layer) work without touching
+// the joined conversations row.
+func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, source string, msgs []signal.Message) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -177,8 +253,8 @@ func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, m
 	}
 
 	insMsg, err := tx.PrepareContext(ctx,
-		`INSERT INTO messages(hash, conversation_id, ts, ts_unix, sender, body, is_system, seq)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		`INSERT INTO messages(hash, conversation_id, source, ts, ts_unix, sender, body, is_system, seq)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -199,7 +275,7 @@ func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, m
 	for i := range msgs {
 		m := &msgs[i]
 		res, err := insMsg.ExecContext(ctx,
-			m.ID(), convID, m.TimestampRaw, m.Timestamp.Unix(), m.Sender, m.Body, boolToInt(m.IsSystem), m.Seq)
+			m.ID(), convID, source, m.TimestampRaw, m.Timestamp.Unix(), m.Sender, m.Body, boolToInt(m.IsSystem), m.Seq)
 		if err != nil {
 			return 0, fmt.Errorf("insert message %s: %w", m.ID(), err)
 		}
@@ -257,10 +333,10 @@ func (s *Store) ReplaceSnapshots(ctx context.Context, snaps []Snapshot) error {
 func (s *Store) RecordIngestRun(ctx context.Context, r IngestRun) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO ingest_runs
-		   (started_at, finished_at, duration_ms, conversations_scanned, conversations_changed,
+		   (source, started_at, finished_at, duration_ms, conversations_scanned, conversations_changed,
 		    messages_total, messages_added, snapshots_seen, skipped_lines, errors)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.StartedAt.UTC().Format(time.RFC3339), r.FinishedAt.UTC().Format(time.RFC3339), r.DurationMS,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Source, r.StartedAt.UTC().Format(time.RFC3339), r.FinishedAt.UTC().Format(time.RFC3339), r.DurationMS,
 		r.ConversationsScanned, r.ConversationsChanged, r.MessagesTotal, r.MessagesAdded,
 		r.SnapshotsSeen, r.SkippedLines, r.Errors)
 	if err != nil {

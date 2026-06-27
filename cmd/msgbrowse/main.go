@@ -1,17 +1,19 @@
 // Command msgbrowse is a self-hosted, local-only browser, search engine, and
-// MCP server over a signal-export archive.
+// AI-editorialized journal over your message archives.
 //
-// It exposes several subcommands:
+// It imports from one or more upstream exporters (today: signal-export; Slice
+// 2.5 adds imessage-exporter) into a unified SQLite store and exposes several
+// subcommands:
 //
-//	msgbrowse ingest   scan the archive and (incrementally) populate the database
-//	msgbrowse serve    run the local HTMX web UI
-//	msgbrowse mcp      run the Model Context Protocol server
-//	msgbrowse watch    re-ingest automatically when the archive changes
-//	msgbrowse journal  (re)build the day-by-day journal and optional LLM digests
+//	msgbrowse signal-import    import a signal-export Markdown archive
+//	msgbrowse imessage-import  (Slice 2.5) import an imessage-exporter archive
+//	msgbrowse serve            run the local HTMX web UI
+//	msgbrowse mcp              run the Model Context Protocol server
+//	msgbrowse watch            re-ingest automatically when an archive changes
+//	msgbrowse journal          (re)build the day-by-day journal + LLM digests
 //
-// Everything runs against an on-disk, already-decrypted signal-export tree that
-// is treated as strictly read-only. See README.md and ARCHITECTURE.md for the
-// full design.
+// Every imported archive is treated as strictly read-only. See README.md and
+// ARCHITECTURE.md for the full design; SECURITY.md for the egress model.
 package main
 
 import (
