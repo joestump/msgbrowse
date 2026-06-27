@@ -1,0 +1,18 @@
+{{define "index"}}{{template "page_start" .}}
+  <div class="welcome">
+    <h1>sigbrowse</h1>
+    {{if .HasArchive}}
+    <p class="muted">A local, read-only window into your Signal archive.</p>
+    <dl class="stats">
+      <div><dt>Conversations</dt><dd>{{len .Conversations}}</dd></div>
+      <div><dt>Messages</dt><dd>{{.TotalMessages}}</dd></div>
+      <div><dt>Newest message</dt><dd>{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</dd></div>
+    </dl>
+    <p class="hint">Pick a conversation on the left to read its transcript, or open
+      <a href="/status">Status &amp; backups</a>.</p>
+    {{else}}
+    <p class="muted">No messages have been ingested yet.</p>
+    <p class="hint">Run <code>sigbrowse ingest</code> against your archive, then refresh.</p>
+    {{end}}
+  </div>
+{{template "page_end" .}}{{end}}

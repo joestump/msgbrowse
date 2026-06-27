@@ -2,6 +2,7 @@ package signal
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -94,6 +95,15 @@ func Parse(conversation string, r io.Reader, emit func(Message) error, onSkip fu
 					continue
 				}
 				sender := m[2]
+				if sender == "" {
+					// Anchor matched but the sender field is empty
+					// (e.g. "[2022-01-01 10:00:00] : foo"). The parser contract
+					// says malformed lines are skipped and logged, never started.
+					if onSkip != nil {
+						onSkip(ParseError{Line: lineNo, Text: text, Err: errEmptySender})
+					}
+					continue
+				}
 				cur = &Message{
 					Conversation: conversation,
 					Timestamp:    ts,
@@ -124,7 +134,10 @@ func Parse(conversation string, r io.Reader, emit func(Message) error, onSkip fu
 }
 
 // errNoAnchor flags content that appears before the first valid timestamp line.
-var errNoAnchor = fmt.Errorf("content before first timestamp")
+var errNoAnchor = errors.New("content before first timestamp")
+
+// errEmptySender flags an anchor whose sender field is empty.
+var errEmptySender = errors.New("empty sender")
 
 // ParseAll is a convenience wrapper that collects every message into a slice.
 // Prefer [Parse] for large inputs; ParseAll is intended for tests and small

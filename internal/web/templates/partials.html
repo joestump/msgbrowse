@@ -1,0 +1,77 @@
+{{define "page_start"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><a href="/">sigbrowse</a></div>
+    <nav class="sidebar-nav">
+      <a href="/status">Status &amp; backups</a>
+    </nav>
+    <div class="conv-list">
+      {{- range .Conversations}}
+      <a class="conv {{if eq .ID $.ActiveID}}active{{end}}" href="/c/{{.ID}}">
+        <div class="conv-top">
+          <span class="conv-name">{{.Name}}</span>
+          <span class="conv-count">{{.MessageCount}}</span>
+        </div>
+        <div class="conv-preview">
+          {{- if .LastSender}}<span class="conv-sender">{{.LastSender}}:</span> {{end}}{{.LastPreview}}
+        </div>
+        <div class="conv-badges">
+          {{- if gt .ImageCount 0}}<span class="badge" title="images">🖼 {{.ImageCount}}</span>{{end}}
+          {{- if gt .FileCount 0}}<span class="badge" title="files">📎 {{.FileCount}}</span>{{end}}
+          {{- if gt .LinkCount 0}}<span class="badge" title="links">🔗 {{.LinkCount}}</span>{{end}}
+        </div>
+      </a>
+      {{- end}}
+    </div>
+  </aside>
+  <main class="content">
+{{end}}
+
+{{define "page_end"}}
+  </main>
+</div>
+</body>
+</html>{{end}}
+
+{{define "message_list"}}
+{{- range .Messages}}
+  <article class="msg {{if .IsOwner}}owner{{else if .IsSystem}}system{{end}}" id="m{{.ID}}">
+    {{- if not .IsSystem}}
+    <div class="msg-meta"><span class="msg-sender">{{.Sender}}</span> <span class="msg-time">{{.TS}}</span></div>
+    {{- end}}
+    {{- $body := renderBody .Body}}
+    {{- if $body}}<div class="msg-body">{{$body}}</div>{{end}}
+    {{- if .Attachments}}
+    <div class="msg-media">
+      {{- range .Attachments}}
+        {{- if eq .Kind "image"}}
+        <a href="{{mediaURL $.ActiveID .RelPath}}" target="_blank" rel="noopener noreferrer nofollow">
+          <img class="thumb" loading="lazy" src="{{mediaURL $.ActiveID .RelPath}}" alt="{{.OriginalName}}">
+        </a>
+        {{- else}}
+        <a class="file" href="{{mediaURL $.ActiveID .RelPath}}">📎 {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+        {{- end}}
+      {{- end}}
+    </div>
+    {{- end}}
+    {{- if .Links}}
+    <div class="msg-links">
+      {{- range .Links}}<a class="link" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.Domain}}</a>{{end}}
+    </div>
+    {{- end}}
+  </article>
+{{- end}}
+{{- if .HasMore}}
+<div class="load-more" hx-get="/c/{{.ActiveID}}/messages?after_ts={{.NextTSUnix}}&after_id={{.NextID}}"
+     hx-trigger="revealed" hx-swap="outerHTML">Loading more…</div>
+{{- end}}
+{{end}}

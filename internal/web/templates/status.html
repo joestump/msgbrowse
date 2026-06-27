@@ -1,0 +1,52 @@
+{{define "status"}}{{template "page_start" .}}
+  <header class="conv-header"><h1>Status &amp; backups</h1></header>
+
+  <section class="panel">
+    <h2>Archive freshness</h2>
+    <dl class="stats">
+      <div><dt>Conversations</dt><dd>{{len .Conversations}}</dd></div>
+      <div><dt>Messages</dt><dd>{{.TotalMessages}}</dd></div>
+      <div><dt>Newest message</dt><dd>{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Last ingest</h2>
+    {{if .Run}}
+    <dl class="stats">
+      <div><dt>Finished</dt><dd>{{.Run.FinishedAt.Format "2006-01-02 15:04:05"}}</dd></div>
+      <div><dt>Duration</dt><dd>{{.Run.DurationMS}} ms</dd></div>
+      <div><dt>Conversations</dt><dd>{{.Run.ConversationsChanged}} changed / {{.Run.ConversationsScanned}} scanned</dd></div>
+      <div><dt>Messages</dt><dd>{{.Run.MessagesTotal}} total ({{.Run.MessagesAdded}} added)</dd></div>
+      <div><dt>Skipped lines</dt><dd>{{.Run.SkippedLines}}</dd></div>
+      <div><dt>Errors</dt><dd>{{.Run.Errors}}</dd></div>
+    </dl>
+    {{else}}
+    <p class="muted">No ingest has been recorded yet.</p>
+    {{end}}
+  </section>
+
+  <section class="panel">
+    <h2>Encrypted DB snapshots</h2>
+    <p class="muted">Total footprint: {{humanSize .SnapshotFootprint}} across {{len .Snapshots}} snapshots.
+      These are SQLCipher-encrypted raw database backups for disaster recovery —
+      sigbrowse lists them but never opens or decrypts them.</p>
+    {{if .Snapshots}}
+    <table class="snapshots">
+      <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Retention tier</th></tr></thead>
+      <tbody>
+        {{- range .Snapshots}}
+        <tr>
+          <td>{{.Filename}}</td>
+          <td>{{.TakenAt.Format "2006-01-02 15:04"}}</td>
+          <td>{{humanSize .SizeBytes}}</td>
+          <td><span class="tier tier-{{.Tier}}">{{.Tier}}</span></td>
+        </tr>
+        {{- end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No snapshots found under <code>.snapshots/</code>.</p>
+    {{end}}
+  </section>
+{{template "page_end" .}}{{end}}

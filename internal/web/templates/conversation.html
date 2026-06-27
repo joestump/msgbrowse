@@ -1,0 +1,15 @@
+{{define "conversation"}}{{template "page_start" .}}
+  <header class="conv-header">
+    <h1>{{.Active.Name}}</h1>
+    <div class="conv-stats muted">
+      {{.Active.MessageCount}} messages
+      {{- if .Active.FirstTS}} · {{.Active.FirstTS}} → {{.Active.LastTS}}{{end}}
+      {{- if gt .Active.ImageCount 0}} · 🖼 {{.Active.ImageCount}}{{end}}
+      {{- if gt .Active.FileCount 0}} · 📎 {{.Active.FileCount}}{{end}}
+      {{- if gt .Active.LinkCount 0}} · 🔗 {{.Active.LinkCount}}{{end}}
+    </div>
+  </header>
+  <section class="transcript">
+    {{template "message_list" .List}}
+  </section>
+{{template "page_end" .}}{{end}}

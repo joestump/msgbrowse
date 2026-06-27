@@ -11,21 +11,6 @@ import (
 // builds and the surface is stable.
 var errNotImplemented = errors.New("not implemented yet (tracked in the project TODO)")
 
-func newServeCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Run the local HTMX web UI",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if _, err := resolveConfig(); err != nil {
-				return err
-			}
-			return errNotImplemented
-		},
-	}
-	cmd.Flags().String("listen-addr", "", "override listen address (default 127.0.0.1:8787)")
-	return cmd
-}
-
 func newMCPCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",

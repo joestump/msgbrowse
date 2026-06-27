@@ -134,6 +134,19 @@ func TestParse(t *testing.T) {
 				{Conversation: "Harper", TimestampRaw: "2022-08-08 04:00:00", Sender: "Harper", Body: "café ☕ 🚀 naïve"},
 			},
 		},
+		{
+			// An anchor whose sender field is empty (e.g. an upstream export
+			// glitch) must be skipped, not started. The next real message must
+			// still be parsed normally.
+			name: "empty sender is skipped",
+			conv: "MJ",
+			input: "[2022-01-01 10:00:00] : ignored body\n" +
+				"[2022-01-01 10:05:00] MJ: real message\n",
+			want: []Message{
+				{Conversation: "MJ", TimestampRaw: "2022-01-01 10:05:00", Sender: "MJ", Body: "real message"},
+			},
+			wantSkips: 1,
+		},
 	}
 
 	for _, tt := range tests {
