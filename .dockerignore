@@ -1,0 +1,16 @@
+# Keep the build context small and never ship local data/secrets into the image.
+/bin/
+/dist/
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/config.yaml
+/litellm.local.yaml
+.env
+.git/
+.github/
+*.md
+docs/
+testdata/
+coverage.out

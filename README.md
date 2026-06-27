@@ -1,84 +1,263 @@
 # msgbrowse
 
 > Self-hosted, local-only browser, search engine, and **AI-editorialized
-> journal** over your personal message archives — Signal (today) and Apple
-> iMessage (Slice 2.5) — from the two upstream CLI exporters
+> journal** over your personal message archives — Signal today, Apple iMessage
+> next — built on the two upstream Markdown exporters
 > [`signal-export`](https://github.com/carderne/signal-export) and
 > [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter).
 > Think *Backrest-for-Restic*, but for your chat history.
 
 msgbrowse renders a clean local UI over on-disk Markdown exports, adds fast
 keyword + semantic search, and exposes an **MCP server** so Claude can answer
-natural-language questions over your message history. The headline feature is
-the **editorialized journal** — Daylio-style daily cards (Highlights / People /
-Themes / Mood / Standout media / Notable links) the LLM writes for you across
-*every* source, with received media as first-class content.
+natural-language questions over your message history. The headline feature is the
+**editorialized journal** — Daylio-style daily cards the LLM writes from your
+chats and the media you received.
 
 It runs entirely on your machine via Docker. **Nothing leaves the box** except
-calls to the one OpenAI-compatible LLM endpoint you configure (default: a
-local LiteLLM proxy). See [`SECURITY.md`](SECURITY.md) for the egress and
-data-handling model.
+calls to the one OpenAI-compatible LLM endpoint you configure (default: a local
+LiteLLM → Ollama route). See [`SECURITY.md`](SECURITY.md) for the exact egress
+and data-handling model.
 
-> **Status:** under active construction, built in vertical slices. See
-> [`ARCHITECTURE.md`](ARCHITECTURE.md) for the layering and the per-slice docs
-> as they land. Today: Slices 1–2 (parser + SQLite + ingest + web UI +
-> transcript) and 1.5 (unified contacts schema) are merged.
+> **Status:** active construction, built in vertical slices. Working today:
+> import, browse, transcript, FTS search, media/links gallery, embeddings +
+> semantic search, and the MCP server. In progress: the editorialized journal,
+> the iMessage source, and the contacts page. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Sources
+## Contents
 
-| Source     | Upstream exporter                                                                     | Subcommand        | Status                                  |
-| ---------- | -------------------------------------------------------------------------------------- | ----------------- | --------------------------------------- |
-| Signal     | [carderne/signal-export](https://github.com/carderne/signal-export)                    | `signal-import`   | ✅ wired                                |
-| iMessage   | [ReagentX/imessage-exporter](https://github.com/ReagentX/imessage-exporter)            | `imessage-import` | Slice 2.5                               |
+- [Quickstart (Docker)](#quickstart-docker)
+- [Quickstart (local binary)](#quickstart-local-binary)
+- [The data layout it reads](#the-data-layout-it-reads)
+- [Commands](#commands)
+- [Connecting Claude (MCP)](#connecting-claude-mcp)
+- [Configuration reference](#configuration-reference)
+- [Security](#security)
+- [Setting up the backup pipeline in Claude Cowork](#setting-up-the-backup-pipeline-in-claude-cowork)
+- [Development](#development)
 
-Each source's rows are tagged in the unified store (`source='signal'`,
-`source='imessage'`); a per-source contact and identifier are auto-created and
-the user merges duplicates on the **Contacts** page (Slice 4.5) — never silent
-auto-merge. See [ADR-0003](docs/adr/0003-dual-source-archive.md).
-
-## Features (target)
-
-1. **Browse backups** — inventory the encrypted `.snapshots/*.tar` raw-DB backups
-   with GFS retention tiers and total footprint (listed, never decrypted).
-2. **Browse by person across sources** — sidebar of every contact; transcript
-   view with inline media interleaved across Signal and iMessage.
-3. **Search** — SQLite FTS5 keyword search with filters (source, contact,
-   sender, date, has-media, has-link) and live HTMX results.
-4. **Semantic search + RAG over MCP** — a vector index plus an MCP server with
-   citation-faithful, contact-keyed (source-blind) retrieval tools.
-5. **Browse by media type** — image gallery, file list, deduplicated links.
-6. **Editorialized journal** — Daylio-style daily cards above the raw
-   transcript; images get vision-captioned, audio gets transcribed.
-7. **Contacts page** — manual merging of cross-source identities with macOS
-   Contacts.app vCard suggestions.
-
-## Engineering principles
-
-- **Go only** for all application code (Go 1.23+), standard project layout.
-- **HTMX** + server-rendered `html/template`; no SPA, no npm build step.
-- **Cobra + Viper** for the CLI and configuration (file + env + flags).
-- **Tests and docs are mandatory.** See `make check`.
-- **Security by default** — loopback-only, read-only archives, least privilege,
-  no silent identity merging, no `.snapshots/*.tar` decryption.
-
-## Quickstart
+## Quickstart (Docker)
 
 ```sh
-# Build and test locally (requires Go 1.23+; CGO for the SQLite/FTS5 driver).
-make build
-make test
+cp .env.example .env
+# edit .env: set MSGBROWSE_ARCHIVE_HOST to your archive's absolute path
 
-# Import a signal-export archive into the local store.
-./bin/msgbrowse --archive-root "$HOME/Managed Files/Signal-Archive" signal-import
-
-# Serve the UI on loopback.
-./bin/msgbrowse --data-dir ./data serve
-# → http://127.0.0.1:8787
+make up            # build + start msgbrowse and the LiteLLM proxy
+make signal-import # import the signal-export archive into the local DB
+make embed         # compute embeddings for semantic search (optional)
+# open http://127.0.0.1:8787
 ```
 
-Docker compose (LiteLLM + msgbrowse), MCP client snippet, the full
-configuration reference, and the **Cowork setup prompts** for both
-`signal-export` and `imessage-exporter` are documented as Slice 7 lands.
+`make logs` tails the server; `make down` stops the stack. The archive is mounted
+read-only, app data lives in a named volume, and the UI is published to host
+loopback only.
+
+> The default LiteLLM route is fully local via Ollama. Uncomment the `ollama`
+> service in `docker-compose.yml`, then
+> `docker compose exec ollama ollama pull nomic-embed-text` and
+> `… pull llama3.1`. Until a model backend is reachable, `make embed` and the
+> journal will fail; browsing and keyword search work without any LLM.
+
+## Quickstart (local binary)
+
+Requires **Go 1.25+** and a C compiler (the SQLite driver uses cgo).
+
+```sh
+make build
+./bin/msgbrowse --archive-root "~/Managed Files/Signal-Archive" --data-dir ./data signal-import
+./bin/msgbrowse --data-dir ./data embed          # optional; needs an LLM endpoint
+./bin/msgbrowse --data-dir ./data serve          # http://127.0.0.1:8787
+```
+
+## The data layout it reads
+
+msgbrowse treats the archive as **strictly read-only**. The signal-export layout:
+
+```
+Signal-Archive/
+├── export/                      # the browsable, decrypted corpus
+│   └── <ChatName>/
+│       ├── chat.md              # the conversation, plaintext markdown
+│       └── media/               # attachments for this conversation
+├── journal/                     # day-by-day Markdown journal (msgbrowse owns this)
+│   └── <YYYY>/<YYYY-MM-DD>.md
+└── .snapshots/                  # timestamped RAW encrypted DB backups
+    └── db-YYYYMMDD-HHMMSS.tar   # SQLCipher-encrypted; LISTED, never decrypted
+```
+
+`chat.md` messages start with a bracketed local timestamp, e.g.
+`[2021-12-30 02:58:19] MJ: hey are we still on for tomorrow?`. `Me` is you;
+`No-Sender` marks system/timeline events. Bodies may span multiple lines and
+carry Markdown image/file/link syntax, which msgbrowse extracts into structured
+attachment and link records. The `.snapshots/*.tar` files are encrypted
+disaster-recovery backups — msgbrowse inventories them (size, GFS tier) but
+never opens or decrypts them.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). `ingest` is a deprecated alias. |
+| `msgbrowse embed` | Compute embeddings for new messages (semantic search). `--prune` reclaims orphans. |
+| `msgbrowse serve` | Run the local HTMX web UI (default `127.0.0.1:8787`). |
+| `msgbrowse mcp` | Run the MCP server (stdio by default; `--http` for streamable HTTP). |
+| `msgbrowse journal` | Rebuild the journal + LLM digests *(Slice 6)*. |
+| `msgbrowse watch` | Re-ingest when the archive changes *(planned)*. |
+| `msgbrowse version` | Print version. |
+
+## Connecting Claude (MCP)
+
+msgbrowse exposes citation-faithful retrieval tools (`search_messages` [hybrid
+keyword+vector], `semantic_search`, `get_conversation`, `list_conversations`,
+`get_context`, `list_media`, `list_links`). Run `msgbrowse embed` first so
+semantic search has vectors.
+
+**Claude Desktop / Claude Code** — add to your MCP config (`claude_desktop_config.json`
+or the Claude Code MCP settings):
+
+Local binary (stdio):
+
+```json
+{
+  "mcpServers": {
+    "msgbrowse": {
+      "command": "/usr/local/bin/msgbrowse",
+      "args": ["--data-dir", "/absolute/path/to/data", "mcp"]
+    }
+  }
+}
+```
+
+Via Docker (stdio; reuses the compose data volume):
+
+```json
+{
+  "mcpServers": {
+    "msgbrowse": {
+      "command": "docker",
+      "args": ["compose", "-f", "/absolute/path/to/msgbrowse/docker-compose.yml",
+               "run", "--rm", "-T", "msgbrowse", "mcp"]
+    }
+  }
+}
+```
+
+Then ask Claude things like *"what did MJ say about the lease?"* or *"summarize my
+thread with Harper about the trip."* Every answer can be traced to source
+messages (conversation, sender, timestamp, message id).
+
+## Configuration reference
+
+Resolved low→high: built-in defaults < `config.yaml` < `MSGBROWSE_*` env <
+flags. See [`config.example.yaml`](config.example.yaml).
+
+| Key | Env | Default | Notes |
+| --- | --- | --- | --- |
+| `archive_root` | `MSGBROWSE_ARCHIVE_ROOT` | — | read-only archive path |
+| `data_dir` | `MSGBROWSE_DATA_DIR` | `./data` | writable DB/embeddings dir |
+| `listen_addr` | `MSGBROWSE_LISTEN_ADDR` | `127.0.0.1:8787` | loopback by default |
+| `llm.base_url` | `MSGBROWSE_LLM_BASE_URL` | `http://127.0.0.1:4000/v1` | the only egress |
+| `llm.api_key` | `MSGBROWSE_LLM_API_KEY` | — | env/secret only; never commit |
+| `llm.chat_model` | `MSGBROWSE_LLM_CHAT_MODEL` | `local-chat` | RAG + digests |
+| `llm.embed_model` | `MSGBROWSE_LLM_EMBED_MODEL` | `local-embed` | embeddings |
+| `vector_backend` | `MSGBROWSE_VECTOR_BACKEND` | `sqlite-vec` | brute-force today (ADR-0002) |
+| `journal.exclude_conversations` | — | `[]` | never sent to the LLM |
+| `log_level` | `MSGBROWSE_LOG_LEVEL` | `info` | debug/info/warn/error |
+
+## Security
+
+Loopback-only by default, archive mounted read-only, container runs non-root
+with a read-only root filesystem and all capabilities dropped, the encrypted
+`.snapshots` are never opened, and the **only** outbound network call is to your
+configured `llm.base_url`. Read [`SECURITY.md`](SECURITY.md) for the full threat
+model and the data-sent-to-the-LLM boundary (including the heavier egress that
+image captioning / audio transcription imply if you point LiteLLM at a hosted
+model).
+
+## Setting up the backup pipeline in Claude Cowork
+
+msgbrowse reads an archive produced by an upstream exporter. To create that
+archive on your Mac, paste the following prompt into Claude Cowork. **Signal:**
+
+```
+Set up a recurring daily job on my Mac that runs `signal-export` to dump my Signal Desktop
+history into ~/Managed Files/Signal-Archive, building a searchable, ever-growing archive.
+
+Do it as a careful, in-the-loop setup — propose a plan and wait for my approval before
+installing anything or changing system state. Requirements:
+
+1. Discovery first (read-only): confirm Signal Desktop is installed/linked, locate
+   ~/Library/Application Support/Signal (sql/db.sqlite + config.json), and check that the
+   config has an `encryptedKey` (v10 / Electron safeStorage, macOS Keychain-wrapped). Confirm
+   Python 3.11+ is available (Homebrew). Flag the known breakage point: recent Signal Desktop
+   encrypts the SQLCipher key via the macOS Keychain ("Signal Safe Storage"), so the export
+   needs a one-time "Always Allow" on a Keychain prompt; after that, unattended runs are silent.
+
+2. Install `signal-export` in an isolated venv (not system pip): a dedicated
+   ~/Managed Files/Signal-Archive/.venv. Markdown output only (--no-html --no-json), keep
+   attachments.
+
+3. Write a wrapper script that, each run:
+   - copies config.json + sql/db.sqlite{,-wal,-shm} to a private same-volume work dir (avoids
+     the live DB lock / "I/O disk error" without quitting Signal), and SYMLINKS the large,
+     immutable media dirs (attachments.noindex, avatars.noindex, stickers.noindex,
+     badges.noindex) so attachments export without copying gigabytes;
+   - persists a timestamped RAW DB snapshot as an uncompressed .tar under .snapshots/ — note
+     the SQLCipher DB is encrypted and therefore incompressible, so compression is skipped and
+     footprint is controlled by GFS retention instead;
+   - runs `sigexport --source <copy> --old <archive> --no-html --no-json <staging>` so messages
+     that roll past Signal's ~45-day linked-device window are merged in and never lost;
+   - atomically swaps the new export into place;
+   - prunes snapshots with GFS compaction: keep all dailies ≤14d, then 1 per month (≤~13mo),
+     1 per quarter (≤~3y), 1 per year forever — the oldest snapshot in each period is its
+     anchor (~37 snapshots / ~12 GB steady state at a ~350 MB DB).
+
+4. Schedule it with a macOS launchd LaunchAgent (~/Library/LaunchAgents/) running DAILY at
+   09:00 in my user session (so it can reach the Keychain), runs without Cowork open.
+
+5. Do a one-time interactive test run so I can click "Always Allow" on the Keychain prompt,
+   confirm the markdown export + a snapshot landed, then bootstrap the LaunchAgent and verify
+   with `launchctl list`. Lock down perms (archive dir 700, snapshots 600); my disk is already
+   FileVault-encrypted, which covers the plaintext export at rest.
+```
+
+**iMessage** (companion source; the importer lands in a later slice):
+
+```
+Set up a recurring daily job on my Mac that runs `imessage-exporter` to dump my iMessage
+history into ~/Managed Files/iMessage-Archive in Markdown, building a searchable archive that
+msgbrowse can import alongside my Signal export.
+
+Do it as a careful, in-the-loop setup — propose a plan and wait for my approval before
+installing anything or changing system state. Requirements:
+
+1. Discovery first (read-only): confirm ~/Library/Messages/chat.db exists and is readable.
+   Note that reading it requires the terminal/job to have Full Disk Access in System Settings →
+   Privacy & Security; flag that as the one-time manual grant I must approve.
+
+2. Install `imessage-exporter` via Homebrew (or cargo). Pin the version.
+
+3. Write a wrapper script that, each run, exports to a staging dir with Markdown output
+   (`imessage-exporter -f txt -c full -o <staging>`), keeps attachments/media, then atomically
+   swaps the result into ~/Managed Files/iMessage-Archive. Do NOT modify chat.db.
+
+4. Schedule it with a macOS launchd LaunchAgent running DAILY at 09:15 in my user session.
+
+5. Do a one-time interactive test run so I can grant Full Disk Access, confirm the Markdown
+   export + attachments landed, then bootstrap the LaunchAgent and verify with `launchctl list`.
+   Lock down perms (archive dir 700); FileVault covers the plaintext export at rest.
+```
+
+## Development
+
+```sh
+make build      # build ./bin/msgbrowse (cgo + sqlite_fts5)
+make test       # run the test suite
+make check      # gofmt + go vet + tests (the CI gate)
+make cover      # coverage summary
+```
+
+Architecture decisions live in [`docs/adr/`](docs/adr/). Contributions should
+keep `make check` green and add tests for new ingest/search/MCP behavior.
 
 ## License
 

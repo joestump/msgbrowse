@@ -25,7 +25,7 @@ GO          ?= go
 TAGS        := sqlite_fts5
 export CGO_ENABLED = 1
 
-.PHONY: all build run test cover check fmt fmt-check vet tidy clean up down ingest journal
+.PHONY: all build run test cover check fmt fmt-check vet tidy clean up down logs signal-import embed mcp journal
 
 all: check build
 
@@ -65,8 +65,14 @@ up: ## Start the Docker compose stack
 down: ## Stop the Docker compose stack
 	docker compose down
 
-ingest: ## Run an ingest pass in the container
-	docker compose run --rm msgbrowse ingest
+logs: ## Tail the msgbrowse container logs
+	docker compose logs -f msgbrowse
+
+signal-import: ## Import the signal-export archive (in the container)
+	docker compose run --rm msgbrowse signal-import
+
+embed: ## Compute embeddings for new messages (in the container)
+	docker compose run --rm msgbrowse embed
 
 journal: ## Rebuild the journal in the container
 	docker compose run --rm msgbrowse journal

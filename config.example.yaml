@@ -1,0 +1,47 @@
+# msgbrowse configuration example.
+#
+# Precedence (low → high): these defaults < this file < MSGBROWSE_* env vars < flags.
+# Copy to config.yaml (gitignored) and edit, or set the equivalent MSGBROWSE_*
+# environment variables. NEVER put the API key in a committed file — prefer the
+# MSGBROWSE_LLM_API_KEY env var / a secret.
+
+# Path to the read-only signal-export (and, later, imessage-exporter) archive.
+# msgbrowse only ever reads this tree.
+archive_root: "~/Managed Files/Signal-Archive"
+
+# Writable directory for the SQLite database and embeddings. MUST be outside the
+# archive.
+data_dir: "./data"
+
+# Web UI bind address. Loopback by default — binding to a non-loopback address
+# exposes an unauthenticated UI; do so only behind your own access control.
+listen_addr: "127.0.0.1:8787"
+
+llm:
+  # The ONLY network egress msgbrowse performs. Default: a local LiteLLM proxy.
+  base_url: "http://127.0.0.1:4000/v1"
+  # Leave empty here; set MSGBROWSE_LLM_API_KEY in the environment if your route
+  # needs a key. A local Ollama route needs none.
+  api_key: ""
+  chat_model: "local-chat"       # used for RAG synthesis + journal digests
+  embed_model: "local-embed"     # used for message embeddings (semantic search)
+  max_concurrency: 4
+  timeout: "60s"
+
+# Vector backend: "sqlite-vec" or the pure-Go brute-force default. (Brute-force
+# is used today; see docs/adr/0002-vector-backend.md.)
+vector_backend: "sqlite-vec"
+
+journal:
+  digest_enabled: true
+  # Conversations whose content is NEVER sent to the LLM (privacy denylist).
+  exclude_conversations: []
+  # 0 = no cap on days processed per run.
+  max_days_per_run: 0
+
+# Run an import pass automatically when `serve` starts.
+ingest_on_start: false
+# Re-ingest automatically when the archive changes (fsnotify).
+watch: false
+# Log level: debug | info | warn | error.
+log_level: "info"

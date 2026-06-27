@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: gofmt + vet + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      # The SQLite driver uses cgo; ubuntu-latest already ships gcc, but make it
+      # explicit so the build can't silently fall back to CGO_ENABLED=0.
+      - name: Verify toolchain
+        run: |
+          go version
+          gcc --version | head -1
+
+      # make check runs gofmt -l, go vet, and go test — all with the
+      # sqlite_fts5 tag and CGO_ENABLED=1 (set in the Makefile).
+      - name: make check
+        run: make check
+
+      - name: Build binary
+        run: make build
+
+  docker:
+    name: docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t msgbrowse:ci .

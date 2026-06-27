@@ -1,0 +1,40 @@
+# Sample LiteLLM proxy config for msgbrowse.
+#
+# msgbrowse talks only to this proxy (OpenAI-compatible). LiteLLM fans out to
+# whatever backend you choose. The two model names msgbrowse uses are
+# "local-chat" (RAG synthesis + journal digests) and "local-embed" (embeddings);
+# keep these names in sync with llm.chat_model / llm.embed_model.
+#
+# DEFAULT = fully local via Ollama, so message content never leaves the machine.
+# Uncomment the Ollama service in docker-compose.yml, pull the models, and this
+# config routes to it. Pointing a model at a HOSTED provider (OpenAI/Anthropic)
+# is a deliberate choice — see SECURITY.md.
+
+model_list:
+  # --- Local (Ollama) routes — nothing leaves the machine ---
+  - model_name: local-chat
+    litellm_params:
+      model: ollama/llama3.1
+      api_base: http://ollama:11434
+
+  - model_name: local-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama:11434
+
+  # --- Example HOSTED routes (opt-in; require keys via .env) ---
+  # Uncomment to send content to a hosted provider. This is egress off-device.
+  # - model_name: hosted-chat
+  #   litellm_params:
+  #     model: gpt-4o-mini
+  #     api_key: os.environ/OPENAI_API_KEY
+  # - model_name: hosted-embed
+  #   litellm_params:
+  #     model: text-embedding-3-small
+  #     api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  drop_params: true
+  # Vision (image captioning) and audio transcription for the journal also flow
+  # through this proxy; route a vision-capable chat model and a whisper model if
+  # you enable those features (Slice 6).

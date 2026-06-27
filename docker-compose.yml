@@ -1,0 +1,74 @@
+# msgbrowse local stack: the app + a LiteLLM proxy.
+#
+# - The archive is bind-mounted READ-ONLY; msgbrowse never writes to it.
+# - App data (SQLite DB, embeddings) lives in a named volume, never in the archive.
+# - The web UI is published to host LOOPBACK only (127.0.0.1). LiteLLM is not
+#   published to the host at all — only msgbrowse reaches it on the internal network.
+# - Hardening: read-only root filesystem, all capabilities dropped, no privilege
+#   escalation, non-root user (baked into the image).
+#
+# Configure paths/keys in a .env file next to this one (see .env.example):
+#   MSGBROWSE_ARCHIVE_HOST=/Users/you/Managed Files/Signal-Archive
+#   MSGBROWSE_LLM_API_KEY=...        # only if your LiteLLM route needs one
+
+services:
+  msgbrowse:
+    build:
+      context: .
+      args:
+        VERSION: ${MSGBROWSE_VERSION:-docker}
+    image: msgbrowse:local
+    depends_on:
+      - litellm
+    ports:
+      - "127.0.0.1:8787:8787"   # host loopback only
+    volumes:
+      - "${MSGBROWSE_ARCHIVE_HOST:?set MSGBROWSE_ARCHIVE_HOST in .env}:/archive:ro"
+      - msgbrowse-data:/data
+    environment:
+      MSGBROWSE_ARCHIVE_ROOT: /archive
+      MSGBROWSE_DATA_DIR: /data
+      MSGBROWSE_LISTEN_ADDR: 0.0.0.0:8787      # in-container; host mapping is loopback
+      MSGBROWSE_LLM_BASE_URL: http://litellm:4000/v1
+      MSGBROWSE_LLM_API_KEY: ${MSGBROWSE_LLM_API_KEY:-}
+      MSGBROWSE_LLM_CHAT_MODEL: ${MSGBROWSE_LLM_CHAT_MODEL:-local-chat}
+      MSGBROWSE_LLM_EMBED_MODEL: ${MSGBROWSE_LLM_EMBED_MODEL:-local-embed}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    environment:
+      # Pass through any provider keys your litellm.config.yaml references.
+      # For a fully-local route (Ollama) none are needed.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    # Not published to the host — reachable only by msgbrowse on the internal net.
+    expose:
+      - "4000"
+    restart: unless-stopped
+
+  # Optional fully-local model backend. Uncomment, then point litellm.config.yaml
+  # at http://ollama:11434. Pull models with:
+  #   docker compose exec ollama ollama pull nomic-embed-text
+  #   docker compose exec ollama ollama pull llama3.1
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes:
+  #     - ollama:/root/.ollama
+  #   expose:
+  #     - "11434"
+  #   restart: unless-stopped
+
+volumes:
+  msgbrowse-data:
+  # ollama:
