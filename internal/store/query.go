@@ -231,6 +231,38 @@ func (s *Store) GetMessages(ctx context.Context, convID, afterTSUnix, afterID in
 	return page, nil
 }
 
+// ConversationTranscript returns a conversation's messages in chronological
+// order, optionally bounded by a unix-time range, up to limit. It is the
+// transcript-retrieval primitive for the MCP get_conversation tool.
+func (s *Store) ConversationTranscript(ctx context.Context, convID, startUnix, endUnix int64, limit int) ([]MessageView, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	where := []string{"conversation_id = ?"}
+	args := []any{convID}
+	if startUnix > 0 {
+		where = append(where, "ts_unix >= ?")
+		args = append(args, startUnix)
+	}
+	if endUnix > 0 {
+		where = append(where, "ts_unix <= ?")
+		args = append(args, endUnix)
+	}
+	q := `SELECT id, hash, sender, is_system, ts, ts_unix, body FROM messages
+	       WHERE ` + strings.Join(where, " AND ") + `
+	       ORDER BY ts_unix ASC, id ASC LIMIT ?`
+	args = append(args, limit)
+
+	msgs, err := s.queryMessages(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("conversation transcript: %w", err)
+	}
+	if err := s.attachChildren(ctx, msgs); err != nil {
+		return nil, err
+	}
+	return msgs, nil
+}
+
 // GetContext returns up to `window` messages on each side of the message with the
 // given internal id (for jump-to-context from search results). The target itself
 // is included.
