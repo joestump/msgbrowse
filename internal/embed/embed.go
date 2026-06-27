@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/llm"
@@ -47,7 +48,12 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	if log == nil {
 		log = slog.Default()
 	}
-	if opts.EmbedModel == "" {
+	// Normalize the model string once. MessagesNeedingEmbedding and PutEmbedding
+	// must agree on it exactly (the embeddings PK includes model); a stray
+	// trailing space would otherwise make stored vectors never satisfy the
+	// "needs embedding" query.
+	model := strings.TrimSpace(opts.EmbedModel)
+	if model == "" {
 		return Summary{}, fmt.Errorf("embed: model not configured (set llm.embed_model)")
 	}
 	batch := opts.BatchSize
@@ -68,22 +74,32 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		}
 	}
 
-	total, err := st.CountMissingEmbeddings(ctx, opts.EmbedModel)
+	total, err := st.CountMissingEmbeddings(ctx, model)
 	if err != nil {
 		return sum, err
 	}
 	if total == 0 {
-		log.Info("embeddings up to date", "model", opts.EmbedModel)
+		log.Info("embeddings up to date", "model", model)
 		sum.DurationMS = time.Since(start).Milliseconds()
 		return sum, nil
 	}
-	log.Info("embedding messages", "model", opts.EmbedModel, "to_embed", total, "batch_size", batch)
+	log.Info("embedding messages", "model", model, "to_embed", total, "batch_size", batch)
+
+	// Bound the loop as a backstop against any future "no progress" seam (e.g. a
+	// stored model string that never matches the query): embedding `total`
+	// messages in batches of `batch` needs ceil(total/batch) iterations, so this
+	// cap can never trip on a healthy run.
+	maxBatches := total/batch + 2
 
 	for {
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
-		targets, err := st.MessagesNeedingEmbedding(ctx, opts.EmbedModel, batch)
+		if sum.Batches >= maxBatches {
+			return sum, fmt.Errorf("embed: aborting after %d batches with %d still pending — embeddings are not being recorded for model %q",
+				sum.Batches, total-sum.Embedded, model)
+		}
+		targets, err := st.MessagesNeedingEmbedding(ctx, model, batch)
 		if err != nil {
 			return sum, err
 		}
@@ -103,7 +119,7 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 			return sum, fmt.Errorf("embed: provider returned %d vectors for %d inputs", len(vecs), len(targets))
 		}
 		for i, t := range targets {
-			if err := st.PutEmbedding(ctx, t.Hash, opts.EmbedModel, vecs[i]); err != nil {
+			if err := st.PutEmbedding(ctx, t.Hash, model, vecs[i]); err != nil {
 				return sum, err
 			}
 		}

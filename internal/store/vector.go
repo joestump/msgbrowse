@@ -96,7 +96,7 @@ func (s *Store) PutEmbedding(ctx context.Context, hash, model string, vec []floa
 	blob := encodeVec(vec)
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO embeddings(message_hash, model, dim, vec) VALUES (?, ?, ?, ?)
-ON CONFLICT(message_hash) DO UPDATE SET model=excluded.model, dim=excluded.dim, vec=excluded.vec`,
+ON CONFLICT(message_hash, model) DO UPDATE SET dim=excluded.dim, vec=excluded.vec`,
 		hash, model, len(vec), blob)
 	if err != nil {
 		return fmt.Errorf("put embedding %s: %w", hash, err)
@@ -188,8 +188,10 @@ SELECT m.id, m.hash, m.conversation_id, c.name, m.source, m.sender, m.is_system,
 			return nil, err
 		}
 		if len(vec) != len(query) {
-			// Dimension mismatch (e.g. an embedding from a different model that
-			// shares a name): skip rather than score garbage.
+			// Dimension mismatch — only possible if a model kept its name but
+			// changed its output dimensionality. Skip rather than score garbage;
+			// a re-embed under the (effectively new) model repopulates correct
+			// vectors.
 			continue
 		}
 		m.IsSystem = isSystem == 1

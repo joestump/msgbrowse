@@ -269,7 +269,11 @@ func (c *OpenAIClient) do(req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("llm: request to %s: %w", req.URL.Path, err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB cap
+	// Cap the response body to bound memory against a misbehaving endpoint. The
+	// largest legitimate response is an embeddings batch: max batch (512) ×
+	// large dims (e.g. 3072) as JSON ≈ ~14 MiB, so 64 MiB leaves ample headroom
+	// while still bounding pathological responses.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return nil, err
 	}

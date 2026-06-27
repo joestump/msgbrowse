@@ -98,6 +98,40 @@ func TestEmbeddingLifecycle(t *testing.T) {
 	}
 }
 
+// TestEmbeddingsCoexistAcrossModels confirms the composite PK (message_hash,
+// model): a message can hold vectors for two models at once, so switching
+// models doesn't overwrite, and re-running under a prior model is a no-op.
+func TestEmbeddingsCoexistAcrossModels(t *testing.T) {
+	st, h1, _, _ := seedEmbeddingCorpus(t)
+	ctx := context.Background()
+
+	if err := st.PutEmbedding(ctx, h1, "model-a", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutEmbedding(ctx, h1, "model-b", []float32{0, 1, 0}); err != nil { // different dim, too
+		t.Fatal(err)
+	}
+	// Both rows exist for the same hash.
+	if n := scalar(t, st, `SELECT count(*) FROM embeddings WHERE message_hash = '`+h1+`'`); n != 2 {
+		t.Errorf("rows for hash = %d, want 2 (one per model)", n)
+	}
+	// model-a is fully embedded for h1; only the other two messages remain.
+	if mt, _ := st.MessagesNeedingEmbedding(ctx, "model-a", 10); len(mt) != 2 {
+		t.Errorf("model-a missing = %d, want 2", len(mt))
+	}
+	// model-b likewise has h1 embedded.
+	if mt, _ := st.MessagesNeedingEmbedding(ctx, "model-b", 10); len(mt) != 2 {
+		t.Errorf("model-b missing = %d, want 2", len(mt))
+	}
+	// Re-embedding h1 under model-a updates in place (no new row).
+	if err := st.PutEmbedding(ctx, h1, "model-a", []float32{0.7, 0.7}); err != nil {
+		t.Fatal(err)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM embeddings WHERE message_hash = '`+h1+`'`); n != 2 {
+		t.Errorf("after re-embed rows = %d, want 2", n)
+	}
+}
+
 func TestSemanticSearchRanksAndFilters(t *testing.T) {
 	st, h1, h2, h3 := seedEmbeddingCorpus(t)
 	ctx := context.Background()

@@ -194,13 +194,17 @@ INSERT INTO contact_identifiers (contact_id, source, identifier)
 // messages — a CASCADE would wipe embeddings on every re-ingest. Embeddings for
 // truly-deleted messages are harmless orphans that `embed --prune` can reclaim.
 //
-// vec is a little-endian float32 blob of length dim*4; model records which
-// embedding model produced it so a model change invalidates the row.
+// vec is a little-endian float32 blob of length dim*4. The primary key is
+// (message_hash, model) so embeddings from different models COEXIST: switching
+// llm.embed_model (or benchmarking two models) does not overwrite and then have
+// to re-embed the whole corpus on every switch — each model's vectors persist
+// and a re-run under a previously-used model is a no-op.
 const schemaV3 = `
 CREATE TABLE IF NOT EXISTS embeddings (
-    message_hash TEXT    PRIMARY KEY,
+    message_hash TEXT    NOT NULL,
     model        TEXT    NOT NULL,
     dim          INTEGER NOT NULL,
-    vec          BLOB    NOT NULL
+    vec          BLOB    NOT NULL,
+    PRIMARY KEY (message_hash, model)
 );
 `
