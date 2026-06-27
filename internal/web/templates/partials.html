@@ -38,21 +38,24 @@
       <ul class="menu w-full gap-0.5 p-2 pt-0 overflow-y-auto flex-1">
         {{- range .Conversations}}
         <li>
-          <a href="/c/{{.ID}}" class="flex-col items-stretch gap-0.5 {{if eq .ID $.ActiveID}}menu-active{{end}}">
-            <div class="flex items-center justify-between gap-2">
-              <span class="font-medium truncate">{{.Name}}</span>
-              <span class="badge badge-sm badge-ghost shrink-0">{{.MessageCount}}</span>
+          <a href="/c/{{.ID}}" class="flex items-center gap-3 {{if eq .ID $.ActiveID}}menu-active{{end}}">
+            {{/* Monogram avatar — the archive has no avatar images, so we render
+                 initials in a per-conversation deterministic color. */}}
+            <div class="avatar avatar-placeholder shrink-0">
+              <div class="{{avatarColor .Name}} text-white w-9 rounded-full">
+                <span class="text-xs font-semibold">{{initials .Name}}</span>
+              </div>
             </div>
-            <div class="text-xs opacity-60 truncate">
-              {{- if .LastSender}}<span class="font-medium">{{.LastSender}}:</span> {{end}}{{.LastPreview}}
+            {{/* min-w-0 lets both lines truncate instead of overflowing the row. */}}
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="font-medium truncate">{{humanName .Name}}</span>
+                <span class="shrink-0 text-xs opacity-50 tabular-nums">{{.MessageCount}}</span>
+              </div>
+              <div class="text-xs opacity-60 truncate">
+                {{- if .LastSender}}<span class="font-medium">{{humanName .LastSender}}:</span> {{end}}{{.LastPreview}}
+              </div>
             </div>
-            {{- if or (gt .ImageCount 0) (gt .FileCount 0) (gt .LinkCount 0)}}
-            <div class="flex gap-2 text-xs opacity-60">
-              {{- if gt .ImageCount 0}}<span title="images">{{template "icon-photo" .}} {{.ImageCount}}</span>{{end}}
-              {{- if gt .FileCount 0}}<span title="files">{{template "icon-paperclip" .}} {{.FileCount}}</span>{{end}}
-              {{- if gt .LinkCount 0}}<span title="links">{{template "icon-link" .}} {{.LinkCount}}</span>{{end}}
-            </div>
-            {{- end}}
           </a>
         </li>
         {{- end}}

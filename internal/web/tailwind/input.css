@@ -14,6 +14,10 @@
 /* Tell Tailwind where utility classes are used (v4 content detection). */
 @source "../templates";
 
+/* Monogram-avatar background palette: chosen dynamically in Go (avatarColor),
+   so it never appears literally in a template for the content scan. Safelist it. */
+@source inline("bg-rose-500 bg-orange-500 bg-amber-500 bg-emerald-500 bg-teal-500 bg-sky-500 bg-indigo-500 bg-fuchsia-500");
+
 /* --- small custom bits daisyUI doesn't cover --- */
 
 /* Inline media thumbnails in the transcript / gallery. */

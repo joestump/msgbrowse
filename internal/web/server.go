@@ -50,6 +50,9 @@ func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, 
 		"humanSize":        humanSize,
 		"domainOf":         domainOf,
 		"highlightSnippet": highlightSnippet,
+		"humanName":        humanName,
+		"initials":         initials,
+		"avatarColor":      avatarColor,
 	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)

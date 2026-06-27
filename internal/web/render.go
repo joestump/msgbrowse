@@ -116,6 +116,63 @@ func humanSize(n int64) string {
 // domainOf is a thin wrapper so templates can group links by domain.
 func domainOf(rawurl string) string { return signal.Domain(rawurl) }
 
+// camelBoundary matches a lowercase/digit immediately followed by an uppercase
+// letter — a word boundary in a CamelCase contact name.
+var camelBoundary = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+
+// humanName makes a conversation/sender display name readable by inserting
+// spaces at CamelCase boundaries ("JonStump" → "Jon Stump", "TheStumpLoft" →
+// "The Stump Loft"). Names that already contain spaces (e.g. group names) are
+// left unchanged. It is display-only; the stored name (used in URLs and media
+// paths) is untouched. Exact display names will come from the contacts page.
+func humanName(name string) string {
+	if strings.ContainsRune(name, ' ') {
+		return name
+	}
+	return camelBoundary.ReplaceAllString(name, "$1 $2")
+}
+
+// initials returns up to two uppercase letters for a monogram avatar: the first
+// letters of the first and last humanized words, or the first two letters of a
+// single-word name.
+func initials(name string) string {
+	fields := strings.Fields(humanName(name))
+	switch len(fields) {
+	case 0:
+		return "?"
+	case 1:
+		r := []rune(fields[0])
+		if len(r) >= 2 {
+			return strings.ToUpper(string(r[:2]))
+		}
+		return strings.ToUpper(string(r))
+	default:
+		first := []rune(fields[0])
+		last := []rune(fields[len(fields)-1])
+		return strings.ToUpper(string(first[0]) + string(last[0]))
+	}
+}
+
+// avatarPalette is the set of monogram-avatar background classes. They are
+// force-included in the build via `@source inline(...)` in tailwind/input.css,
+// because they are selected dynamically here and so are never seen literally in
+// a template for Tailwind's content scan.
+var avatarPalette = []string{
+	"bg-rose-500", "bg-orange-500", "bg-amber-500", "bg-emerald-500",
+	"bg-teal-500", "bg-sky-500", "bg-indigo-500", "bg-fuchsia-500",
+}
+
+// avatarColor deterministically maps a name to a palette class (FNV-1a hash), so
+// a conversation always gets the same avatar color.
+func avatarColor(name string) string {
+	var h uint32 = 2166136261
+	for _, b := range []byte(name) {
+		h ^= uint32(b)
+		h *= 16777619
+	}
+	return avatarPalette[h%uint32(len(avatarPalette))]
+}
+
 // highlightSnippet converts an FTS5 snippet (whose matched terms are wrapped in
 // store.SnippetMark{Start,End} control characters) into safe highlighted HTML.
 //

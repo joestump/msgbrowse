@@ -1,6 +1,6 @@
 {{define "conversation"}}{{template "page_start" .}}
   <header class="sticky top-16 z-20 bg-base-100/90 backdrop-blur border-b border-base-300 px-4 lg:px-6 py-3">
-    <h1 class="text-xl font-semibold">{{.Active.Name}}</h1>
+    <h1 class="text-xl font-semibold">{{humanName .Active.Name}}</h1>
     <div class="text-sm opacity-60 flex flex-wrap items-center gap-x-2">
       <span>{{.Active.MessageCount}} messages</span>
       {{- if .Active.FirstTS}}<span>· {{.Active.FirstTS}} → {{.Active.LastTS}}</span>{{end}}

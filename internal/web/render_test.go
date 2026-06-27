@@ -159,3 +159,51 @@ func TestHighlightSnippet(t *testing.T) {
 // the constant inline at every call site.
 func storeSnippetStart() string { return "\x02" }
 func storeSnippetEnd() string   { return "\x03" }
+
+func TestHumanName(t *testing.T) {
+	cases := map[string]string{
+		"JonStump":        "Jon Stump",
+		"ChelseaStump":    "Chelsea Stump",
+		"ArneSkaarFismen": "Arne Skaar Fismen",
+		"TheStumpLoft":    "The Stump Loft",
+		"Harper":          "Harper",     // single word, no boundary
+		"Group Trip":      "Group Trip", // already spaced — unchanged
+		"":                "",
+	}
+	for in, want := range cases {
+		if got := humanName(in); got != want {
+			t.Errorf("humanName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestInitials(t *testing.T) {
+	cases := map[string]string{
+		"JonStump":   "JS",
+		"Harper":     "HA",
+		"Group Trip": "GT",
+		"X":          "X",
+		"":           "?",
+	}
+	for in, want := range cases {
+		if got := initials(in); got != want {
+			t.Errorf("initials(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestAvatarColorStableAndInPalette(t *testing.T) {
+	a := avatarColor("JonStump")
+	if a != avatarColor("JonStump") {
+		t.Error("avatarColor not deterministic")
+	}
+	inPalette := false
+	for _, c := range avatarPalette {
+		if c == a {
+			inPalette = true
+		}
+	}
+	if !inPalette {
+		t.Errorf("avatarColor returned %q, not in palette", a)
+	}
+}
