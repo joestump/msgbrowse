@@ -11,21 +11,6 @@ import (
 // builds and the surface is stable.
 var errNotImplemented = errors.New("not implemented yet (tracked in the project TODO)")
 
-func newMCPCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "mcp",
-		Short: "Run the Model Context Protocol server (stdio by default)",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if _, err := resolveConfig(); err != nil {
-				return err
-			}
-			return errNotImplemented
-		},
-	}
-	cmd.Flags().Bool("http", false, "serve over streamable HTTP/SSE instead of stdio")
-	return cmd
-}
-
 func newWatchCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "watch",
