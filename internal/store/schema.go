@@ -4,7 +4,7 @@ package store
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // migrations is the ordered list of per-version migrations applied on Open.
 // Each entry's index is its version (1-based; index 0 is unused).
@@ -27,6 +27,7 @@ var migrations = []string{
 	0: "", // unused; versions are 1-based
 	1: schemaV1,
 	2: schemaV2,
+	3: schemaV3,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -181,4 +182,25 @@ UPDATE conversations
    );
 INSERT INTO contact_identifiers (contact_id, source, identifier)
     SELECT contact_id, source, name FROM conversations WHERE contact_id IS NOT NULL;
+`
+
+// schemaV3 adds the vector embeddings table for semantic search.
+//
+// Embeddings are keyed by the STABLE message hash (messages.hash), not the
+// rowid: ReplaceConversationMessages deletes and re-inserts a conversation's
+// rows on every re-ingest (changing rowids but not hashes), so keying by hash
+// means unchanged messages keep their embeddings and only new/changed content
+// is re-embedded. For that reason there is deliberately NO foreign key to
+// messages — a CASCADE would wipe embeddings on every re-ingest. Embeddings for
+// truly-deleted messages are harmless orphans that `embed --prune` can reclaim.
+//
+// vec is a little-endian float32 blob of length dim*4; model records which
+// embedding model produced it so a model change invalidates the row.
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS embeddings (
+    message_hash TEXT    PRIMARY KEY,
+    model        TEXT    NOT NULL,
+    dim          INTEGER NOT NULL,
+    vec          BLOB    NOT NULL
+);
 `
