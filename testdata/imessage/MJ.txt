@@ -1,0 +1,24 @@
+May 20, 2020  9:10:11 AM
+Me
+Hey, are we still on for tomorrow?
+
+May 20, 2020  9:12:00 AM
+MJ
+Yep, 10am works
+this is a second line of the same message
+
+May 20, 2020  9:15:00 AM
+MJ
+Here's the cabin photo
+attachments/AB/CD/cabin.jpeg
+
+May 20, 2020  9:16:00 AM
+Me
+Check this out https://maps.example.com/cabin
+Tapbacks:
+    Loved by MJ
+
+May 20, 2020 10:00:00 AM
+MJ
+ok
+This message responded to an earlier message.

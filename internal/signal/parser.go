@@ -211,6 +211,26 @@ func extract(body string) ([]Attachment, []Link) {
 	return atts, links
 }
 
+// ExtractLinks returns the deduplicated bare http(s) URLs in text (with trailing
+// sentence punctuation trimmed), in first-seen order. It is the plain-text URL
+// extractor shared with the iMessage parser, whose bodies carry no Markdown.
+func ExtractLinks(text string) []Link {
+	if text == "" {
+		return nil
+	}
+	var links []Link
+	seen := map[string]bool{}
+	for _, u := range urlRe.FindAllString(text, -1) {
+		u = strings.TrimRight(u, trailingURLPunct)
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		links = append(links, Link{URL: u})
+	}
+	return links
+}
+
 // isURL reports whether target is an http(s) URL.
 func isURL(target string) bool {
 	return strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")

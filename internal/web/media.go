@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/source"
 )
 
 // handleMedia serves an attachment from a conversation's folder in the read-only
@@ -31,7 +32,7 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rel := r.PathValue("path")
-	full, ok := safeMediaPath(s.archiveRoot, conv.Name, rel)
+	full, ok := s.mediaFilePath(conv.Source, conv.Name, rel)
 	if !ok {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
@@ -68,18 +69,35 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(full), info.ModTime(), f)
 }
 
-// safeMediaPath resolves a conversation-relative media path to an absolute path
-// inside the archive's export/<conversation> directory, returning ok=false if
-// the path would escape that directory. It does not follow ".." segments out of
-// the conversation folder; legitimate symlinked media dirs inside the folder are
-// still served because the lexical containment check is against the conversation
-// base, not the symlink target.
-func safeMediaPath(archiveRoot, convName, rel string) (string, bool) {
-	if archiveRoot == "" || rel == "" {
+// mediaFilePath resolves an attachment's relative path to an absolute file path
+// under the correct archive for its source, returning ok=false on traversal or
+// misconfiguration:
+//
+//   - signal:   <archiveRoot>/export/<conversation>/<rel> (media is per-conv)
+//   - imessage: <imessageArchiveRoot>/<rel> (a flat export; rel is e.g.
+//     "attachments/AB/CD/IMG.HEIC" relative to the export root)
+//
+// Both go through containWithin, which neutralizes ".." and verifies the result
+// stays inside the base directory.
+func (s *Server) mediaFilePath(src, convName, rel string) (string, bool) {
+	switch src {
+	case source.IMessage:
+		return containWithin(s.imessageArchiveRoot, rel)
+	default: // signal (and any legacy rows with empty source)
+		if s.archiveRoot == "" {
+			return "", false
+		}
+		return containWithin(filepath.Join(s.archiveRoot, ingest.ExportDir, convName), rel)
+	}
+}
+
+// containWithin resolves rel against base, rejecting empty inputs and any path
+// that escapes base. The lexical containment check is against base, so a
+// symlinked media dir inside base is still served (its target is not checked).
+func containWithin(base, rel string) (string, bool) {
+	if base == "" || rel == "" {
 		return "", false
 	}
-	base := filepath.Join(archiveRoot, ingest.ExportDir, convName)
-	// Clean the relative path and reject absolute or escaping inputs.
 	cleanRel := filepath.Clean("/" + strings.TrimPrefix(rel, "/"))
 	full := filepath.Join(base, cleanRel)
 	relCheck, err := filepath.Rel(base, full)

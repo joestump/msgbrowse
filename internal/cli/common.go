@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/llm"
@@ -41,15 +42,24 @@ func newLLMClient(cfg *config.Config) *llm.OpenAIClient {
 
 // requireArchive verifies the archive root is configured and present.
 func requireArchive(cfg *config.Config) error {
-	if cfg.ArchiveRoot == "" {
-		return fmt.Errorf("archive_root is not set (use --archive-root, config, or MSGBROWSE_ARCHIVE_ROOT)")
+	return requireDir("archive_root", "MSGBROWSE_ARCHIVE_ROOT", cfg.ArchiveRoot)
+}
+
+// requireIMessageArchive verifies the iMessage archive root is configured and present.
+func requireIMessageArchive(cfg *config.Config) error {
+	return requireDir("imessage_archive_root", "MSGBROWSE_IMESSAGE_ARCHIVE_ROOT", cfg.IMessageArchiveRoot)
+}
+
+func requireDir(key, env, path string) error {
+	if path == "" {
+		return fmt.Errorf("%s is not set (use --%s, config, or %s)", key, strings.ReplaceAll(key, "_", "-"), env)
 	}
-	info, err := os.Stat(cfg.ArchiveRoot)
+	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("archive_root %q: %w", cfg.ArchiveRoot, err)
+		return fmt.Errorf("%s %q: %w", key, path, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("archive_root %q is not a directory", cfg.ArchiveRoot)
+		return fmt.Errorf("%s %q is not a directory", key, path)
 	}
 	return nil
 }

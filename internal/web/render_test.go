@@ -91,12 +91,11 @@ func TestHumanSize(t *testing.T) {
 	}
 }
 
-func TestSafeMediaPath(t *testing.T) {
-	root := "/archive"
-	base := filepath.Join(root, "export", "Harper")
+func TestContainWithin(t *testing.T) {
+	base := "/archive/export/Harper"
 
 	t.Run("normal path", func(t *testing.T) {
-		got, ok := safeMediaPath(root, "Harper", "media/cat.jpg")
+		got, ok := containWithin(base, "media/cat.jpg")
 		if !ok {
 			t.Fatal("expected ok")
 		}
@@ -107,18 +106,18 @@ func TestSafeMediaPath(t *testing.T) {
 
 	t.Run("traversal is contained within base", func(t *testing.T) {
 		// Leading-slash anchoring neutralizes ".." so the result can never escape
-		// the conversation directory.
-		got, ok := safeMediaPath(root, "Harper", "../../../etc/passwd")
+		// the base directory.
+		got, ok := containWithin(base, "../../../etc/passwd")
 		if ok && !strings.HasPrefix(got, base) {
 			t.Errorf("traversal escaped base: %q", got)
 		}
 	})
 
 	t.Run("empty inputs rejected", func(t *testing.T) {
-		if _, ok := safeMediaPath("", "Harper", "media/x"); ok {
-			t.Error("empty archive root should be rejected")
+		if _, ok := containWithin("", "media/x"); ok {
+			t.Error("empty base should be rejected")
 		}
-		if _, ok := safeMediaPath(root, "Harper", ""); ok {
+		if _, ok := containWithin(base, ""); ok {
 			t.Error("empty rel path should be rejected")
 		}
 	})

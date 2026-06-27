@@ -104,7 +104,7 @@ func (s *Server) decorateFiles(items []store.MediaItem) []galleryFileView {
 	out := make([]galleryFileView, 0, len(items))
 	for _, it := range items {
 		v := galleryFileView{MediaItem: it}
-		if full, ok := safeMediaPath(s.archiveRoot, it.ConversationName, it.RelPath); ok {
+		if full, ok := s.mediaFilePath(it.Source, it.ConversationName, it.RelPath); ok {
 			if info, err := os.Stat(full); err == nil && !info.IsDir() {
 				v.SizeHuman = humanSize(info.Size())
 				v.ContentType = fileContentType(full)

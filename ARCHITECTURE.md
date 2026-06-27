@@ -11,9 +11,10 @@ the archive.
 cmd/msgbrowse            thin main(): delegates to internal/cli
 └── internal/cli         Cobra commands + Viper config wiring
     ├── internal/config  config model (defaults < file < MSGBROWSE_* env < flags)
-    ├── internal/signal  signal-export chat.md parser → []signal.Message
+    ├── internal/signal  signal-export chat.md parser → []signal.Message (shared model)
+    ├── internal/imessage imessage-exporter txt parser + flat-layout importer
     ├── internal/source  canonical source names (signal, imessage)
-    ├── internal/ingest  scan archive, incremental idempotent import, snapshots
+    ├── internal/ingest  scan signal archive, incremental idempotent import, snapshots
     ├── internal/store   SQLite: schema/migrations, relational + FTS5 + vectors
     ├── internal/llm     OpenAI-compatible client (the only network egress)
     ├── internal/embed   batch embedding orchestration

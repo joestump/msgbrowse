@@ -1,8 +1,8 @@
 # msgbrowse
 
 > Self-hosted, local-only browser, search engine, and **AI-editorialized
-> journal** over your personal message archives — Signal today, Apple iMessage
-> next — built on the two upstream Markdown exporters
+> journal** over your personal message archives — **Signal and Apple iMessage** —
+> built on the two upstream Markdown exporters
 > [`signal-export`](https://github.com/carderne/signal-export) and
 > [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter).
 > Think *Backrest-for-Restic*, but for your chat history.
@@ -19,9 +19,14 @@ LiteLLM → Ollama route). See [`SECURITY.md`](SECURITY.md) for the exact egress
 and data-handling model.
 
 > **Status:** active construction, built in vertical slices. Working today:
-> import, browse, transcript, FTS search, media/links gallery, embeddings +
-> semantic search, and the MCP server. In progress: the editorialized journal,
-> the iMessage source, and the contacts page. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
+> Signal **and** iMessage import, browse, transcript, FTS search, media/links
+> gallery, embeddings + semantic search, and the MCP server. In progress: the
+> editorialized journal and the contacts page (cross-source identity merging).
+> See [`ARCHITECTURE.md`](ARCHITECTURE.md).
+>
+> **iMessage support targets `imessage-exporter` 4.2.0 `-f txt` output** and was
+> built against that format + a synthetic fixture; validate it against your first
+> real export and open an issue if a line looks misparsed.
 
 ## Contents
 
@@ -106,6 +111,7 @@ never opens or decrypts them.
 | Command | What it does |
 | --- | --- |
 | `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). `ingest` is a deprecated alias. |
+| `msgbrowse imessage-import` | Import/refresh an imessage-exporter archive (`-f txt`, 4.2.0). Uses `imessage_archive_root`. |
 | `msgbrowse embed` | Compute embeddings for new messages (semantic search). `--prune` reclaims orphans. |
 | `msgbrowse serve` | Run the local HTMX web UI (default `127.0.0.1:8787`). |
 | `msgbrowse mcp` | Run the MCP server (stdio by default; `--http` for streamable HTTP). |
@@ -161,7 +167,8 @@ flags. See [`config.example.yaml`](config.example.yaml).
 
 | Key | Env | Default | Notes |
 | --- | --- | --- | --- |
-| `archive_root` | `MSGBROWSE_ARCHIVE_ROOT` | — | read-only archive path |
+| `archive_root` | `MSGBROWSE_ARCHIVE_ROOT` | — | read-only signal-export archive |
+| `imessage_archive_root` | `MSGBROWSE_IMESSAGE_ARCHIVE_ROOT` | — | read-only imessage-exporter archive |
 | `data_dir` | `MSGBROWSE_DATA_DIR` | `./data` | writable DB/embeddings dir |
 | `listen_addr` | `MSGBROWSE_LISTEN_ADDR` | `127.0.0.1:8787` | loopback by default |
 | `llm.base_url` | `MSGBROWSE_LLM_BASE_URL` | `http://127.0.0.1:4000/v1` | the only egress |

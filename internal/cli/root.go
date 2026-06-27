@@ -12,6 +12,7 @@ import (
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -35,8 +36,7 @@ func NewRootCommand() *cobra.Command {
 			"keeps all data on the machine; the only network egress is the configured\n" +
 			"OpenAI-compatible LLM endpoint.\n" +
 			"\n" +
-			"Sources today: signal-export (via signal-import). iMessage support via\n" +
-			"imessage-exporter is on the roadmap.",
+			"Sources: signal-export (signal-import) and imessage-exporter (imessage-import).",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// PersistentPreRunE loads config and binds flags once, before any
@@ -50,12 +50,14 @@ func NewRootCommand() *cobra.Command {
 	pf := root.PersistentFlags()
 	pf.StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml or $HOME/.config/msgbrowse/config.yaml)")
 	pf.String("archive-root", "", "path to the signal-export archive (read-only)")
+	pf.String("imessage-archive-root", "", "path to the imessage-exporter archive (read-only)")
 	pf.String("data-dir", "", "writable directory for the database and caches")
 	pf.String("log-level", "", "log level: debug, info, warn, error")
 
 	root.AddCommand(
 		newSignalImportCommand(),
 		newIngestAliasCommand(),
+		newIMessageImportCommand(),
 		newEmbedCommand(),
 		newServeCommand(),
 		newMCPCommand(),
@@ -98,6 +100,9 @@ func errorHint(err error) string {
 	case errors.Is(err, ingest.ErrExportDirNotFound):
 		return "archive_root must be the folder that CONTAINS export/ — e.g. .../Signal-Archive, not .../Signal-Archive/export. " +
 			"In Docker, point MSGBROWSE_ARCHIVE_HOST in .env at that folder."
+	case errors.Is(err, imessage.ErrArchiveNotFound):
+		return "imessage_archive_root must point at the imessage-exporter output directory " +
+			"(the folder of <ChatName>.txt files). Set --imessage-archive-root or MSGBROWSE_IMESSAGE_ARCHIVE_ROOT."
 	}
 	return ""
 }
@@ -113,6 +118,9 @@ func initConfig(cmd *cobra.Command) error {
 	}
 	pf := cmd.Root().PersistentFlags()
 	if err := v.BindPFlag("archive_root", pf.Lookup("archive-root")); err != nil {
+		return err
+	}
+	if err := v.BindPFlag("imessage_archive_root", pf.Lookup("imessage-archive-root")); err != nil {
 		return err
 	}
 	if err := v.BindPFlag("data_dir", pf.Lookup("data-dir")); err != nil {

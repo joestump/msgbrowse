@@ -1,12 +1,11 @@
 // Command msgbrowse is a self-hosted, local-only browser, search engine, and
 // AI-editorialized journal over your message archives.
 //
-// It imports from one or more upstream exporters (today: signal-export; Slice
-// 2.5 adds imessage-exporter) into a unified SQLite store and exposes several
-// subcommands:
+// It imports from upstream exporters (signal-export and imessage-exporter) into
+// a unified SQLite store and exposes several subcommands:
 //
 //	msgbrowse signal-import    import a signal-export Markdown archive
-//	msgbrowse imessage-import  (Slice 2.5) import an imessage-exporter archive
+//	msgbrowse imessage-import  import an imessage-exporter (-f txt) archive
 //	msgbrowse serve            run the local HTMX web UI
 //	msgbrowse mcp              run the Model Context Protocol server
 //	msgbrowse watch            re-ingest automatically when an archive changes

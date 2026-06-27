@@ -22,6 +22,11 @@ type Config struct {
 	// strictly read-only; msgbrowse never writes inside it.
 	ArchiveRoot string `mapstructure:"archive_root"`
 
+	// IMessageArchiveRoot is the path to the imessage-exporter output (a flat
+	// directory of <ChatName>.txt files plus an attachments/ folder). Read-only,
+	// like ArchiveRoot. Empty when iMessage import is not used.
+	IMessageArchiveRoot string `mapstructure:"imessage_archive_root"`
+
 	// DataDir is a writable directory (outside the archive) for the SQLite
 	// database, vector index, and caches.
 	DataDir string `mapstructure:"data_dir"`
@@ -91,6 +96,7 @@ const DefaultDigestPrompt = "You are summarizing one day of a personal Signal me
 // the single source of truth for built-in defaults and is also used by tests.
 func SetDefaults(v *viper.Viper) {
 	v.SetDefault("archive_root", "")
+	v.SetDefault("imessage_archive_root", "")
 	v.SetDefault("data_dir", "./data")
 	v.SetDefault("listen_addr", "127.0.0.1:8787")
 

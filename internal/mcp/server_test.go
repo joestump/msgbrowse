@@ -84,11 +84,13 @@ func seedStore(t *testing.T) (*store.Store, string) {
 	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, msgs); err != nil {
 		t.Fatal(err)
 	}
-	// Embed the lease message near [1,0] and the others elsewhere.
-	_ = st.PutEmbedding(ctx, msgs[0].ID(), "test-embed", []float32{1, 0.1})
-	_ = st.PutEmbedding(ctx, msgs[1].ID(), "test-embed", []float32{0.1, 1})
-	_ = st.PutEmbedding(ctx, msgs[2].ID(), "test-embed", []float32{0.2, 1})
-	return st, msgs[0].ID()
+	// Embed the lease message near [1,0] and the others elsewhere. Key by the
+	// source-namespaced storage hash (what the store wrote) so the embeddings
+	// join to the message rows.
+	_ = st.PutEmbedding(ctx, msgs[0].HashWithSource(source.Signal), "test-embed", []float32{1, 0.1})
+	_ = st.PutEmbedding(ctx, msgs[1].HashWithSource(source.Signal), "test-embed", []float32{0.1, 1})
+	_ = st.PutEmbedding(ctx, msgs[2].HashWithSource(source.Signal), "test-embed", []float32{0.2, 1})
+	return st, msgs[0].HashWithSource(source.Signal)
 }
 
 func callTool(t *testing.T, cs *mcpsdk.ClientSession, name string, args map[string]any) map[string]any {

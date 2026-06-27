@@ -89,6 +89,16 @@ func (m *Message) ID() string {
 	return messageHash(m.Conversation, m.TimestampRaw, m.Sender, m.Body, m.Seq)
 }
 
+// HashWithSource returns the storage key for this message, namespaced by source.
+// With multiple sources, two conversations that share a display name (e.g.
+// signal:"MJ" and imessage:"MJ") could otherwise produce identical [Message.ID]
+// values and collide on the globally-unique messages.hash. Folding the source
+// into the conversation component keeps each source's messages distinct while
+// remaining stable and idempotent. The store uses this as the messages.hash.
+func (m *Message) HashWithSource(source string) string {
+	return messageHash(source+"\x00"+m.Conversation, m.TimestampRaw, m.Sender, m.Body, m.Seq)
+}
+
 // messageHash computes the content hash described on [Message.ID].
 func messageHash(conv, tsRaw, sender, body string, seq int) string {
 	h := sha256.New()

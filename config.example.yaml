@@ -5,9 +5,14 @@
 # environment variables. NEVER put the API key in a committed file — prefer the
 # MSGBROWSE_LLM_API_KEY env var / a secret.
 
-# Path to the read-only signal-export (and, later, imessage-exporter) archive.
+# Path to the read-only signal-export archive (used by `signal-import`).
 # msgbrowse only ever reads this tree.
 archive_root: "~/Managed Files/Signal-Archive"
+
+# Path to the read-only imessage-exporter archive (used by `imessage-import`) —
+# the flat directory of <ChatName>.txt files plus attachments/. Leave empty if
+# you don't import iMessage. Targets imessage-exporter 4.2.0 txt output.
+imessage_archive_root: "~/Managed Files/iMessage-Archive"
 
 # Writable directory for the SQLite database and embeddings. MUST be outside the
 # archive.

@@ -275,7 +275,7 @@ func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, s
 	for i := range msgs {
 		m := &msgs[i]
 		res, err := insMsg.ExecContext(ctx,
-			m.ID(), convID, source, m.TimestampRaw, m.Timestamp.Unix(), m.Sender, m.Body, boolToInt(m.IsSystem), m.Seq)
+			m.HashWithSource(source), convID, source, m.TimestampRaw, m.Timestamp.Unix(), m.Sender, m.Body, boolToInt(m.IsSystem), m.Seq)
 		if err != nil {
 			return 0, fmt.Errorf("insert message %s: %w", m.ID(), err)
 		}

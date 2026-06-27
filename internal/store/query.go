@@ -13,6 +13,7 @@ import (
 type ConversationSummary struct {
 	ID           int64
 	Name         string
+	Source       string // "signal" | "imessage" — selects how media paths resolve
 	MessageCount int
 	FirstTS      string // "YYYY-MM-DD HH:MM:SS" of the earliest message ("" if none)
 	LastTS       string // of the latest message
@@ -65,14 +66,14 @@ type Page struct {
 // most-recent activity first. Conversations with no messages sort last.
 func (s *Store) ListConversations(ctx context.Context) ([]ConversationSummary, error) {
 	const q = `
-SELECT c.id, c.name,
+SELECT c.id, c.name, c.source,
        COUNT(m.id)                              AS msg_count,
        COALESCE(MIN(m.ts), '')                  AS first_ts,
        COALESCE(MAX(m.ts), '')                  AS last_ts,
        COALESCE(MAX(m.ts_unix), 0)              AS last_unix
   FROM conversations c
   LEFT JOIN messages m ON m.conversation_id = c.id
- GROUP BY c.id, c.name
+ GROUP BY c.id, c.name, c.source
  ORDER BY last_unix DESC, c.name ASC`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
@@ -83,7 +84,7 @@ SELECT c.id, c.name,
 	var out []ConversationSummary
 	for rows.Next() {
 		var cs ConversationSummary
-		if err := rows.Scan(&cs.ID, &cs.Name, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix); err != nil {
+		if err := rows.Scan(&cs.ID, &cs.Name, &cs.Source, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix); err != nil {
 			return nil, err
 		}
 		out = append(out, cs)
@@ -156,13 +157,13 @@ func (s *Store) GetConversation(ctx context.Context, name string) (*Conversation
 func (s *Store) GetConversationByID(ctx context.Context, id int64) (*ConversationSummary, error) {
 	cs := ConversationSummary{ID: id}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT c.name,
+		`SELECT c.name, c.source,
 		        COUNT(m.id), COALESCE(MIN(m.ts),''), COALESCE(MAX(m.ts),''), COALESCE(MAX(m.ts_unix),0)
 		   FROM conversations c
 		   LEFT JOIN messages m ON m.conversation_id = c.id
 		  WHERE c.id = ?
-		  GROUP BY c.id, c.name`, id).
-		Scan(&cs.Name, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
+		  GROUP BY c.id, c.name, c.source`, id).
+		Scan(&cs.Name, &cs.Source, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

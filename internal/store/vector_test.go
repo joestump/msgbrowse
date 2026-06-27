@@ -56,7 +56,9 @@ func seedEmbeddingCorpus(t *testing.T) (*Store, string, string, string) {
 	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, msgs); err != nil {
 		t.Fatal(err)
 	}
-	return st, msgs[0].ID(), msgs[1].ID(), msgs[2].ID()
+	// Use the source-namespaced storage hash (what the store wrote), so the
+	// embeddings we PUT below key to the rows that SemanticSearch joins against.
+	return st, msgs[0].HashWithSource(source.Signal), msgs[1].HashWithSource(source.Signal), msgs[2].HashWithSource(source.Signal)
 }
 
 func TestEmbeddingLifecycle(t *testing.T) {

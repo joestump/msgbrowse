@@ -31,11 +31,12 @@ var staticFS embed.FS
 
 // Server holds the dependencies shared by all handlers.
 type Server struct {
-	store       *store.Store
-	archiveRoot string
-	tmpl        *template.Template
-	log         *slog.Logger
-	mux         http.Handler
+	store               *store.Store
+	archiveRoot         string // signal-export archive (export/<conv>/<rel>)
+	imessageArchiveRoot string // imessage-exporter archive (<root>/<rel>)
+	tmpl                *template.Template
+	log                 *slog.Logger
+	mux                 http.Handler
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -53,7 +54,7 @@ func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, 
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
-	s := &Server{store: st, archiveRoot: cfg.ArchiveRoot, tmpl: tmpl, log: log}
+	s := &Server{store: st, archiveRoot: cfg.ArchiveRoot, imessageArchiveRoot: cfg.IMessageArchiveRoot, tmpl: tmpl, log: log}
 	s.mux = s.routes()
 	return s, nil
 }
