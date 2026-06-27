@@ -4,9 +4,10 @@
 #   make build     build the msgbrowse binary into ./bin
 #   make test      run the test suite
 #   make check     gofmt + go vet + tests (CI gate)
-#   make up        bring up the Docker compose stack
-#   make ingest    run an ingest pass inside the container
-#   make journal   rebuild the journal (mechanical + digests)
+#   make up            bring up the Docker compose stack
+#   make signal-import import the signal-export archive (in the container)
+#   make embed         compute embeddings for new messages (in the container)
+#   make journal       rebuild the journal (mechanical + digests)
 
 BINARY      := msgbrowse
 PKG         := github.com/joestump/msgbrowse
@@ -25,7 +26,7 @@ GO          ?= go
 TAGS        := sqlite_fts5
 export CGO_ENABLED = 1
 
-.PHONY: all build run test cover check fmt fmt-check vet tidy clean up down logs signal-import embed mcp journal
+.PHONY: all build run test cover check fmt fmt-check vet tidy clean up down logs signal-import embed journal
 
 all: check build
 

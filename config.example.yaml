@@ -28,8 +28,10 @@ llm:
   max_concurrency: 4
   timeout: "60s"
 
-# Vector backend: "sqlite-vec" or the pure-Go brute-force default. (Brute-force
-# is used today; see docs/adr/0002-vector-backend.md.)
+# Vector backend: "sqlite-vec" (default) or "qdrant". The "sqlite-vec" setting
+# is currently served by a pure-Go brute-force cosine scan in the same SQLite
+# file (a sqlite-vec extension can replace it later behind the same setting);
+# see docs/adr/0002-vector-backend.md. These are the only two accepted values.
 vector_backend: "sqlite-vec"
 
 journal:

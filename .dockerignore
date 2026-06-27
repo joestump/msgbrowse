@@ -10,7 +10,10 @@
 .env
 .git/
 .github/
-*.md
-docs/
-testdata/
+# Scope doc excludes to the repo root so embedded files like
+# internal/web/static/HTMX-VERSION.md (pulled in by `go:embed static/*`) stay in
+# the build context.
+/*.md
+/docs/
+/testdata/
 coverage.out
