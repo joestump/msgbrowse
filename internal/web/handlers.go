@@ -35,9 +35,8 @@ type indexData struct {
 
 type conversationData struct {
 	baseData
-	Active      *store.ConversationSummary
-	Identifiers []store.ContactIdentifier
-	List        messageListData
+	Active *store.ConversationSummary
+	List   messageListData
 }
 
 type statusData struct {
@@ -103,15 +102,9 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	idents, err := s.store.ConversationIdentifiers(ctx, id)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	s.render(w, "conversation", conversationData{
-		baseData:    baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
-		Active:      active,
-		Identifiers: idents,
+		baseData: baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
+		Active:   active,
 		List: messageListData{
 			ActiveID:   id,
 			Messages:   page.Messages,

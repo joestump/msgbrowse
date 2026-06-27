@@ -147,16 +147,10 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 	list.NextTSUnix = last.TSUnix
 	list.NextID = last.ID
 
-	idents, err := s.store.ConversationIdentifiers(ctx, id)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	s.render(w, "conversation", conversationData{
-		baseData:    baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
-		Active:      active,
-		Identifiers: idents,
-		List:        list,
+		baseData: baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
+		Active:   active,
+		List:     list,
 	})
 }
 
