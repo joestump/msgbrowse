@@ -333,3 +333,58 @@ func scalarStr(t *testing.T, st *Store, q string) string {
 	}
 	return s
 }
+
+// TestSetPinnedRoundTrip verifies SetPinned flips the flag and that
+// ListConversations / GetConversationByID reflect it (REQ-0006-010).
+func TestSetPinnedRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	id, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	// Default: unpinned in both views.
+	conv, err := st.GetConversationByID(ctx, id)
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if conv.Pinned {
+		t.Fatal("conversation should start unpinned")
+	}
+
+	// Pin it.
+	if err := st.SetPinned(ctx, id, true); err != nil {
+		t.Fatalf("set pinned true: %v", err)
+	}
+	conv, _ = st.GetConversationByID(ctx, id)
+	if !conv.Pinned {
+		t.Error("GetConversationByID: expected pinned after SetPinned(true)")
+	}
+	convs, err := st.ListConversations(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !findPinned(convs, id) {
+		t.Error("ListConversations: expected pinned=true for the conversation")
+	}
+
+	// Unpin it.
+	if err := st.SetPinned(ctx, id, false); err != nil {
+		t.Fatalf("set pinned false: %v", err)
+	}
+	conv, _ = st.GetConversationByID(ctx, id)
+	if conv.Pinned {
+		t.Error("GetConversationByID: expected unpinned after SetPinned(false)")
+	}
+}
+
+func findPinned(convs []ConversationSummary, id int64) bool {
+	for _, c := range convs {
+		if c.ID == id {
+			return c.Pinned
+		}
+	}
+	return false
+}

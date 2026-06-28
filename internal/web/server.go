@@ -70,6 +70,7 @@ func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, 
 		"sourceSlug":       sourceSlug,
 		"humanSource":      source.Label,
 		"imgRenderable":    s.imgRenderable,
+		"convRowCtx":       convRowCtx,
 	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -117,6 +118,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /search/results", s.handleSearchResults)
 	mux.HandleFunc("GET /gallery", s.handleGallery)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
+	mux.HandleFunc("POST /c/{id}/pin", s.handlePin)
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
 	mux.HandleFunc("GET /status", s.handleStatus)

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -126,6 +127,8 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 		".source-pill.src-signal",    // Signal source pill
 		".source-pill.src-imessage",  // iMessage source pill
 		".conv-row-selected",         // selected-row modifier
+		".pin-btn",                   // pin/unpin toggle (REQ-0006-010)
+		".pin-btn-active",            // pinned-state fill
 		"--color-info:#3b82f6",       // Signal blue token (slate)
 		"--color-success:#34c759",    // iMessage green token (slate)
 	} {
@@ -137,6 +140,72 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 	// slate-light variants restyle automatically.
 	if !strings.Contains(out, ".presence-dot.src-signal{background:var(--color-info)}") {
 		t.Error("presence dot should derive its color from --color-info")
+	}
+}
+
+// TestPinnedSection covers REQ-0006-010 end to end: with nothing pinned the
+// sidebar shows no PINNED label; POSTing to /c/{id}/pin 303-redirects back, marks
+// the conversation pinned, and the sidebar then renders it under a PINNED
+// section. A second POST unpins it. The pin button on the conversation header
+// reflects the current state.
+func TestPinnedSection(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	ctx := context.Background()
+
+	conv, err := st.GetConversation(ctx, "Harper")
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	cid := itoa(conv.ID)
+
+	// Nothing pinned: no PINNED label, and the header button reads "Pin".
+	home := get(t, srv, "/").Body.String()
+	if contains(home, ">Pinned<") {
+		t.Error("PINNED section should be hidden when nothing is pinned")
+	}
+	convPage := get(t, srv, "/c/"+cid).Body.String()
+	if !contains(convPage, `action="/c/`+cid+`/pin"`) {
+		t.Error("conversation header missing the pin form POST")
+	}
+	if !contains(convPage, ">Pin<") {
+		t.Error("pin button should read 'Pin' when unpinned")
+	}
+
+	// Pin via the POST route: expect a 303 redirect back to the conversation.
+	rec := post(t, srv, "/c/"+cid+"/pin")
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("pin POST status = %d, want 303", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/c/"+cid {
+		t.Errorf("pin redirect = %q, want %q", loc, "/c/"+cid)
+	}
+
+	// Sidebar now has a PINNED section listing the conversation.
+	home = get(t, srv, "/").Body.String()
+	if !contains(home, ">Pinned<") {
+		t.Error("PINNED section should appear after pinning")
+	}
+	if !contains(home, `id="sidebar-pinned"`) {
+		t.Error("PINNED list container missing")
+	}
+	// The pinned row links to the conversation and uses the shared row markup.
+	if !contains(home, `<ul id="sidebar-pinned"`) || !contains(home, `href="/c/`+cid+`"`) {
+		t.Error("pinned conversation row missing from PINNED section")
+	}
+
+	// Header button now reads "Unpin".
+	convPage = get(t, srv, "/c/"+cid).Body.String()
+	if !contains(convPage, ">Unpin<") {
+		t.Error("pin button should read 'Unpin' when pinned")
+	}
+
+	// Unpin: second POST flips it back; PINNED section disappears.
+	if rec := post(t, srv, "/c/"+cid+"/pin"); rec.Code != http.StatusSeeOther {
+		t.Fatalf("unpin POST status = %d, want 303", rec.Code)
+	}
+	home = get(t, srv, "/").Body.String()
+	if contains(home, ">Pinned<") {
+		t.Error("PINNED section should be gone after unpinning")
 	}
 }
 

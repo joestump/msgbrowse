@@ -14,6 +14,7 @@ type ConversationSummary struct {
 	ID           int64
 	Name         string
 	Source       string // "signal" | "imessage" — selects how media paths resolve
+	Pinned       bool   // sidebar PINNED section membership (REQ-0006-010)
 	MessageCount int
 	FirstTS      string // "YYYY-MM-DD HH:MM:SS" of the earliest message ("" if none)
 	LastTS       string // of the latest message
@@ -75,14 +76,14 @@ type Page struct {
 // most-recent activity first. Conversations with no messages sort last.
 func (s *Store) ListConversations(ctx context.Context) ([]ConversationSummary, error) {
 	const q = `
-SELECT c.id, c.name, c.source,
+SELECT c.id, c.name, c.source, c.pinned,
        COUNT(m.id)                              AS msg_count,
        COALESCE(MIN(m.ts), '')                  AS first_ts,
        COALESCE(MAX(m.ts), '')                  AS last_ts,
        COALESCE(MAX(m.ts_unix), 0)              AS last_unix
   FROM conversations c
   LEFT JOIN messages m ON m.conversation_id = c.id
- GROUP BY c.id, c.name, c.source
+ GROUP BY c.id, c.name, c.source, c.pinned
  ORDER BY last_unix DESC, c.name ASC`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
@@ -93,7 +94,7 @@ SELECT c.id, c.name, c.source,
 	var out []ConversationSummary
 	for rows.Next() {
 		var cs ConversationSummary
-		if err := rows.Scan(&cs.ID, &cs.Name, &cs.Source, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix); err != nil {
+		if err := rows.Scan(&cs.ID, &cs.Name, &cs.Source, &cs.Pinned, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix); err != nil {
 			return nil, err
 		}
 		out = append(out, cs)
@@ -117,6 +118,22 @@ SELECT c.id, c.name, c.source,
 		}
 	}
 	return out, nil
+}
+
+// SetPinned flips a conversation's pinned flag (REQ-0006-010). The sidebar's
+// PINNED section lists conversations where pinned=1; ordering within each section
+// stays by most-recent activity (the template does the split), so toggling pin
+// only moves a row between sections, it does not re-sort.
+func (s *Store) SetPinned(ctx context.Context, convID int64, pinned bool) error {
+	v := 0
+	if pinned {
+		v = 1
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE conversations SET pinned = ? WHERE id = ?`, v, convID); err != nil {
+		return fmt.Errorf("set pinned: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) fillLastMessage(ctx context.Context, cs *ConversationSummary) error {
@@ -166,13 +183,13 @@ func (s *Store) GetConversation(ctx context.Context, name string) (*Conversation
 func (s *Store) GetConversationByID(ctx context.Context, id int64) (*ConversationSummary, error) {
 	cs := ConversationSummary{ID: id}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT c.name, c.source,
+		`SELECT c.name, c.source, c.pinned,
 		        COUNT(m.id), COALESCE(MIN(m.ts),''), COALESCE(MAX(m.ts),''), COALESCE(MAX(m.ts_unix),0)
 		   FROM conversations c
 		   LEFT JOIN messages m ON m.conversation_id = c.id
 		  WHERE c.id = ?
-		  GROUP BY c.id, c.name, c.source`, id).
-		Scan(&cs.Name, &cs.Source, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
+		  GROUP BY c.id, c.name, c.source, c.pinned`, id).
+		Scan(&cs.Name, &cs.Source, &cs.Pinned, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

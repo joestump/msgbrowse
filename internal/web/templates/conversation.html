@@ -9,7 +9,7 @@
         {{initials .Active.Name}}
         <span class="presence-dot {{sourceSlug .Active.Source}}" title="{{humanSource .Active.Source}}"></span>
       </span>
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <h1 class="conv-title">{{humanName .Active.Name}}</h1>
         {{- if .Active.Identifiers}}
         <div class="conv-ids">
@@ -19,6 +19,14 @@
         </div>
         {{- end}}
       </div>
+      {{/* Pin/unpin (REQ-0006-010): a CSP-clean form POST to /c/{id}/pin that
+           flips the flag and 303-redirects back. The label/state reflects the
+           current pinned value. */}}
+      <form method="post" action="/c/{{.Active.ID}}/pin" class="conv-pin-form shrink-0">
+        <button type="submit" class="pin-btn{{if .Active.Pinned}} pin-btn-active{{end}}" title="{{if .Active.Pinned}}Unpin this conversation{{else}}Pin this conversation{{end}}" aria-pressed="{{if .Active.Pinned}}true{{else}}false{{end}}">
+          {{template "icon-pin" .}}<span>{{if .Active.Pinned}}Unpin{{else}}Pin{{end}}</span>
+        </button>
+      </form>
     </div>
     <div class="conv-meta">
       <span><span class="font-mono">{{.Active.MessageCount}}</span> messages</span>

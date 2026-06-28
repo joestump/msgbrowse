@@ -19,6 +19,29 @@ type baseData struct {
 	TotalMessages int // global message count for the navbar
 }
 
+// PinnedConversations are the conversations the sidebar renders in its PINNED
+// section (REQ-0006-010), preserving Conversations' most-recent-first order.
+func (b baseData) PinnedConversations() []store.ConversationSummary {
+	out := make([]store.ConversationSummary, 0)
+	for _, c := range b.Conversations {
+		if c.Pinned {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// UnpinnedConversations are the rest, shown under the CONVERSATIONS section.
+func (b baseData) UnpinnedConversations() []store.ConversationSummary {
+	out := make([]store.ConversationSummary, 0)
+	for _, c := range b.Conversations {
+		if !c.Pinned {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // baseData loads the shell context shared by every full-page view: the
 // conversation list (sidebar) and the global message count (navbar). activeID is
 // the currently-open conversation (0 when none), used to mark the selected row.
@@ -133,6 +156,33 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 			NextID:     page.NextID,
 		},
 	})
+}
+
+// handlePin toggles a conversation's pinned flag and redirects back to it
+// (REQ-0006-010). It is a plain form POST + 303 redirect — CSP-clean (no inline
+// JS; form-action 'self' already permits the POST) and idempotent enough for the
+// back button. The new state is read first so the toggle is unambiguous.
+func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, ok := parseID(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	active, err := s.store.GetConversationByID(ctx, id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if active == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.SetPinned(ctx, id, !active.Pinned); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, "/c/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
