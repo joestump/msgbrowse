@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/signal"
-	_ "github.com/mattn/go-sqlite3" // SQLite driver (build with -tags sqlite_fts5)
+	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo; FTS5 built in)
 )
 
 // Store wraps the SQLite handle and exposes typed repository methods.
@@ -27,24 +27,25 @@ type Store struct {
 // Open opens (creating if necessary) the SQLite database at path and applies the
 // schema. The caller owns Close. path is a filesystem path, not a DSN.
 func Open(path string) (*Store, error) {
-	dsn := "file:" + path + "?" + url.Values{
-		"_busy_timeout": {"5000"},
-		"_journal_mode": {"WAL"},
-		"_foreign_keys": {"ON"},
-		"_synchronous":  {"NORMAL"},
-		// Every explicit transaction in this package is a writer
-		// (UpsertConversation, ReplaceConversationMessages, ReplaceSnapshots,
-		// and the migration runner). Begin them in IMMEDIATE mode so they take
-		// the write lock up front. A deferred transaction that SELECTs then
-		// INSERTs would hold a shared lock and then try to upgrade it; SQLite
-		// returns SQLITE_BUSY for a lock UPGRADE without honoring busy_timeout,
-		// so two concurrent upserts could spuriously fail. IMMEDIATE makes
-		// busy_timeout apply to the initial acquisition instead. Autocommit
-		// read queries (QueryContext) are unaffected by this setting.
-		"_txlock": {"immediate"},
-	}.Encode()
+	// modernc.org/sqlite applies one `PRAGMA <value>` per `_pragma` query param on
+	// each new connection, and honors `_txlock` for the BEGIN mode.
+	q := url.Values{}
+	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "foreign_keys(ON)")
+	q.Add("_pragma", "synchronous(NORMAL)")
+	// Every explicit transaction in this package is a writer (UpsertConversation,
+	// ReplaceConversationMessages, ReplaceSnapshots, and the migration runner).
+	// Begin them in IMMEDIATE mode so they take the write lock up front. A
+	// deferred transaction that SELECTs then INSERTs would hold a shared lock and
+	// then try to upgrade it; SQLite returns SQLITE_BUSY for a lock UPGRADE
+	// without honoring busy_timeout, so two concurrent upserts could spuriously
+	// fail. IMMEDIATE makes busy_timeout apply to the initial acquisition
+	// instead. Autocommit read queries (QueryContext) are unaffected.
+	q.Set("_txlock", "immediate")
+	dsn := "file:" + path + "?" + q.Encode()
 
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

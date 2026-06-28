@@ -88,8 +88,9 @@ explicitly NOT reused by the iMessage importer.
 
 ### Schema and migrations (ADR-0001, ADR-0003)
 
-The store uses `mattn/go-sqlite3` (cgo) built with `-tags sqlite_fts5` (ADR-0001),
-opened in WAL mode with foreign keys on, `busy_timeout`, and IMMEDIATE-mode
+The store uses the pure-Go `modernc.org/sqlite` driver (FTS5 built in, no cgo or
+build tag — ADR-0013, superseding the cgo driver of ADR-0001), opened in WAL mode
+with foreign keys on, `busy_timeout`, and IMMEDIATE-mode
 write transactions (so `busy_timeout` applies to the initial lock acquisition
 rather than a lock upgrade). Schema is applied by a versioned migration runner
 (`user_version` pragma): v1 lays down the Signal-only schema, v2 adds the unified

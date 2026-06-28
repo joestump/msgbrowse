@@ -13,10 +13,11 @@ natural-language questions over your message history. The headline feature is th
 **editorialized journal** — Daylio-style daily cards the LLM writes from your
 chats and the media you received.
 
-It runs entirely on your machine via Docker. **Nothing leaves the box** except
-calls to the one OpenAI-compatible LLM endpoint you configure (default: a local
-LiteLLM → Ollama route). See [`SECURITY.md`](SECURITY.md) for the exact egress
-and data-handling model.
+It runs entirely on your machine — install it with a single `go install` (the
+SQLite driver is pure Go, so there's no C toolchain to set up) or run it in
+Docker. **Nothing leaves the box** except calls to the one OpenAI-compatible LLM
+endpoint you configure (default: a local LiteLLM → Ollama route). See
+[`SECURITY.md`](SECURITY.md) for the exact egress and data-handling model.
 
 > **Status:** active construction, built in vertical slices. Working today:
 > Signal **and** iMessage import, browse, transcript, FTS search, media/links
@@ -30,8 +31,8 @@ and data-handling model.
 
 ## Contents
 
-- [Quickstart (Docker)](#quickstart-docker)
-- [Quickstart (local binary)](#quickstart-local-binary)
+- [Quickstart (`go install`)](#quickstart-go-install)
+- [Alternative: Docker](#alternative-docker)
 - [The data layout it reads](#the-data-layout-it-reads)
 - [Commands](#commands)
 - [Connecting Claude (MCP)](#connecting-claude-mcp)
@@ -40,7 +41,59 @@ and data-handling model.
 - [Setting up the backup pipeline in Claude Cowork](#setting-up-the-backup-pipeline-in-claude-cowork)
 - [Development](#development)
 
-## Quickstart (Docker)
+## Quickstart (`go install`)
+
+Requires **Go 1.25+** — and nothing else. The SQLite driver is pure Go
+(FTS5 built in), so there is **no C toolchain and no build tag** to deal with.
+
+```sh
+go install github.com/joestump/msgbrowse/cmd/msgbrowse@latest
+# msgbrowse lands in $(go env GOBIN) (or $(go env GOPATH)/bin) — put that on $PATH
+
+msgbrowse --archive-root ~/"Managed Files/Signal-Archive" --data-dir ./data signal-import
+msgbrowse --imessage-archive-root ~/"Managed Files/iMessage-Archive" --data-dir ./data imessage-import
+msgbrowse --data-dir ./data embed          # optional; needs an LLM endpoint
+msgbrowse --data-dir ./data serve          # auto-opens http://127.0.0.1:8787 (use --open=false for headless)
+```
+
+(Import whichever sources you have — `signal-import`, `imessage-import`, or both;
+they share one database.) Both importers are incremental and idempotent; re-run
+them after each new export.
+`embed` computes vectors for semantic search and needs an LLM endpoint (see
+below); browsing and keyword search work without one.
+
+> **LLM endpoint.** msgbrowse only talks to **your own** OpenAI-compatible
+> endpoint — set `MSGBROWSE_LLM_BASE_URL` (…/v1) and `MSGBROWSE_LLM_API_KEY`
+> (env, `config.yaml`, or flags; see [Configuration](#configuration-reference)).
+> Until one is reachable, `embed` and the journal fail, but everything else
+> works. Don't have a proxy? The Docker path below can run a bundled local
+> LiteLLM → Ollama for you.
+
+### Use it from Claude (MCP over stdio)
+
+`msgbrowse mcp` is an MCP server that speaks stdio, so any MCP client (Claude
+Desktop, Claude Code, …) can launch the installed binary directly. Run
+`msgbrowse embed` first so semantic search has vectors, then add:
+
+```json
+{
+  "mcpServers": {
+    "msgbrowse": {
+      "command": "msgbrowse",
+      "args": ["--data-dir", "/absolute/path/to/data", "mcp"]
+    }
+  }
+}
+```
+
+Use the absolute path to the binary (e.g. `/home/you/go/bin/msgbrowse`) if it
+isn't on the client's `PATH`. See [Connecting Claude (MCP)](#connecting-claude-mcp)
+for the available tools and a Docker-based stdio variant.
+
+## Alternative: Docker
+
+Prefer containers? msgbrowse ships a Dockerfile and a compose stack — the image
+is a fully static binary on a distroless base.
 
 ```sh
 cp .env.example .env
@@ -70,17 +123,6 @@ loopback only.
 >
 > Until an endpoint is reachable, `make embed` and the journal fail; browsing and
 > keyword search work without any LLM.
-
-## Quickstart (local binary)
-
-Requires **Go 1.25+** and a C compiler (the SQLite driver uses cgo).
-
-```sh
-make build
-./bin/msgbrowse --archive-root "~/Managed Files/Signal-Archive" --data-dir ./data signal-import
-./bin/msgbrowse --data-dir ./data embed          # optional; needs an LLM endpoint
-./bin/msgbrowse --data-dir ./data serve          # http://127.0.0.1:8787
-```
 
 ## The data layout it reads
 
@@ -130,13 +172,14 @@ semantic search has vectors.
 **Claude Desktop / Claude Code** — add to your MCP config (`claude_desktop_config.json`
 or the Claude Code MCP settings):
 
-Local binary (stdio):
+Local binary (stdio) — the `go install` path. Use `msgbrowse` if it's on the
+client's `PATH`, otherwise the absolute path (e.g. `/home/you/go/bin/msgbrowse`):
 
 ```json
 {
   "mcpServers": {
     "msgbrowse": {
-      "command": "/usr/local/bin/msgbrowse",
+      "command": "msgbrowse",
       "args": ["--data-dir", "/absolute/path/to/data", "mcp"]
     }
   }
@@ -267,7 +310,8 @@ installing anything or changing system state. Requirements:
 ## Development
 
 ```sh
-make build      # build ./bin/msgbrowse (cgo + sqlite_fts5)
+make build      # build ./bin/msgbrowse (pure Go, no cgo, no build tag)
+make install    # go install into $GOBIN / $GOPATH/bin
 make test       # run the test suite
 make check      # gofmt + go vet + tests (the CI gate)
 make cover      # coverage summary

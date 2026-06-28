@@ -85,9 +85,9 @@ untrusted message content), HTMX for partials (live search, infinite scroll). No
 SPA, no Node; vendored htmx pinned by SHA.
 
 Styling is **Tailwind CSS + daisyUI** (drawer/navbar layout, `chat` bubbles for
-transcripts, `card`/`menu`/`tabs`/`stat` components) with a dim (dark) / winter
-(light) **theme toggle** (`internal/web/static/theme.js`, self-hosted, persists
-to `localStorage`). Icons are vendored **Hero Icons** inline SVG. The stylesheet
+transcripts, `card`/`menu`/`tabs`/`stat` components) with a bespoke **slate**
+(dark, default) / **slate-light** custom-theme toggle (ADR-0012;
+`internal/web/static/theme.js`, self-hosted, persists to `localStorage`). Icons are vendored **Hero Icons** inline SVG. The stylesheet
 is built by the Tailwind **standalone CLI + daisyUI** at dev time (`make css`,
 no Node) and the resulting `app.css` is committed and `go:embed`-served, so the
 runtime and Docker image need no toolchain and stay CDN-free.
@@ -100,15 +100,17 @@ the UI loads — CSS, htmx, the theme script, icons — is same-origin.
 
 ## Key decisions (ADRs)
 
-- [ADR-0001](docs/adr/0001-sqlite-driver-mattn-cgo.md) — SQLite driver: mattn + cgo + `sqlite_fts5`.
+- [ADR-0001](docs/adr/0001-sqlite-driver-mattn-cgo.md) — SQLite driver: originally mattn + cgo + `sqlite_fts5` (superseded by ADR-0013).
+- [ADR-0013](docs/adr/0013-pure-go-sqlite-driver.md) — SQLite driver: pure-Go `modernc.org/sqlite` (FTS5 built in; toolchain-free `go install`).
 - [ADR-0002](docs/adr/0002-vector-backend.md) — vector backend: brute-force default, sqlite-vec optional.
 - [ADR-0003](docs/adr/0003-dual-source-archive.md) — dual-source unified schema + manual contact reconciliation.
 - [ADR-0004](docs/adr/0004-mcp-sdk-and-rag.md) — official MCP SDK + citation-faithful hybrid RAG.
 
 ## Containerization
 
-Multi-stage `Dockerfile`: cgo build on `golang:1.25-bookworm`, runtime on
-distroless (`nonroot`, glibc, no shell). `docker-compose.yml` wires msgbrowse to a
+Multi-stage `Dockerfile`: static (`CGO_ENABLED=0`) build on `golang:1.25-bookworm`,
+runtime on `distroless/static-debian12` (`nonroot`, no libc, no shell) — fully
+static since the SQLite driver is pure Go (ADR-0013). `docker-compose.yml` wires msgbrowse to a
 LiteLLM proxy (optional Ollama behind it), bind-mounts the archive read-only,
 keeps app data in a named volume, publishes the UI to host loopback only, and
 hardens the app container (read-only rootfs, dropped capabilities, no privilege

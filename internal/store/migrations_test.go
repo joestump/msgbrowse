@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // TestMigrateV1ToV2BootstrapsContacts builds a database at schema version 1
@@ -20,14 +20,14 @@ import (
 // shortcut there is no way to exercise the v1 → v2 transition.
 func TestMigrateV1ToV2BootstrapsContacts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1-to-v2.sqlite")
-	dsn := "file:" + path + "?" + url.Values{
-		"_busy_timeout": {"5000"},
-		"_journal_mode": {"WAL"},
-		"_foreign_keys": {"ON"},
-		"_synchronous":  {"NORMAL"},
-	}.Encode()
+	q := url.Values{}
+	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "foreign_keys(ON)")
+	q.Add("_pragma", "synchronous(NORMAL)")
+	dsn := "file:" + path + "?" + q.Encode()
 
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
