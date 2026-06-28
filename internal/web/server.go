@@ -64,6 +64,7 @@ func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, 
 		"humanName":        humanName,
 		"initials":         initials,
 		"avatarColor":      avatarColor,
+		"sourceSlug":       sourceSlug,
 		"humanSource":      source.Label,
 		"imgRenderable":    s.imgRenderable,
 	}).ParseFS(templatesFS, "templates/*.html")

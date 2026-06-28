@@ -2,17 +2,41 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
-// baseData is embedded in every full-page view; it drives the chrome (sidebar).
+// baseData is embedded in every full-page view; it drives the chrome (navbar +
+// sidebar). It carries the global counts the navbar shows (REQ-0006-002) and the
+// full conversation list the sidebar renders (REQ-0006-003).
 type baseData struct {
 	Title         string
 	Conversations []store.ConversationSummary
 	ActiveID      int64
+	TotalMessages int // global message count for the navbar
+}
+
+// baseData loads the shell context shared by every full-page view: the
+// conversation list (sidebar) and the global message count (navbar). activeID is
+// the currently-open conversation (0 when none), used to mark the selected row.
+func (s *Server) baseData(ctx context.Context, title string, activeID int64) (baseData, error) {
+	convs, err := s.store.ListConversations(ctx)
+	if err != nil {
+		return baseData{}, err
+	}
+	total, err := s.store.CountMessages(ctx)
+	if err != nil {
+		return baseData{}, err
+	}
+	return baseData{
+		Title:         title,
+		Conversations: convs,
+		ActiveID:      activeID,
+		TotalMessages: total,
+	}, nil
 }
 
 // messageListData drives the transcript message list and its infinite-scroll
@@ -30,9 +54,8 @@ type messageListData struct {
 
 type indexData struct {
 	baseData
-	NewestTS      string
-	TotalMessages int
-	HasArchive    bool
+	NewestTS   string
+	HasArchive bool
 }
 
 type conversationData struct {
@@ -46,7 +69,6 @@ type statusData struct {
 	Run               *store.IngestRun
 	Snapshots         []store.Snapshot
 	NewestTS          string
-	TotalMessages     int
 	SnapshotFootprint int64
 }
 
@@ -55,7 +77,7 @@ const pageSize = 50
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	convs, err := s.store.ListConversations(ctx)
+	base, err := s.baseData(ctx, "msgbrowse", 0)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -65,16 +87,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	total, err := s.store.CountMessages(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	s.render(w, "index", indexData{
-		baseData:      baseData{Title: "msgbrowse", Conversations: convs},
-		NewestTS:      newest,
-		TotalMessages: total,
-		HasArchive:    len(convs) > 0,
+		baseData:   base,
+		NewestTS:   newest,
+		HasArchive: len(base.Conversations) > 0,
 	})
 }
 
@@ -83,11 +99,6 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(r.PathValue("id"))
 	if !ok {
 		http.NotFound(w, r)
-		return
-	}
-	convs, err := s.store.ListConversations(ctx)
-	if err != nil {
-		s.serverError(w, err)
 		return
 	}
 	active, err := s.store.GetConversationByID(ctx, id)
@@ -99,13 +110,18 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	base, err := s.baseData(ctx, active.Name+" · msgbrowse", id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	page, err := s.store.GetMessages(ctx, id, 0, 0, pageSize)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	s.render(w, "conversation", conversationData{
-		baseData: baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
+		baseData: base,
 		Active:   active,
 		List: messageListData{
 			ActiveID:   id,
@@ -152,7 +168,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	convs, err := s.store.ListConversations(ctx)
+	base, err := s.baseData(ctx, "Status · msgbrowse", 0)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -172,21 +188,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	total, err := s.store.CountMessages(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	var footprint int64
 	for _, sn := range snaps {
 		footprint += sn.SizeBytes
 	}
 	s.render(w, "status", statusData{
-		baseData:          baseData{Title: "Status · msgbrowse", Conversations: convs},
+		baseData:          base,
 		Run:               run,
 		Snapshots:         snaps,
 		NewestTS:          newest,
-		TotalMessages:     total,
 		SnapshotFootprint: footprint,
 	})
 }

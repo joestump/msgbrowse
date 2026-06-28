@@ -6,19 +6,27 @@
   <title>{{.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   {{/* theme.js runs before paint to apply the saved theme (no FOUC); both are
-       self-hosted so they load under script-src 'self'. */}}
+       self-hosted so they load under script-src 'self'. sidebar.js powers the
+       live "Filter conversations" box (CSP-safe, deferred, no inline handlers). */}}
   <script src="/static/theme.js"></script>
+  <script src="/static/sidebar.js" defer></script>
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body class="bg-base-100 text-base-content">
 <div class="drawer lg:drawer-open">
   <input id="nav-drawer" type="checkbox" class="drawer-toggle">
   <div class="drawer-content flex flex-col min-h-screen">
-    <header class="navbar sticky top-0 z-30 bg-base-200/90 backdrop-blur border-b border-base-300">
-      <label for="nav-drawer" class="btn btn-ghost btn-square lg:hidden" aria-label="Open menu">{{template "icon-menu" .}}</label>
-      <a href="/" class="btn btn-ghost text-lg font-semibold normal-case gap-2">{{template "icon-home" .}} msgbrowse</a>
+    {{/* Navbar (REQ-0006-002): 54px. Accent home glyph + wordmark on the left;
+         right-aligned global counts in dim mono; circular theme toggle. */}}
+    <header class="navbar app-navbar sticky top-0 z-30 bg-base-300/95 backdrop-blur border-b border-neutral px-3 lg:px-4">
+      <label for="nav-drawer" class="btn btn-ghost btn-square btn-sm lg:hidden" aria-label="Open menu">{{template "icon-menu" .}}</label>
+      <a href="/" class="flex items-center gap-2 px-1" aria-label="msgbrowse home">
+        <span class="text-primary inline-flex">{{template "icon-home" .}}</span>
+        <span class="navbar-wordmark">msgbrowse</span>
+      </a>
       <div class="flex-1"></div>
-      <button type="button" data-theme-toggle class="btn btn-ghost btn-square" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
+      <span class="navbar-counts font-mono hidden sm:inline" title="Global archive totals">{{len .Conversations}} conversations · {{.TotalMessages}} messages</span>
+      <button type="button" data-theme-toggle class="navbar-toggle ml-3" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
     </header>
     <main class="flex-1">
 {{end}}
@@ -26,40 +34,54 @@
 {{define "page_end"}}
     </main>
   </div>
+  {{/* Sidebar (REQ-0006-003): 320px, surface base-300 (#161a20). */}}
   <div class="drawer-side z-40">
     <label for="nav-drawer" class="drawer-overlay" aria-label="Close menu"></label>
-    <aside class="w-80 min-h-full bg-base-200 border-r border-base-300 flex flex-col">
-      <ul class="menu w-full gap-0.5 p-2">
-        <li><a href="/search">{{template "icon-search" .}} Search</a></li>
-        <li><a href="/gallery">{{template "icon-photo" .}} Media</a></li>
-        <li><a href="/status">{{template "icon-server" .}} Status &amp; backups</a></li>
-      </ul>
-      <div class="px-4 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide opacity-50">Conversations</div>
-      <ul class="menu w-full gap-0.5 p-2 pt-0 overflow-y-auto flex-1">
+    <aside class="app-sidebar w-80 min-h-full bg-base-300 border-r border-neutral flex flex-col">
+      {{/* Filter input — live-narrows the conversation list via sidebar.js. */}}
+      <div class="p-3 pb-2">
+        <label class="sidebar-filter flex items-center gap-2">
+          <span class="opacity-50 inline-flex">{{template "icon-search" .}}</span>
+          <input type="search" id="sidebar-filter" class="grow bg-transparent outline-none text-sm" placeholder="Filter conversations" autocomplete="off" aria-label="Filter conversations" aria-controls="sidebar-conversations">
+        </label>
+      </div>
+      {{/* Primary nav links. No Journal link yet (the route would 404). */}}
+      <nav class="px-2 pb-2 flex flex-col gap-0.5">
+        <a href="/search" class="sidebar-link">{{template "icon-search" .}} <span>Search</span></a>
+        <a href="/gallery" class="sidebar-link">{{template "icon-photo" .}} <span>Media</span></a>
+        <a href="/status" class="sidebar-link">{{template "icon-server" .}} <span>Status &amp; backups</span></a>
+      </nav>
+      <div class="sidebar-section-head flex items-baseline justify-between px-4 pt-2 pb-1">
+        <span class="sidebar-section-label">Conversations</span>
+        <span class="font-mono opacity-40 text-xs">{{len .Conversations}}</span>
+      </div>
+      {{/* Scrolling conversation list. */}}
+      <ul id="sidebar-conversations" class="flex flex-col gap-0.5 px-2 pb-3 overflow-y-auto flex-1">
         {{- range .Conversations}}
-        <li>
-          <a href="/c/{{.ID}}" class="flex items-center gap-3 {{if eq .ID $.ActiveID}}menu-active{{end}}">
+        <li class="conv-item" data-name="{{humanName .Name}}">
+          <a href="/c/{{.ID}}" class="conv-row{{if eq .ID $.ActiveID}} conv-row-selected{{end}}">
             {{/* Monogram avatar — the archive has no avatar images, so we render
-                 initials in a per-conversation deterministic color. */}}
-            <div class="avatar avatar-placeholder shrink-0">
-              <div class="{{avatarColor .Name}} text-white w-9 rounded-full">
-                <span class="text-xs font-semibold">{{initials .Name}}</span>
-              </div>
-            </div>
+                 initials in a per-conversation deterministic color. A presence
+                 dot bottom-right is colored by source (REQ-0006-004). */}}
+            <span class="avatar-mono {{avatarColor .Name}}">
+              {{initials .Name}}
+              <span class="presence-dot {{sourceSlug .Source}}" title="{{humanSource .Source}}"></span>
+            </span>
             {{/* min-w-0 lets both lines truncate instead of overflowing the row. */}}
-            <div class="min-w-0 flex-1">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="font-medium truncate">{{humanName .Name}}</span>
-                <span class="shrink-0 text-xs opacity-50 tabular-nums">{{.MessageCount}}</span>
-              </div>
-              <div class="text-xs opacity-60 truncate">
-                {{- if .LastSender}}<span class="font-medium">{{humanName .LastSender}}:</span> {{end}}{{.LastPreview}}
-              </div>
-            </div>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-baseline justify-between gap-2">
+                <span class="conv-name truncate">{{humanName .Name}}</span>
+                <span class="conv-count font-mono shrink-0">{{.MessageCount}}</span>
+              </span>
+              <span class="conv-preview truncate">
+                {{- if .LastSender}}<span class="conv-preview-sender">{{humanName .LastSender}}:</span> {{end}}{{.LastPreview}}
+              </span>
+            </span>
           </a>
         </li>
         {{- end}}
       </ul>
+      <p class="sidebar-empty px-4 py-3 text-sm opacity-50" hidden>No conversations match.</p>
     </aside>
   </div>
 </div>

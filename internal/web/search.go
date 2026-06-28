@@ -41,14 +41,14 @@ const searchContextWindow = 20
 // render server-side.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	convs, err := s.store.ListConversations(ctx)
+	base, err := s.baseData(ctx, "Search · msgbrowse", 0)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	form, opts := parseSearchForm(r)
 	data := searchData{
-		baseData: baseData{Title: "Search · msgbrowse", Conversations: convs},
+		baseData: base,
 		Form:     form,
 		Sources:  source.All,
 	}
@@ -98,11 +98,6 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	convs, err := s.store.ListConversations(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	active, err := s.store.GetConversationByID(ctx, id)
 	if err != nil {
 		s.serverError(w, err)
@@ -149,8 +144,13 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 	list.NextTSUnix = last.TSUnix
 	list.NextID = last.ID
 
+	base, err := s.baseData(ctx, active.Name+" · msgbrowse", id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	s.render(w, "conversation", conversationData{
-		baseData: baseData{Title: active.Name + " · msgbrowse", Conversations: convs, ActiveID: id},
+		baseData: base,
 		Active:   active,
 		List:     list,
 	})

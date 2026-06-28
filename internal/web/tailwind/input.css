@@ -116,6 +116,11 @@
    These match the avatarPalette in render.go (SPEC-0006 avatar palette). */
 @source inline("bg-rose-500 bg-sky-500 bg-amber-500 bg-teal-500 bg-fuchsia-500 bg-orange-500 bg-indigo-500 bg-emerald-500");
 
+/* NOTE: the source modifier classes used by presence dots and pills
+   (.src-signal / .src-imessage, chosen in Go via sourceSlug) are hand-written
+   component rules below, not generated Tailwind utilities, so they survive the
+   content scan without an @source inline safelist. */
+
 /* --- typography: system fonts only (no web fonts; CSP/ADR-0010 holds) --- */
 
 /* System sans for UI, antialiased per the handoff; system mono for numerals. */
@@ -174,3 +179,198 @@ html {
   100% { background-color: transparent; }
 }
 .target .chat-bubble { animation: target-flash 2.5s ease-out 1; }
+
+/* ===========================================================================
+ * App shell — navbar + sidebar + conversation rows (SPEC-0006 REQ-0006-002/003)
+ * Identity components — avatars, presence dots, source pills (REQ-0006-004).
+ * Driven by the slate theme CSS variables (--color-*) so the derived
+ * slate-light variant restyles automatically. No web fonts; CSP-safe.
+ * ========================================================================= */
+
+/* --- Navbar (54px) ------------------------------------------------------- */
+.app-navbar {
+  min-height: 54px;
+  height: 54px;
+}
+.navbar-wordmark {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-base-content);
+}
+/* Right-aligned global counts: dim, mono, tabular. */
+.navbar-counts {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+}
+/* ~34px circular theme toggle, outlined in the slate border color. */
+.navbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border: 1px solid var(--color-neutral);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.navbar-toggle:hover {
+  color: var(--color-base-content);
+  background: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--color-neutral));
+}
+
+/* --- Sidebar (320px) ----------------------------------------------------- */
+/* "Filter conversations" input: 36px, app-bg fill, slate border, search glyph. */
+.sidebar-filter {
+  height: 36px;
+  padding: 0 0.625rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-neutral);
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+}
+.sidebar-filter:focus-within {
+  border-color: color-mix(in oklab, var(--color-primary) 55%, var(--color-neutral));
+}
+/* Nav links with leading icons. */
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  font-size: 13.5px;
+  color: color-mix(in oklab, var(--color-base-content) 78%, transparent);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.sidebar-link:hover {
+  color: var(--color-base-content);
+  background: color-mix(in oklab, var(--color-primary) 7%, transparent);
+}
+/* CONVERSATIONS section header label (tracked uppercase). */
+.sidebar-section-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+}
+
+/* --- Conversation rows --------------------------------------------------- */
+.conv-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  border-left: 3px solid transparent; /* reserve the rail gutter so text never shifts */
+  transition: background-color 0.12s ease;
+}
+.conv-row:hover {
+  background: color-mix(in oklab, var(--color-primary) 6%, transparent);
+}
+/* Selected row: #1b2330 tint + 3px accent left rail (REQ-0006-003). */
+.conv-row-selected,
+.conv-row-selected:hover {
+  background: #1b2330;
+  border-left-color: var(--color-primary);
+}
+[data-theme="slate-light"] .conv-row-selected,
+[data-theme="slate-light"] .conv-row-selected:hover {
+  background: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-300));
+}
+.conv-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+.conv-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+}
+.conv-preview {
+  display: block;
+  font-size: 12.5px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.conv-preview-sender {
+  font-weight: 600;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+}
+
+/* --- Avatars (monogram) + presence dots (REQ-0006-004) ------------------- */
+/* Colored circle, white 600-weight initials. The bg-*-500 class (avatarColor)
+   carries the fill; this rule carries the shape/typography. */
+.avatar-mono {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+/* Presence dot: bottom-right, source-colored, 2px border matching the surface
+   behind it (the sidebar is base-300). */
+.presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--color-base-300);
+  box-sizing: border-box;
+}
+/* Source colors come from the theme: Signal = info (#3b82f6),
+   iMessage = success (#34c759). */
+.presence-dot.src-signal { background: var(--color-info); }
+.presence-dot.src-imessage { background: var(--color-success); }
+.presence-dot.src-unknown {
+  background: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+}
+
+/* --- Source pills (REQ-0006-004 / #23) ----------------------------------- */
+/* Reusable colored pill expressing a message/conversation source. Signal uses
+   the slate-blue accent (primary); iMessage uses the success green, lightened
+   toward the brief's #7bd88f. Theme variables keep both variants working. */
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1px 0.5rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  background: transparent;
+}
+.source-pill.src-signal {
+  color: var(--color-primary);
+  border-color: color-mix(in oklab, var(--color-primary) 35%, transparent);
+}
+.source-pill.src-imessage {
+  color: color-mix(in oklab, var(--color-success) 80%, white);
+  border-color: color-mix(in oklab, var(--color-success) 30%, transparent);
+}
+[data-theme="slate-light"] .source-pill.src-imessage {
+  /* On the light variant the white-mix would wash out; use the green directly. */
+  color: var(--color-success);
+}
+.source-pill.src-unknown {
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  border-color: var(--color-neutral);
+}

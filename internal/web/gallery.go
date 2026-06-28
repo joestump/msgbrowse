@@ -51,7 +51,7 @@ var validTabs = map[string]bool{"images": true, "files": true, "links": true}
 
 func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	convs, err := s.store.ListConversations(ctx)
+	base, err := s.baseData(ctx, "Media · msgbrowse", 0)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -65,7 +65,7 @@ func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := galleryData{
-		baseData: baseData{Title: "Media · msgbrowse", Conversations: convs},
+		baseData: base,
 		Filter:   form,
 		Sources:  source.All,
 		Counts:   counts,
