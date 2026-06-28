@@ -81,10 +81,11 @@ func newExportCommand() *cobra.Command {
 			"naming it and how to install it — unless --skip-on-error, which logs a warning\n" +
 			"and continues with the other source.\n" +
 			"\n" +
-			"Extra args are passed through to the underlying tool: use\n" +
-			"--signal-export-args / --imessage-exporter-args (repeatable), or trailing\n" +
-			"`-- <args>` which go to BOTH tools. msgbrowse stores no secrets and reads no\n" +
-			"Keychain; the invoked tools do, with your consent. Their output streams to you.",
+			"Extra args reach the underlying tools two ways: --signal-export-args /\n" +
+			"--imessage-exporter-args (repeatable) for flags meant for ONE tool only, and\n" +
+			"trailing `-- <args>` for shared flags, which are appended to BOTH tools'\n" +
+			"command lines. msgbrowse stores no secrets and reads no Keychain; the invoked\n" +
+			"tools do, with your consent. Their output streams to you.",
 		RunE: func(cmd *cobra.Command, passthrough []string) error {
 			cfg, err := resolveConfig()
 			if err != nil {
@@ -99,8 +100,8 @@ func newExportCommand() *cobra.Command {
 	}
 	cmd.Flags().String("signal-export-bin", "", "path to the Signal exporter (default: `sigexport` on PATH; or set signal_export_bin)")
 	cmd.Flags().String("imessage-exporter-bin", "", "path to imessage-exporter (default: on PATH; or set imessage_exporter_bin)")
-	cmd.Flags().StringArray("signal-export-args", nil, "extra argument passed to sigexport (repeatable)")
-	cmd.Flags().StringArray("imessage-exporter-args", nil, "extra argument passed to imessage-exporter (repeatable)")
+	cmd.Flags().StringArray("signal-export-args", nil, "sigexport-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to both tools)")
+	cmd.Flags().StringArray("imessage-exporter-args", nil, "imessage-exporter-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to both tools)")
 	cmd.Flags().Bool("skip-on-error", false, "log and skip a failing/missing source instead of aborting the run")
 	return cmd
 }
