@@ -41,7 +41,16 @@ Markdown links `[text](target)` whose target is an `http(s)` URL as links and
 otherwise as file attachments, and remaining bare `http(s)` URLs as links,
 de-duplicating links by URL in first-seen order with trailing sentence
 punctuation trimmed. The sender `Me` MUST mark the owner and the sender
-`No-Sender` MUST mark a system event (`IsSystem`).
+`No-Sender` MUST mark a system event (`IsSystem`). It MUST capture signal-export's
+reactions trailer — a final body line `(- <Name>: <emoji>, … -)` — as the
+message's reactions (emoji + reactor) and MUST strip that trailer from the body,
+so a reaction never appears in the body or as a standalone message.
+
+#### Scenario: A reactions trailer is captured, not left in the body
+- **Given** a `chat.md` entry whose body ends with a line `(- Me: 👍, MJ: ❤️ -)`
+- **When** the parser reads the entry
+- **Then** one message is emitted carrying two reactions (`👍` by `Me`, `❤️` by `MJ`)
+- **And** the reactions trailer does NOT appear in the message body and no extra message is emitted.
 
 #### Scenario: A multi-line message with media and a link
 - **Given** a `chat.md` entry `[2022-01-01 10:00:00] Alice: see this ![cabin](media/cabin.jpg) https://example.com/x.`
@@ -65,11 +74,15 @@ new-message timestamp only when the WHOLE line is a timestamp (so body text that
 merely begins with a date is not misread). It MUST detect attachments
 heuristically: a spaceless, slash-bearing, non-URL path ending in a known
 media/document extension is an attachment (image vs file by extension); everything
-else is body text. It MUST skip tapbacks, indented quoted-reply detail, and status
-notices (`Tapbacks:`, `This message responded to an earlier message.`, `Attachment
-missing!`, deleted-message notices). It MUST extract bare `http(s)` URLs from body
-as links. It MUST NOT persist an empty message (a timestamp with no sender, body,
-attachment, or link).
+else is body text. It MUST capture a `Tapbacks:` block — its indented
+`<reaction> by <reactor>` detail lines — as the message's reactions, mapping the
+standard tapback words (Loved→❤️, Liked→👍, Disliked→👎, Laughed→😂,
+Emphasized→‼️, Questioned→❓) to emoji and passing a custom emoji reaction through
+as-is, so a tapback never becomes a standalone message. It MUST skip indented
+quoted-reply detail and status notices (`This message responded to an earlier
+message.`, `Attachment missing!`, deleted-message notices). It MUST extract bare
+`http(s)` URLs from body as links. It MUST NOT persist an empty message (a
+timestamp with no sender, body, attachment, link, or reaction).
 
 #### Scenario: A message block with an attachment path
 - **Given** a block `May 20, 2020  9:10:11 AM` / `Me` / `at the cabin` / `attachments/AB/CD/IMG_1234.HEIC`
@@ -81,10 +94,11 @@ attachment, or link).
 - **When** the parser reads it after a valid timestamp/sender
 - **Then** it is appended to the current message body and does NOT start a new message.
 
-#### Scenario: Tapbacks and notices are dropped
+#### Scenario: Tapbacks are captured as reactions; notices are dropped
 - **Given** a block containing `Tapbacks:`, an indented `    Loved by Sample`, and `This message responded to an earlier message.`
 - **When** the parser reads it
-- **Then** none of those lines appear in any emitted message body or attachment.
+- **Then** the message carries a `❤️` reaction by `Sample` and no extra message is emitted
+- **And** none of the `Tapbacks:` / notice lines appear in any emitted message body or attachment.
 
 ### REQ-0001-004: Malformed-line resilience
 

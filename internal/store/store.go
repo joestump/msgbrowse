@@ -270,6 +270,12 @@ func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, s
 	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE conversation_id = ?`, convID); err != nil {
 		return 0, fmt.Errorf("clear messages: %w", err)
 	}
+	// Reactions are keyed by stable hash (no FK to messages, so they are NOT
+	// cascade-deleted with the message rows above); clear this conversation's
+	// reactions explicitly so the re-insert below is a clean idempotent replace.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM reactions WHERE conversation_id = ?`, convID); err != nil {
+		return 0, fmt.Errorf("clear reactions: %w", err)
+	}
 
 	insMsg, err := tx.PrepareContext(ctx,
 		`INSERT INTO messages(hash, conversation_id, source, ts, ts_unix, sender, body, is_system, seq)
@@ -290,6 +296,16 @@ func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, s
 		return 0, err
 	}
 	defer insLink.Close()
+	// Reactions key by the stable per-source message hash, not message_id; the
+	// UNIQUE(message_hash, emoji, actor) constraint dedups repeated (emoji, actor)
+	// pairs within this replace, so use INSERT OR IGNORE.
+	insReaction, err := tx.PrepareContext(ctx,
+		`INSERT OR IGNORE INTO reactions(conversation_id, message_hash, source, emoji, actor)
+		 VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer insReaction.Close()
 
 	for i := range msgs {
 		m := &msgs[i]
@@ -310,6 +326,11 @@ func (s *Store) ReplaceConversationMessages(ctx context.Context, convID int64, s
 		for _, l := range m.Links {
 			if _, err := insLink.ExecContext(ctx, mid, l.URL, signal.Domain(l.URL)); err != nil {
 				return 0, fmt.Errorf("insert link: %w", err)
+			}
+		}
+		for _, r := range m.Reactions {
+			if _, err := insReaction.ExecContext(ctx, convID, m.HashWithSource(source), source, r.Emoji, r.Actor); err != nil {
+				return 0, fmt.Errorf("insert reaction: %w", err)
 			}
 		}
 	}

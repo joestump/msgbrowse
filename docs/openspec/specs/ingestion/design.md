@@ -96,9 +96,13 @@ rather than a lock upgrade). Schema is applied by a versioned migration runner
 (`user_version` pragma): v1 lays down the Signal-only schema, v2 adds the unified
 contacts model and `source` columns (rebuilding `conversations` to swap
 `UNIQUE(name)` for `UNIQUE(source, name)` with foreign keys toggled off and
-verified off around the rebuild), v3 adds the embeddings table. Each migration runs
-in its own transaction with a `foreign_key_check` belt-and-suspenders before
-committing.
+verified off around the rebuild), v3 adds the embeddings table. v6 adds the
+`reactions` table (issue #50): like embeddings and contact_facts it keys on the
+stable per-source message hash (no FK to `messages`, so re-ingest doesn't cascade
+them away) and carries a `conversation_id` FK purely so
+`ReplaceConversationMessages` can clear-and-reinsert a conversation's reactions in
+the same idempotent transaction as its messages. Each migration runs in its own
+transaction with a `foreign_key_check` belt-and-suspenders before committing.
 
 ### Snapshots are a passive inventory
 

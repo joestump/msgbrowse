@@ -182,6 +182,24 @@ func TestConversationTranscript(t *testing.T) {
 	if contains(body, "![cabin]") {
 		t.Errorf("raw image markdown leaked into output")
 	}
+
+	// Reactions (issue #50): Harper's first message carries "(- Me: 👍, MJ: 👍 -)".
+	// It renders as a reaction badge with a count of 2 (same emoji, two reactors).
+	for _, want := range []string{
+		`class="msg-reactions"`, // the reactions row
+		`class="reaction-badge"`,
+		"👍",                     // the emoji
+		`class="reaction-count`, // the repeat count appears (>1)
+		`title="Me, MJ"`,        // actor tooltip
+	} {
+		if !contains(body, want) {
+			t.Errorf("transcript missing reaction marker %q", want)
+		}
+	}
+	// The reactions trailer must NOT appear as message body text or a standalone row.
+	if contains(body, "(- Me") || contains(body, "-)") {
+		t.Errorf("reactions trailer leaked into transcript body as text")
+	}
 }
 
 func TestConversationNotFound(t *testing.T) {

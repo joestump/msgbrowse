@@ -169,6 +169,11 @@
         {{- range .Links}}<a class="link-pill" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{template "icon-link" $}}<span>{{.Domain}}</span></a>{{end}}
       </div>
       {{- end}}
+      {{- if .Reactions}}
+      <div class="msg-reactions">
+        {{- range .Reactions}}<span class="reaction-badge" title="{{reactionTitle .}}"><span class="reaction-emoji">{{.Emoji}}</span>{{if gt .Count 1}}<span class="reaction-count font-mono">{{.Count}}</span>{{end}}</span>{{end}}
+      </div>
+      {{- end}}
     </div>
   </div>
     {{- $prevDate = $date}}

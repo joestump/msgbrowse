@@ -90,16 +90,66 @@ This message responded to an earlier message.
 	if strings.Contains(msgs[2].Body, "cabin.jpeg") {
 		t.Errorf("m2 body should not contain the attachment path: %q", msgs[2].Body)
 	}
-	// m3: link extracted; tapbacks skipped (not in body, no extra message).
+	// m3: link extracted; tapbacks CAPTURED as a reaction (not in body, no extra
+	// message). "Loved by MJ" → ❤️ reaction, actor MJ.
 	if len(msgs[3].Links) != 1 || msgs[3].Links[0].URL != "https://maps.example.com/cabin" {
 		t.Errorf("m3 links = %+v", msgs[3].Links)
 	}
 	if strings.Contains(msgs[3].Body, "Tapbacks") || strings.Contains(msgs[3].Body, "Loved by") {
 		t.Errorf("m3 body leaked tapbacks: %q", msgs[3].Body)
 	}
+	if len(msgs[3].Reactions) != 1 || msgs[3].Reactions[0].Emoji != "❤️" || msgs[3].Reactions[0].Actor != "MJ" {
+		t.Errorf("m3 reactions = %+v, want one ❤️ by MJ", msgs[3].Reactions)
+	}
 	// m4: reply notice skipped from body.
 	if msgs[4].Body != "ok" {
 		t.Errorf("m4 body = %q, want \"ok\"", msgs[4].Body)
+	}
+}
+
+// TestParseTapbacksCaptured verifies that a "Tapbacks:" block attaches its
+// reactions to the CURRENT message (mapping standard words to emoji and passing
+// custom emoji through) and never spawns a standalone message.
+func TestParseTapbacksCaptured(t *testing.T) {
+	const in = `May 20, 2020  9:00:00 AM
+Me
+nice photo!
+Tapbacks:
+    Loved by Harper
+    Laughed by MJ
+    🎉 by Sam
+
+May 20, 2020  9:01:00 AM
+MJ
+agreed
+`
+	msgs, err := ParseAll("MJ", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two messages only — the tapback block did NOT become its own message.
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2 (tapbacks must not be standalone): %+v", len(msgs), msgs)
+	}
+	if msgs[0].Body != "nice photo!" {
+		t.Errorf("m0 body = %q, want %q", msgs[0].Body, "nice photo!")
+	}
+	want := []signal.Reaction{
+		{Emoji: "❤️", Actor: "Harper"}, // Loved
+		{Emoji: "😂", Actor: "MJ"},      // Laughed
+		{Emoji: "🎉", Actor: "Sam"},     // custom emoji passes through
+	}
+	if len(msgs[0].Reactions) != len(want) {
+		t.Fatalf("m0 reactions = %+v, want %+v", msgs[0].Reactions, want)
+	}
+	for i, w := range want {
+		if msgs[0].Reactions[i] != w {
+			t.Errorf("m0 reaction[%d] = %+v, want %+v", i, msgs[0].Reactions[i], w)
+		}
+	}
+	// The following message is unaffected.
+	if msgs[1].Sender != "MJ" || msgs[1].Body != "agreed" || len(msgs[1].Reactions) != 0 {
+		t.Errorf("m1 = %+v", msgs[1])
 	}
 }
 

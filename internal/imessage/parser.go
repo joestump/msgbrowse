@@ -17,9 +17,15 @@
 //
 // Because attachments appear as bare path lines with no marker, they are
 // detected heuristically (a spaceless path ending in a known media extension).
-// Tapbacks, quoted replies (indented), and status notices are skipped. This is
-// best-effort and should be validated against a real export; the format is
-// version-sensitive.
+//
+// A "Tapbacks:" line opens a reaction block whose indented detail lines read
+// "<reaction> by <reactor>" (e.g. "    Loved by Sample"). These are CAPTURED as
+// [signal.Reaction]s on the current message — the standard tapback words (Loved,
+// Liked, Disliked, Laughed, Emphasized, Questioned) are mapped to a representative
+// emoji and a custom emoji tapback is passed through as-is — so a tapback never
+// becomes a standalone message. Quoted replies (indented) and status notices are
+// still skipped. This is best-effort and should be validated against a real
+// export; the format is version-sensitive.
 package imessage
 
 import (
@@ -75,12 +81,49 @@ var imageExts = map[string]bool{
 }
 
 // noticeLines are status lines emitted by imessage-exporter that are not message
-// content and are skipped.
+// content and are skipped. "Tapbacks:" is intentionally NOT here: it opens a
+// reaction block (see tapbackHeader / parseTapback) whose details are captured.
 var noticeLines = map[string]bool{
-	"Tapbacks:": true,
 	"This message responded to an earlier message.":   true,
 	"This message was deleted from the conversation!": true,
 	"Attachment missing!":                             true,
+}
+
+// tapbackHeader is the line that opens an iMessage reaction block.
+const tapbackHeader = "Tapbacks:"
+
+// tapbackEmoji maps imessage-exporter's standard tapback words to a representative
+// emoji. Words outside this set (newer custom emoji reactions) are passed through
+// verbatim by parseTapback.
+var tapbackEmoji = map[string]string{
+	"Loved":      "❤️",
+	"Liked":      "👍",
+	"Disliked":   "👎",
+	"Laughed":    "😂",
+	"Emphasized": "‼️",
+	"Questioned": "❓",
+}
+
+// tapbackDetailRe matches an indented tapback detail line, e.g.
+// "    Loved by Sample" or "    👍 by Sample". Group 1 is the reaction token
+// (a standard word or a custom emoji), group 2 the reactor name.
+var tapbackDetailRe = regexp.MustCompile(`^\s+(.+?) by (.+?)\s*$`)
+
+// parseTapback turns an indented tapback detail line into a [signal.Reaction],
+// mapping standard tapback words to emoji and passing custom emoji through. It
+// returns ok=false for a line that does not match the "<reaction> by <reactor>"
+// shape (the caller leaves the block and re-classifies the line).
+func parseTapback(line string) (signal.Reaction, bool) {
+	m := tapbackDetailRe.FindStringSubmatch(line)
+	if m == nil {
+		return signal.Reaction{}, false
+	}
+	token, actor := strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
+	emoji := token
+	if mapped, ok := tapbackEmoji[token]; ok {
+		emoji = mapped
+	}
+	return signal.Reaction{Emoji: emoji, Actor: actor}, true
 }
 
 // Parse streams an imessage-exporter txt file from r, emitting one
@@ -93,11 +136,13 @@ func Parse(conversation string, r io.Reader, emit func(signal.Message) error, on
 	seq := newSeqCounter()
 
 	var (
-		cur       *signal.Message
-		bodyLines []string
-		atts      []signal.Attachment
-		expect    senderState
-		lineNo    int
+		cur        *signal.Message
+		bodyLines  []string
+		atts       []signal.Attachment
+		reactions  []signal.Reaction
+		inTapbacks bool
+		expect     senderState
+		lineNo     int
 	)
 
 	flush := func() error {
@@ -107,13 +152,14 @@ func Parse(conversation string, r io.Reader, emit func(signal.Message) error, on
 		cur.Body = strings.TrimRight(strings.Join(bodyLines, "\n"), "\n")
 		cur.Attachments = atts
 		cur.Links = signal.ExtractLinks(cur.Body)
-		empty := cur.Sender == "" && cur.Body == "" && len(atts) == 0 && len(cur.Links) == 0
+		cur.Reactions = reactions
+		empty := cur.Sender == "" && cur.Body == "" && len(atts) == 0 && len(cur.Links) == 0 && len(reactions) == 0
 		cur.Seq = seq.next(cur.Conversation, cur.TimestampRaw, cur.Sender, cur.Body)
 		m := *cur
-		cur, bodyLines, atts, expect = nil, nil, nil, stateNone
+		cur, bodyLines, atts, reactions, inTapbacks, expect = nil, nil, nil, nil, false, stateNone
 		if empty {
-			// Drop junk: a timestamp with no sender, body, attachment, or link
-			// (e.g. two adjacent timestamp lines). Never persist an empty row.
+			// Drop junk: a timestamp with no sender, body, attachment, link, or
+			// reaction (e.g. two adjacent timestamp lines). Never persist an empty row.
 			return nil
 		}
 		return emit(m)
@@ -138,6 +184,18 @@ func Parse(conversation string, r io.Reader, emit func(signal.Message) error, on
 			} else if expect == stateSender {
 				cur.Sender = strings.TrimSpace(text)
 				expect = stateBody
+			} else if strings.TrimSpace(text) == tapbackHeader {
+				// Open a tapback block: subsequent indented "<reaction> by <reactor>"
+				// lines attach to THIS message rather than spawning a new one.
+				inTapbacks = true
+			} else if inTapbacks {
+				if r, ok := parseTapback(text); ok {
+					reactions = append(reactions, r)
+				} else {
+					// Not a tapback detail line — the block has ended; re-classify.
+					inTapbacks = false
+					classifyContent(text, &bodyLines, &atts)
+				}
 			} else {
 				classifyContent(text, &bodyLines, &atts)
 			}

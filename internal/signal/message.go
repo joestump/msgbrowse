@@ -2,10 +2,13 @@
 //
 // The archive's export/ tree contains one folder per conversation, each with a
 // chat.md file and an optional media/ directory. This package turns chat.md into
-// structured [Message] records (with [Attachment] and [Link] children) using the
-// exact format documented in the project spec. It performs no I/O policy of its
-// own beyond reading the io.Reader it is given; callers own file access and must
-// treat the archive as read-only.
+// structured [Message] records (with [Attachment], [Link], and [Reaction]
+// children) using the exact format documented in the project spec. Reactions are
+// signal-export's trailer line "(- <Name>: <emoji>, … -)" appended to a message
+// body; the parser diverts that trailer onto the message's Reactions so it never
+// leaks into the body or becomes a standalone message. It performs no I/O policy
+// of its own beyond reading the io.Reader it is given; callers own file access and
+// must treat the archive as read-only.
 package signal
 
 import (
@@ -53,6 +56,15 @@ type Link struct {
 	URL string
 }
 
+// Reaction is an emoji reaction (a Signal reaction or an iMessage tapback) that a
+// participant applied to a message. Emoji is the rendered glyph (iMessage tapback
+// words are mapped to a representative emoji; Signal emoji pass through as-is) and
+// Actor is the reactor's display name ("" when the source does not name them).
+type Reaction struct {
+	Emoji string
+	Actor string
+}
+
 // Message is a single parsed chat.md entry. The tuple (Conversation, Sender) is
 // the identity for a participant; sender display names are not globally unique,
 // so callers must not assume uniqueness across conversations.
@@ -79,6 +91,10 @@ type Message struct {
 	// Attachments and Links are extracted from Body.
 	Attachments []Attachment
 	Links       []Link
+	// Reactions are the emoji reactions/tapbacks applied to this message. They are
+	// parsed off the wire (Signal's "(- Name: emoji -)" trailer, iMessage's
+	// "Tapbacks:" block) and never become standalone messages.
+	Reactions []Reaction
 }
 
 // ID returns the stable content hash that uniquely keys this message for

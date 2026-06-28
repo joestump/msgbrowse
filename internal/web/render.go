@@ -224,6 +224,20 @@ func humanName(name string) string {
 	return camelBoundary.ReplaceAllString(name, "$1 $2")
 }
 
+// reactionTitle builds the hover tooltip for a reaction badge from its reactors.
+// "Loved by MJ", "MJ, Harper", or "" when no reactor is named (the badge still
+// shows the emoji and count). Names are humanized for display.
+func reactionTitle(r store.ReactionView) string {
+	if len(r.Actors) == 0 {
+		return ""
+	}
+	names := make([]string, len(r.Actors))
+	for i, a := range r.Actors {
+		names[i] = humanName(a)
+	}
+	return strings.Join(names, ", ")
+}
+
 // initials returns up to two uppercase letters for a monogram avatar: the first
 // letters of the first and last humanized words, or the first two letters of a
 // single-word name.

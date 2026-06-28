@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 5
+const schemaVersion = 6
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -44,6 +44,7 @@ var migrations = []string{
 	3: schemaV3,
 	4: schemaV4,
 	5: schemaV5,
+	6: schemaV6,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -280,4 +281,31 @@ CREATE TABLE IF NOT EXISTS fact_state (
 // splits pinned from non-pinned, keeping both sections sorted by recency.
 const schemaV5 = `
 ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV6 adds the reactions table that captures emoji reactions / iMessage
+// tapbacks and renders them as badges on the target message (issue #50).
+//
+// Like embeddings (schemaV3) and contact_facts (schemaV4), reactions are keyed by
+// the STABLE per-source message hash (messages.HashWithSource), NOT a message
+// rowid: ReplaceConversationMessages deletes and re-inserts a conversation's rows
+// on every re-ingest (rowids change, hashes don't), so there is deliberately NO
+// foreign key to messages — a CASCADE would wipe reactions on each import. The FK
+// is to conversations(id) instead, which gives the store a cheap per-conversation
+// DELETE for the same idempotent full-replace pattern the messages use. source is
+// stored alongside the hash so two sources that share a display name (and could
+// otherwise collide on the same bare ID) stay distinct, matching how the message
+// hash is namespaced. UNIQUE(message_hash, emoji, actor) dedups re-inserts within
+// a single replace and makes ingestion idempotent.
+const schemaV6 = `
+CREATE TABLE IF NOT EXISTS reactions (
+    id              INTEGER PRIMARY KEY,
+    conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    message_hash    TEXT    NOT NULL,
+    source          TEXT    NOT NULL,
+    emoji           TEXT    NOT NULL,
+    actor           TEXT    NOT NULL DEFAULT '',
+    UNIQUE(message_hash, emoji, actor)
+);
+CREATE INDEX IF NOT EXISTS idx_reactions_message_hash ON reactions(message_hash);
 `

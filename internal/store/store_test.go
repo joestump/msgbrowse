@@ -103,6 +103,77 @@ func TestReplaceConversationMessagesAndFTS(t *testing.T) {
 	}
 }
 
+// TestReplaceConversationMessagesReactions verifies reactions round-trip through
+// ReplaceConversationMessages: they persist keyed by the stable per-source hash,
+// re-ingest replaces them (no duplicates and no orphans), and MessageView.Reactions
+// is populated (aggregated per emoji with a count) by the transcript query path.
+func TestReplaceConversationMessagesReactions(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	id, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	withReactions := func(m signal.Message, rs ...signal.Reaction) signal.Message {
+		m.Reactions = rs
+		return m
+	}
+	first := withReactions(
+		msg("Harper", "2022-03-01 09:00:00", "Harper", "nice photo!", nil, nil),
+		signal.Reaction{Emoji: "👍", Actor: "Me"},
+		signal.Reaction{Emoji: "👍", Actor: "MJ"}, // same emoji, different actor → count 2
+		signal.Reaction{Emoji: "❤️", Actor: "Me"},
+	)
+	plain := msg("Harper", "2022-03-01 09:01:00", "Me", "thanks", nil, nil)
+
+	if _, err := st.ReplaceConversationMessages(ctx, id, source.Signal, []signal.Message{first, plain}); err != nil {
+		t.Fatal(err)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM reactions`); n != 3 {
+		t.Fatalf("reactions rows = %d, want 3", n)
+	}
+
+	// MessageView.Reactions is populated and aggregated by the transcript query.
+	transcript, err := st.ConversationTranscript(ctx, id, 0, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transcript) != 2 {
+		t.Fatalf("transcript len = %d, want 2", len(transcript))
+	}
+	rv := transcript[0].Reactions
+	if len(rv) != 2 {
+		t.Fatalf("msg[0] reaction views = %+v, want 2 (👍 x2, ❤️ x1)", rv)
+	}
+	if rv[0].Emoji != "👍" || rv[0].Count != 2 || len(rv[0].Actors) != 2 {
+		t.Errorf("aggregated 👍 view = %+v, want emoji 👍 count 2 actors [Me MJ]", rv[0])
+	}
+	if rv[1].Emoji != "❤️" || rv[1].Count != 1 {
+		t.Errorf("aggregated ❤️ view = %+v, want emoji ❤️ count 1", rv[1])
+	}
+	if len(transcript[1].Reactions) != 0 {
+		t.Errorf("plain message should have no reactions: %+v", transcript[1].Reactions)
+	}
+
+	// Re-ingest the SAME set: reactions are replaced, not duplicated.
+	if _, err := st.ReplaceConversationMessages(ctx, id, source.Signal, []signal.Message{first, plain}); err != nil {
+		t.Fatal(err)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM reactions`); n != 3 {
+		t.Errorf("after re-ingest, reactions rows = %d, want 3 (no dupes)", n)
+	}
+
+	// Re-ingest with the reactions removed: the conversation's reactions are cleared.
+	if _, err := st.ReplaceConversationMessages(ctx, id, source.Signal,
+		[]signal.Message{msg("Harper", "2022-03-01 09:00:00", "Harper", "nice photo!", nil, nil), plain}); err != nil {
+		t.Fatal(err)
+	}
+	if n := scalar(t, st, `SELECT count(*) FROM reactions`); n != 0 {
+		t.Errorf("after reaction-free re-ingest, reactions rows = %d, want 0 (no orphans)", n)
+	}
+}
+
 func TestIngestStateRoundTrip(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

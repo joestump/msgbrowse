@@ -654,6 +654,34 @@ html {
   border-color: color-mix(in oklab, var(--color-primary) 55%, transparent);
 }
 
+/* Reaction badges: small emoji pills under a message, with an optional repeat
+ * count. Driven by the slate variables so the light variant restyles for free. */
+.msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.reaction-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-neutral);
+  background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: default;
+}
+.reaction-emoji {
+  font-size: 13px;
+}
+.reaction-count {
+  font-size: 11px;
+  color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+}
+
 /* ===========================================================================
  * Per-screen surfaces — Home, Search, Media, Status (SPEC-0006
  * REQ-0006-007/008/009/011, ADR-0012). All driven by the slate theme variables

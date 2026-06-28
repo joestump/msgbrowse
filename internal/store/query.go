@@ -49,6 +49,16 @@ type MessageView struct {
 	Body        string
 	Attachments []AttachmentView
 	Links       []LinkView
+	Reactions   []ReactionView
+}
+
+// ReactionView is one emoji badge for a message, aggregated for display: Count is
+// how many reactors applied this exact emoji and Actors lists their names (for a
+// tooltip), in first-seen order. Reactions with no named actor still count.
+type ReactionView struct {
+	Emoji  string
+	Count  int
+	Actors []string
 }
 
 // AttachmentView is an attachment row for display.
@@ -420,7 +430,78 @@ func (s *Store) attachChildren(ctx context.Context, msgs []MessageView) error {
 			msgs[i].Links = append(msgs[i].Links, l)
 		}
 	}
-	return linkRows.Err()
+	if err := linkRows.Err(); err != nil {
+		return err
+	}
+
+	return s.attachReactions(ctx, msgs)
+}
+
+// attachReactions loads reactions for the given messages and aggregates them into
+// per-emoji ReactionViews. Reactions key by the STABLE message hash (not rowid;
+// see schemaV6), so the join is on messages.hash, batched to avoid N+1.
+func (s *Store) attachReactions(ctx context.Context, msgs []MessageView) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	hashIdx := make(map[string]int, len(msgs))
+	hashes := make([]any, len(msgs))
+	for i := range msgs {
+		hashIdx[msgs[i].Hash] = i
+		hashes[i] = msgs[i].Hash
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(hashes)), ",")
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT message_hash, emoji, actor FROM reactions
+		  WHERE message_hash IN (`+placeholders+`) ORDER BY id`, hashes...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// Aggregate per message → per emoji, preserving first-seen emoji order.
+	type agg struct {
+		order []string
+		byKey map[string]*ReactionView
+	}
+	perMsg := make(map[int]*agg)
+	for rows.Next() {
+		var hash, emoji, actor string
+		if err := rows.Scan(&hash, &emoji, &actor); err != nil {
+			return err
+		}
+		i, ok := hashIdx[hash]
+		if !ok {
+			continue
+		}
+		a := perMsg[i]
+		if a == nil {
+			a = &agg{byKey: map[string]*ReactionView{}}
+			perMsg[i] = a
+		}
+		rv, ok := a.byKey[emoji]
+		if !ok {
+			rv = &ReactionView{Emoji: emoji}
+			a.byKey[emoji] = rv
+			a.order = append(a.order, emoji)
+		}
+		rv.Count++
+		if actor != "" {
+			rv.Actors = append(rv.Actors, actor)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i, a := range perMsg {
+		views := make([]ReactionView, 0, len(a.order))
+		for _, emoji := range a.order {
+			views = append(views, *a.byKey[emoji])
+		}
+		msgs[i].Reactions = views
+	}
+	return nil
 }
 
 // LatestIngestRun returns the most recent ingest run summary, or nil if none.
