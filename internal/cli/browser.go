@@ -10,18 +10,26 @@ import (
 	"time"
 )
 
-// browserURL returns the http URL a browser should open for a listen address,
-// normalizing a wildcard/empty host to loopback (a browser cannot open
-// http://0.0.0.0). Used for the serve --open convenience.
-func browserURL(listenAddr string) string {
+// reachableHostPort normalizes a listen address into a host:port a client can
+// actually connect to: a wildcard/empty bind host (0.0.0.0, ::, "") becomes
+// loopback. If listenAddr isn't host:port, it is returned unchanged. Shared by
+// browserURL (the opened URL) and openWhenReady (the readiness probe) so the two
+// can never disagree about where the server is.
+func reachableHostPort(listenAddr string) string {
 	host, port, err := net.SplitHostPort(listenAddr)
 	if err != nil {
-		return "http://" + listenAddr
+		return listenAddr
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	return "http://" + net.JoinHostPort(host, port)
+	return net.JoinHostPort(host, port)
+}
+
+// browserURL returns the http URL a browser should open for a listen address
+// (a browser cannot open http://0.0.0.0). Used for the serve --open convenience.
+func browserURL(listenAddr string) string {
+	return "http://" + reachableHostPort(listenAddr)
 }
 
 // browserOpenCommand returns the OS command + args to open url in the default
@@ -53,13 +61,7 @@ func openBrowser(url string) error {
 // max), then opens the browser once. It is best-effort: on a headless host with
 // no opener it just logs at debug and returns, never affecting the server.
 func openWhenReady(ctx context.Context, listenAddr string, log *slog.Logger) {
-	dialAddr := listenAddr
-	if host, port, err := net.SplitHostPort(listenAddr); err == nil {
-		if host == "" || host == "0.0.0.0" || host == "::" {
-			host = "127.0.0.1"
-		}
-		dialAddr = net.JoinHostPort(host, port)
-	}
+	dialAddr := reachableHostPort(listenAddr)
 	d := net.Dialer{Timeout: 200 * time.Millisecond}
 	for i := 0; i < 50; i++ { // ~5s budget
 		if ctx.Err() != nil {
