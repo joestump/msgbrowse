@@ -1,33 +1,65 @@
 {{define "index"}}{{template "page_start" .}}
-  <div class="p-6 lg:p-10 max-w-3xl">
-    <h1 class="text-3xl font-bold mb-2">msgbrowse</h1>
-    {{if .HasArchive}}
-    <p class="opacity-70 mb-6">A local, read-only window into your message archive.</p>
-    <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-200 mb-6">
-      <div class="stat">
-        <div class="stat-title">Conversations</div>
-        <div class="stat-value text-2xl">{{len .Conversations}}</div>
+  {{/* Home (REQ-0006-007, brief §3): a centered ~780px column on the base bg.
+       Hero wordmark + two-line tagline, a 3-cell stat strip from existing data
+       (Conversations / Messages / Newest message), then bordered quick-link
+       cards to Search / Media / Status. The brief's "On this day" and "Jump back
+       in" cards need backend queries that don't exist yet — skipped here (see
+       SPEC-0006 REQ-0006-007 notes); nothing invents a backend. */}}
+  <div class="px-6 lg:px-10 py-10">
+    <div class="screen-col">
+      <header class="mb-8">
+        <h1 class="home-hero-title">msgbrowse</h1>
+        <p class="home-hero-tagline">A calm, private reading room for everything you've ever said.<br>
+          Local-only — nothing leaves this machine.</p>
+      </header>
+
+      {{if .HasArchive}}
+      {{/* 3-cell stat strip: one bordered bar split by hairline dividers. */}}
+      <div class="stat-strip mb-8">
+        <div class="stat-cell">
+          <div class="stat-cell-label">Conversations</div>
+          <div class="stat-cell-value">{{len .Conversations}}</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-cell-label">Messages</div>
+          <div class="stat-cell-value">{{.TotalMessages}}</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-cell-label">Newest message</div>
+          <div class="stat-cell-value stat-cell-value-sm">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-title">Messages</div>
-        <div class="stat-value text-2xl">{{.TotalMessages}}</div>
+
+      {{/* Quick-links: bordered cards with accent icons + dim subtitles. */}}
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <a href="/search" class="link-card">
+          <span class="link-card-icon">{{template "icon-search" .}}</span>
+          <span class="min-w-0">
+            <span class="link-card-title block">Search</span>
+            <span class="link-card-sub block">Full-text, filtered</span>
+          </span>
+        </a>
+        <a href="/gallery" class="link-card">
+          <span class="link-card-icon">{{template "icon-photo" .}}</span>
+          <span class="min-w-0">
+            <span class="link-card-title block">Media</span>
+            <span class="link-card-sub block">Images, files &amp; links</span>
+          </span>
+        </a>
+        <a href="/status" class="link-card">
+          <span class="link-card-icon">{{template "icon-server" .}}</span>
+          <span class="min-w-0">
+            <span class="link-card-title block">Status &amp; backups</span>
+            <span class="link-card-sub block">Freshness &amp; snapshots</span>
+          </span>
+        </a>
       </div>
-      <div class="stat">
-        <div class="stat-title">Newest message</div>
-        <div class="stat-value text-base font-medium">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div>
+      {{else}}
+      <div class="notice-card">
+        <p class="link-card-title">No messages have been ingested yet.</p>
+        <p class="link-card-sub">Run <code class="font-mono">msgbrowse signal-import</code> against your archive, then refresh.</p>
       </div>
+      {{end}}
     </div>
-    <p class="opacity-70">Pick a conversation from the sidebar to read its transcript, or open
-      <a class="link link-primary" href="/search">Search</a>,
-      <a class="link link-primary" href="/gallery">Media</a>, or
-      <a class="link link-primary" href="/status">Status &amp; backups</a>.</p>
-    {{else}}
-    <div class="alert bg-base-200 border border-base-300">
-      <div>
-        <p class="font-medium">No messages have been ingested yet.</p>
-        <p class="text-sm opacity-70">Run <code class="kbd kbd-sm">msgbrowse signal-import</code> against your archive, then refresh.</p>
-      </div>
-    </div>
-    {{end}}
   </div>
 {{template "page_end" .}}{{end}}

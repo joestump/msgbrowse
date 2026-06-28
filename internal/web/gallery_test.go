@@ -22,6 +22,13 @@ func TestGalleryImagesTab(t *testing.T) {
 	if !contains(body, "image-grid") || !contains(body, "lightbox") {
 		t.Errorf("images tab missing grid/lightbox")
 	}
+	// Slate media redesign (REQ-0006-009): tabs with the accent underline and
+	// square cover tiles with a filename scrim.
+	for _, want := range []string{"media-tabs", "media-tab-active", "media-tile", "media-tile-name"} {
+		if !contains(body, want) {
+			t.Errorf("images tab missing slate marker %q", want)
+		}
+	}
 	// The fixture has Harper/media/cabin.jpg — its media URL should appear.
 	if !contains(body, "/media/"+itoa(conv.ID)+"/media/cabin.jpg") {
 		t.Errorf("images tab missing fixture image URL")

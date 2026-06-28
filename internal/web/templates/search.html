@@ -1,52 +1,58 @@
 {{define "search"}}{{template "page_start" .}}
-  <div class="p-4 lg:p-6 max-w-4xl">
-    <h1 class="text-2xl font-bold mb-1">Search</h1>
-    <p class="opacity-60 mb-4">Full-text keyword search across all messages.</p>
+  {{/* Search (REQ-0006-008, brief §4): a large field with a leading glyph, a
+       wrapping filter row (conversation / source / sender / from / to + Has-
+       attachment / Has-link toggles + accent Search button), a results meta line
+       (count; elapsed time isn't measured server-side yet), and slate result
+       cards. The HTMX live-search wiring is preserved: the form submits to
+       /search (works without JS) and HTMX swaps /search/results into
+       #search-results on input/change. */}}
+  <div class="px-4 lg:px-6 py-6 max-w-4xl">
+    <h1 class="screen-h1 mb-1">Search</h1>
+    <p class="screen-sub mb-5">Full-text keyword search across all messages.</p>
 
-    {{/* Submits to /search (works without JS); HTMX upgrades it to live, partial
-         updates into #search-results as you type or change a filter. */}}
     <form action="/search" method="get"
           hx-get="/search/results" hx-target="#search-results" hx-swap="innerHTML"
           hx-trigger="input changed delay:300ms, change">
-      <label class="input input-bordered flex items-center gap-2 w-full">
-        {{template "icon-search" .}}
-        <input type="search" name="q" value="{{.Form.Q}}" class="grow" placeholder="Search messages…" autofocus autocomplete="off">
+      <label class="search-field">
+        <span class="search-glyph">{{template "icon-search" .}}</span>
+        <input type="search" name="q" value="{{.Form.Q}}" placeholder="Search messages…" autofocus autocomplete="off">
       </label>
 
-      <div class="flex flex-wrap items-end gap-3 mt-3">
-        <label class="form-control">
-          <span class="label-text text-xs opacity-60">Conversation</span>
-          <select name="conversation" class="select select-bordered select-sm">
-            <option value="">Any</option>
+      <div class="filter-row mt-3">
+        <label class="filter-control">
+          <span class="filter-label">Conversation</span>
+          <select name="conversation" class="filter-input">
+            <option value="">All conversations</option>
             {{- range .Conversations}}
-            <option value="{{.ID}}" {{if eq .ID $.Form.ConversationID}}selected{{end}}>{{.Name}}</option>
+            <option value="{{.ID}}" {{if eq .ID $.Form.ConversationID}}selected{{end}}>{{humanName .Name}}</option>
             {{- end}}
           </select>
         </label>
-        <label class="form-control">
-          <span class="label-text text-xs opacity-60">Source</span>
-          <select name="source" class="select select-bordered select-sm">
-            <option value="">Any</option>
+        <label class="filter-control">
+          <span class="filter-label">Source</span>
+          <select name="source" class="filter-input">
+            <option value="">All sources</option>
             {{- range .Sources}}
-            <option value="{{.}}" {{if eq . $.Form.Source}}selected{{end}}>{{.}}</option>
+            <option value="{{.}}" {{if eq . $.Form.Source}}selected{{end}}>{{humanSource .}}</option>
             {{- end}}
           </select>
         </label>
-        <label class="form-control">
-          <span class="label-text text-xs opacity-60">Sender</span>
-          <input type="text" name="sender" value="{{.Form.Sender}}" class="input input-bordered input-sm" placeholder="exact name" autocomplete="off">
+        <label class="filter-control">
+          <span class="filter-label">Sender</span>
+          <input type="text" name="sender" value="{{.Form.Sender}}" class="filter-input" placeholder="exact name" autocomplete="off">
         </label>
-        <label class="form-control">
-          <span class="label-text text-xs opacity-60">From</span>
-          <input type="date" name="start" value="{{.Form.Start}}" class="input input-bordered input-sm">
+        <label class="filter-control">
+          <span class="filter-label">From</span>
+          <input type="date" name="start" value="{{.Form.Start}}" class="filter-input">
         </label>
-        <label class="form-control">
-          <span class="label-text text-xs opacity-60">To</span>
-          <input type="date" name="end" value="{{.Form.End}}" class="input input-bordered input-sm">
+        <label class="filter-control">
+          <span class="filter-label">To</span>
+          <input type="date" name="end" value="{{.Form.End}}" class="filter-input">
         </label>
-        <label class="label cursor-pointer gap-2"><input type="checkbox" name="has_attachment" value="1" class="checkbox checkbox-sm" {{if .Form.HasAttachment}}checked{{end}}> <span class="label-text">Has attachment</span></label>
-        <label class="label cursor-pointer gap-2"><input type="checkbox" name="has_link" value="1" class="checkbox checkbox-sm" {{if .Form.HasLink}}checked{{end}}> <span class="label-text">Has link</span></label>
-        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+        <label class="toggle-chip"><input type="checkbox" name="has_attachment" value="1" {{if .Form.HasAttachment}}checked{{end}}> Has attachment</label>
+        <label class="toggle-chip"><input type="checkbox" name="has_link" value="1" {{if .Form.HasLink}}checked{{end}}> Has link</label>
+        <div class="result-spacer"></div>
+        <button type="submit" class="btn-search">Search</button>
       </div>
     </form>
 
@@ -59,31 +65,34 @@
 {{define "search_results"}}
   {{- if .Ran}}
     {{- if .Hits}}
-    <div class="text-sm opacity-60 mb-2">{{.Count}} result{{if ne .Count 1}}s{{end}}{{if eq .Count 200}} (showing first 200){{end}}</div>
+    {{/* Results meta. Elapsed time isn't measured server-side yet (the brief's
+         "· 0.04s"); we show the count only. */}}
+    <div class="results-meta mb-3">{{.Count}} result{{if ne .Count 1}}s{{end}}{{if eq .Count 200}} · showing first 200{{end}}</div>
     <ol class="flex flex-col gap-2">
-      {{- range .Hits}}
+      {{- range $i, $hit := .Hits}}
       <li>
-        <a class="card card-compact bg-base-200 hover:bg-base-300 border border-base-300 hover:border-primary transition-colors"
-           href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">
-          <div class="card-body">
-            <div class="flex flex-wrap items-baseline gap-x-2 text-xs">
-              <span class="font-semibold">{{humanName .ConversationName}}</span>
-              <span>{{if .IsOwner}}Me{{else}}{{.Sender}}{{end}}</span>
-              <span class="opacity-60 tabular-nums">{{.TS}}</span>
-              <span class="opacity-60">{{.Source}}</span>
-              {{- if .HasAttachment}}<span class="opacity-60" title="has attachment">{{template "icon-paperclip" .}}</span>{{end}}
-              {{- if .HasLink}}<span class="opacity-60" title="has link">{{template "icon-link" .}}</span>{{end}}
-            </div>
-            <div class="text-sm break-words [&_mark]:bg-warning [&_mark]:text-warning-content [&_mark]:rounded [&_mark]:px-0.5">{{highlightSnippet .Snippet}}</div>
+        {{/* The top result carries the accent border (.result-card-top). */}}
+        <a class="result-card{{if eq $i 0}} result-card-top{{end}}"
+           href="/c/{{$hit.ConversationID}}/at/{{$hit.MessageID}}#m{{$hit.MessageID}}">
+          <div class="result-head">
+            <span class="avatar-mono avatar-sm {{avatarColor $hit.ConversationName}}">{{initials $hit.ConversationName}}</span>
+            <span class="result-conv">{{humanName $hit.ConversationName}}</span>
+            <span class="result-sender">{{if $hit.IsOwner}}Me{{else}}{{humanName $hit.Sender}}{{end}}</span>
+            <span class="result-ts">{{$hit.TS}}</span>
+            <span class="result-spacer"></span>
+            <span class="source-pill {{sourceSlug $hit.Source}}">{{humanSource $hit.Source}}</span>
+            {{- if $hit.HasAttachment}}<span class="result-glyph" title="has attachment">{{template "icon-paperclip" $}}</span>{{end}}
+            {{- if $hit.HasLink}}<span class="result-glyph" title="has link">{{template "icon-link" $}}</span>{{end}}
           </div>
+          <div class="result-snippet">{{highlightSnippet $hit.Snippet}}</div>
         </a>
       </li>
       {{- end}}
     </ol>
     {{- else}}
-    <div class="opacity-60">No messages match your search.</div>
+    <div class="results-empty">No messages match your search.</div>
     {{- end}}
   {{- else}}
-    <div class="opacity-60">Type a query above to search your messages.</div>
+    <div class="results-empty">Type a query above to search your messages.</div>
   {{- end}}
 {{end}}

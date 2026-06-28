@@ -30,6 +30,17 @@ func TestSearchLiveResults(t *testing.T) {
 	if !contains(body, "Harper") {
 		t.Errorf("result missing conversation name")
 	}
+	// Slate result card (REQ-0006-008): each result is a .result-card with a
+	// source pill (Signal/iMessage) and a highlighted snippet.
+	for _, want := range []string{"result-card", "source-pill", "result-snippet"} {
+		if !contains(body, want) {
+			t.Errorf("search result missing slate marker %q", want)
+		}
+	}
+	// The fixture conversations are Signal, so the pill carries src-signal.
+	if !contains(body, "source-pill src-signal") {
+		t.Errorf("search result source pill missing src-signal")
+	}
 }
 
 func TestSearchEmptyQueryShowsHint(t *testing.T) {
