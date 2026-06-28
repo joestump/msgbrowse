@@ -14,6 +14,12 @@ archive_root: "~/Managed Files/Signal-Archive"
 # you don't import iMessage. Targets imessage-exporter 4.2.0 txt output.
 imessage_archive_root: "~/Managed Files/iMessage-Archive"
 
+# Optional: paths to the upstream exporters that `msgbrowse export` invokes.
+# Leave empty to look up the default name on PATH (sigexport / imessage-exporter).
+# Set a path (e.g. a pipx venv binary not on PATH) to pin a specific binary.
+# signal_export_bin: "~/.local/bin/sigexport"
+# imessage_exporter_bin: "/opt/homebrew/bin/imessage-exporter"
+
 # Writable directory for the SQLite database and embeddings. MUST be outside the
 # archive.
 data_dir: "./data"

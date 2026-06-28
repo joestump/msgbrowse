@@ -406,7 +406,9 @@ func checkEmbeddings(ctx context.Context, r *report, cfg *config.Config, st *sto
 // for the planned export feature. Missing tools are informational warnings.
 func checkExporters(r *report) {
 	for _, e := range []struct{ bin, hint string }{
-		{"signal-export", "needed only if you want msgbrowse to run Signal exports; install via pipx: `pipx install signal-export`"},
+		// The Signal exporter's console command is `sigexport` (the pip *package*
+		// is signal-export); `msgbrowse export` looks up this same binary.
+		{"sigexport", "needed only if you want msgbrowse to run Signal exports; install via pipx: `pipx install signal-export` (the command is `sigexport`)"},
 		{"imessage-exporter", "needed only if you want msgbrowse to run iMessage exports; install via Homebrew: `brew install imessage-exporter`"},
 	} {
 		if _, err := exec.LookPath(e.bin); err == nil {

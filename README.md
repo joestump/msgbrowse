@@ -154,6 +154,7 @@ never opens or decrypts them.
 
 | Command | What it does |
 | --- | --- |
+| `msgbrowse export` | Run the upstream exporters into the configured roots: `sigexport` → `<archive_root>/export/...` (Signal) and `imessage-exporter -f txt -c clone -o <imessage_archive_root>` (iMessage; `clone` bundles attachments). Tools must be on PATH (or `--signal-export-bin`/`--imessage-exporter-bin`); `--skip-on-error` continues past a failing source. Extra args via `--signal-export-args`/`--imessage-exporter-args` or trailing `-- …`. msgbrowse stores no secrets. |
 | `msgbrowse import` | **All-in-one**: import every configured archive (Signal + iMessage) into one DB. Unset sources are skipped. |
 | `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). `ingest` is a deprecated alias. |
 | `msgbrowse imessage-import` | Import/refresh an imessage-exporter archive (`-f txt`, 4.2.0). Uses `imessage_archive_root`. |
@@ -218,6 +219,8 @@ flags. See [`config.example.yaml`](config.example.yaml).
 | --- | --- | --- | --- |
 | `archive_root` | `MSGBROWSE_ARCHIVE_ROOT` | — | read-only signal-export archive |
 | `imessage_archive_root` | `MSGBROWSE_IMESSAGE_ARCHIVE_ROOT` | — | read-only imessage-exporter archive |
+| `signal_export_bin` | `MSGBROWSE_SIGNAL_EXPORT_BIN` | — | override the `sigexport` path for `export` (else PATH) |
+| `imessage_exporter_bin` | `MSGBROWSE_IMESSAGE_EXPORTER_BIN` | — | override the `imessage-exporter` path for `export` (else PATH) |
 | `data_dir` | `MSGBROWSE_DATA_DIR` | `./data` | writable DB/embeddings dir |
 | `listen_addr` | `MSGBROWSE_LISTEN_ADDR` | `127.0.0.1:8787` | loopback by default |
 | `llm.base_url` | `MSGBROWSE_LLM_BASE_URL` | `http://127.0.0.1:4000/v1` | the only egress |

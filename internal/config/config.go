@@ -98,6 +98,14 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("archive_root", "")
 	v.SetDefault("imessage_archive_root", "")
 	v.SetDefault("data_dir", "./data")
+
+	// Optional overrides for the upstream exporters `msgbrowse export` invokes.
+	// Empty means "look up the default name on PATH" (sigexport / imessage-exporter);
+	// set a path here (or via --signal-export-bin / --imessage-exporter-bin, or
+	// MSGBROWSE_SIGNAL_EXPORT_BIN / MSGBROWSE_IMESSAGE_EXPORTER_BIN) to use a
+	// specific binary (e.g. one in a pipx venv not on PATH).
+	v.SetDefault("signal_export_bin", "")
+	v.SetDefault("imessage_exporter_bin", "")
 	v.SetDefault("listen_addr", "127.0.0.1:8787")
 
 	v.SetDefault("llm.base_url", "http://127.0.0.1:4000/v1")
