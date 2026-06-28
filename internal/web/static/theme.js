@@ -1,13 +1,14 @@
 // Theme toggle for msgbrowse. Self-hosted (served from /static under
 // script-src 'self') so it runs under the strict CSP. Switches the daisyUI
-// theme between "dim" (dark) and "winter" (light) and persists the choice in
-// localStorage. Loaded in <head> (not deferred) so the saved theme is applied
-// before first paint — no flash of the default theme.
+// theme between "slate" (default, dark) and "slate-light" (derived light) and
+// persists the choice in localStorage. Loaded in <head> (not deferred) so the
+// saved theme is applied before first paint — no flash of the default theme
+// (SPEC-0006 REQ-0006-001).
 (function () {
   "use strict";
   var KEY = "msgbrowse-theme";
-  var DARK = "dim";
-  var LIGHT = "winter";
+  var DARK = "slate";
+  var LIGHT = "slate-light";
 
   var saved;
   try {

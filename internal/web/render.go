@@ -202,9 +202,15 @@ func initials(name string) string {
 // force-included in the build via `@source inline(...)` in tailwind/input.css,
 // because they are selected dynamically here and so are never seen literally in
 // a template for Tailwind's content scan.
+//
+// The order matches the SPEC-0006 / redesign-handoff avatar palette
+// (hash→index): #f43f5e #0ea5e9 #f59e0b #14b8a6 #d946ef #f97316 #6366f1
+// #10b981 — i.e. rose, sky, amber, teal, fuchsia, orange, indigo, emerald
+// (Tailwind's default *-500 shades equal those hex values). Keep this in
+// lockstep with the @source inline(...) safelist.
 var avatarPalette = []string{
-	"bg-rose-500", "bg-orange-500", "bg-amber-500", "bg-emerald-500",
-	"bg-teal-500", "bg-sky-500", "bg-indigo-500", "bg-fuchsia-500",
+	"bg-rose-500", "bg-sky-500", "bg-amber-500", "bg-teal-500",
+	"bg-fuchsia-500", "bg-orange-500", "bg-indigo-500", "bg-emerald-500",
 }
 
 // avatarColor deterministically maps a name to a palette class (FNV-1a hash), so

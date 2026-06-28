@@ -2,21 +2,145 @@
  * (Tailwind v4 standalone CLI + daisyUI, no Node; see Makefile). The BUILT
  * app.css is committed and go:embed-served, so the runtime needs no toolchain.
  *
- * The @plugin path is relative to this file and points at the daisyUI package
- * that `make css` downloads into .tools/. Themes: dim (dark, default) + winter
- * (light); the header toggle switches data-theme between them. */
+ * The @plugin paths are relative to this file and point at the daisyUI package
+ * that `make css` downloads into .tools/. We define two bespoke daisyUI v5
+ * custom themes (ADR-0012, SPEC-0006 REQ-0006-001): `slate` (default, dark) and
+ * a derived `slate-light` light variant. The header toggle switches data-theme
+ * between them. */
 @import "tailwindcss";
 
-@plugin "../../../.tools/daisyui/package/index.js" {
-  themes: dim --default, winter;
+/* Load daisyUI itself (components + utilities). We do NOT enable any stock
+   themes here — the two custom themes below fully define our palette. */
+@plugin "../../../.tools/daisyui/package/index.js";
+
+/* --- slate (default, dark) ---------------------------------------------------
+ * The bespoke slate system. Tokens are the normative values from SPEC-0006's
+ * "Design tokens" section / docs/design/redesign-handoff.md:
+ *   base-100 app bg #0f1216 · base-200 raised panel #13171c ·
+ *   base-300 navbar/sidebar #161a20 · primary slate-blue #6f93d6 ·
+ *   base-content text #dbe2ea · neutral border #232a33.
+ * daisyUI accepts hex in --color-* and normalizes it internally. */
+@plugin "../../../.tools/daisyui/package/theme/index.js" {
+  name: "slate";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #0f1216; /* app background */
+  --color-base-200: #13171c; /* raised panel / card */
+  --color-base-300: #161a20; /* navbar / sidebar surface */
+  --color-base-content: #dbe2ea; /* primary text */
+
+  --color-primary: #6f93d6; /* slate-blue accent */
+  --color-primary-content: #0f1216; /* dark text on accent */
+  --color-secondary: #9bb6e6; /* light accent ("Me" name) */
+  --color-secondary-content: #0f1216;
+  --color-accent: #6f93d6; /* same slate-blue accent */
+  --color-accent-content: #0f1216;
+
+  /* Neutral carries the primary border tone so daisyUI borders/dividers read as
+     the slate hairline #232a33 against the dark surfaces. */
+  --color-neutral: #232a33;
+  --color-neutral-content: #dbe2ea;
+
+  --color-info: #3b82f6; /* Signal blue */
+  --color-info-content: #0f1216;
+  --color-success: #34c759; /* iMessage green */
+  --color-success-content: #0f1216;
+  --color-warning: #e8b84b; /* search-highlight gold family */
+  --color-warning-content: #0f1216;
+  --color-error: #f43f5e;
+  --color-error-content: #0f1216;
+
+  /* Shape: rows/cards/inputs in the 8–14px range; in-app elevation is borders,
+     not shadows (depth/noise 0). */
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 0.875rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* --- slate-light (derived) ---------------------------------------------------
+ * A best-effort light variant DERIVED from the slate tokens (ADR-0012: the
+ * brief is dark-only, so this is our interpretation and may drift from a future
+ * designer-provided light palette). White-ish surfaces, dark slate text, and
+ * the same #6f93d6-family accent (darkened slightly for AA contrast on light). */
+@plugin "../../../.tools/daisyui/package/theme/index.js" {
+  name: "slate-light";
+  default: false;
+  color-scheme: light;
+
+  --color-base-100: #f7f9fc; /* app background (cool off-white) */
+  --color-base-200: #eef2f8; /* raised panel / card */
+  --color-base-300: #e2e8f1; /* navbar / sidebar surface */
+  --color-base-content: #1a2330; /* dark slate text */
+
+  --color-primary: #3f63ad; /* darkened slate-blue for contrast on light */
+  --color-primary-content: #f7f9fc;
+  --color-secondary: #5b7cc0; /* light-variant "Me" accent */
+  --color-secondary-content: #f7f9fc;
+  --color-accent: #3f63ad;
+  --color-accent-content: #f7f9fc;
+
+  --color-neutral: #cdd6e3; /* hairline border tone on light */
+  --color-neutral-content: #1a2330;
+
+  --color-info: #2563eb; /* Signal blue (darker for light bg) */
+  --color-info-content: #f7f9fc;
+  --color-success: #15803d; /* iMessage green (darker for light bg) */
+  --color-success-content: #f7f9fc;
+  --color-warning: #b7791f;
+  --color-warning-content: #f7f9fc;
+  --color-error: #be123c;
+  --color-error-content: #f7f9fc;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 0.875rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
 }
 
 /* Tell Tailwind where utility classes are used (v4 content detection). */
 @source "../templates";
 
 /* Monogram-avatar background palette: chosen dynamically in Go (avatarColor),
-   so it never appears literally in a template for the content scan. Safelist it. */
-@source inline("bg-rose-500 bg-orange-500 bg-amber-500 bg-emerald-500 bg-teal-500 bg-sky-500 bg-indigo-500 bg-fuchsia-500");
+   so it never appears literally in a template for the content scan. Safelist it.
+   These match the avatarPalette in render.go (SPEC-0006 avatar palette). */
+@source inline("bg-rose-500 bg-sky-500 bg-amber-500 bg-teal-500 bg-fuchsia-500 bg-orange-500 bg-indigo-500 bg-emerald-500");
+
+/* --- typography: system fonts only (no web fonts; CSP/ADR-0010 holds) --- */
+
+/* System sans for UI, antialiased per the handoff; system mono for numerals. */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mono face for numerals/timestamps/filenames/counts (REQ-0006-001). The
+   `font-mono` utility carries the system mono stack AND tabular figures, so any
+   timestamp/filename/count tagged `font-mono` renders mono + tabular. */
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Counts in the sans face still get tabular figures via `tabular-nums`. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
 
 /* --- small custom bits daisyUI doesn't cover --- */
 
