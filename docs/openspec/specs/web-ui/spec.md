@@ -1,6 +1,6 @@
 # SPEC-0004: Web UI
 
-- **Status:** Accepted (backfilled)
+- **Status:** Accepted (backfilled) — superseded **visually** by [SPEC-0006 (web-ui-redesign)](../web-ui-redesign/spec.md); the behavioral requirements below (chronological order, keyset paging, jump-to-context, safe rendering) still hold.
 - **Date:** 2026-06-27
 - **Capability:** web-ui
 - **Source packages:** `internal/web` (`server.go`, `handlers.go`, `media.go`, `gallery.go`, `render.go`, `search.go`, `templates/`)
