@@ -46,8 +46,8 @@ func newImportCommand() *cobra.Command {
 					return fmt.Errorf("signal import: %w", err)
 				}
 				ran++
-				fmt.Fprintf(out, "signal:   %d/%d conversations changed, %d added, %d skipped lines in %dms\n",
-					run.ConversationsChanged, run.ConversationsScanned, run.MessagesAdded, run.SkippedLines, run.DurationMS)
+				fmt.Fprintf(out, "signal:   %d/%d conversations changed, %d messages total (%d added), %d skipped lines in %dms\n",
+					run.ConversationsChanged, run.ConversationsScanned, run.MessagesTotal, run.MessagesAdded, run.SkippedLines, run.DurationMS)
 			} else {
 				slog.Info("skipping Signal: archive_root not set")
 			}
@@ -61,8 +61,8 @@ func newImportCommand() *cobra.Command {
 					return fmt.Errorf("imessage import: %w", err)
 				}
 				ran++
-				fmt.Fprintf(out, "imessage: %d/%d conversations changed, %d added, %d skipped lines in %dms\n",
-					run.ConversationsChanged, run.ConversationsScanned, run.MessagesAdded, run.SkippedLines, run.DurationMS)
+				fmt.Fprintf(out, "imessage: %d/%d conversations changed, %d messages total (%d added), %d skipped lines in %dms\n",
+					run.ConversationsChanged, run.ConversationsScanned, run.MessagesTotal, run.MessagesAdded, run.SkippedLines, run.DurationMS)
 			} else {
 				slog.Info("skipping iMessage: imessage_archive_root not set")
 			}
