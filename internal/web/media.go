@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/joestump/msgbrowse/internal/ingest"
-	"github.com/joestump/msgbrowse/internal/source"
+	"github.com/joestump/msgbrowse/internal/archivepath"
+	"github.com/joestump/msgbrowse/internal/imageconv"
 )
 
 // handleMedia serves an attachment from a conversation's folder in the read-only
@@ -36,6 +36,24 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
+	}
+
+	// Browsers can't render HEIC/HEIF/TIFF. If `msgbrowse media` transcoded a
+	// JPEG derivative at import time, serve that inline so the photo displays;
+	// otherwise fall through to the original (a download) — the gallery shows a
+	// placeholder for these rather than a broken <img>.
+	if imageconv.Convertible(full) {
+		if d := imageconv.DerivedPath(s.derivedDir, full); d != "" {
+			if df, derr := os.Open(d); derr == nil {
+				defer df.Close()
+				if di, serr := df.Stat(); serr == nil && !di.IsDir() {
+					w.Header().Set("Content-Type", "image/jpeg")
+					w.Header().Set("Content-Disposition", "inline")
+					http.ServeContent(w, r, "image.jpg", di.ModTime(), df)
+					return
+				}
+			}
+		}
 	}
 
 	f, err := os.Open(full)
@@ -80,31 +98,13 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 // Both go through containWithin, which neutralizes ".." and verifies the result
 // stays inside the base directory.
 func (s *Server) mediaFilePath(src, convName, rel string) (string, bool) {
-	switch src {
-	case source.IMessage:
-		return containWithin(s.imessageArchiveRoot, rel)
-	default: // signal (and any legacy rows with empty source)
-		if s.archiveRoot == "" {
-			return "", false
-		}
-		return containWithin(filepath.Join(s.archiveRoot, ingest.ExportDir, convName), rel)
-	}
+	return archivepath.Resolve(src, s.archiveRoot, s.imessageArchiveRoot, convName, rel)
 }
 
-// containWithin resolves rel against base, rejecting empty inputs and any path
-// that escapes base. The lexical containment check is against base, so a
-// symlinked media dir inside base is still served (its target is not checked).
+// containWithin is a thin wrapper over archivepath.Contain (the shared,
+// traversal-safe containment used by both the web layer and the transcoder).
 func containWithin(base, rel string) (string, bool) {
-	if base == "" || rel == "" {
-		return "", false
-	}
-	cleanRel := filepath.Clean("/" + strings.TrimPrefix(rel, "/"))
-	full := filepath.Join(base, cleanRel)
-	relCheck, err := filepath.Rel(base, full)
-	if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	return full, true
+	return archivepath.Contain(base, rel)
 }
 
 // imageExts are the extensions served inline. SVG is intentionally absent: the

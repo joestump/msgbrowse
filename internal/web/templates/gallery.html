@@ -81,13 +81,25 @@
         {{- if .Images}}
         <div class="image-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
           {{- range $i, $img := .Images}}
+          {{- if imgRenderable $img.Source $img.ConversationName $img.RelPath}}
           <a class="aspect-square overflow-hidden rounded-lg bg-base-300 hover:opacity-80 transition-opacity" href="#lb-{{$i}}" title="{{$img.OriginalName}}">
             <img class="w-full h-full object-cover" loading="lazy" src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
           </a>
+          {{- else}}
+          {{/* Non-web format (e.g. HEIC) with no transcoded derivative: show a
+               placeholder linking to the original for download, not a broken img. */}}
+          <a class="aspect-square rounded-lg bg-base-300 border border-base-content/10 flex flex-col items-center justify-center gap-1 p-2 text-center hover:opacity-80" href="{{mediaURL $img.ConversationID $img.RelPath}}" title="{{$img.OriginalName}} (download)">
+            {{template "icon-photo" $}}
+            <span class="font-mono text-[10px] opacity-60 break-all line-clamp-2">{{if $img.OriginalName}}{{$img.OriginalName}}{{else}}{{$img.RelPath}}{{end}}</span>
+            <span class="badge badge-xs badge-ghost">no preview</span>
+          </a>
+          {{- end}}
           {{- end}}
         </div>
-        {{/* CSS :target lightboxes — no JavaScript, CSP-safe. */}}
+        {{/* CSS :target lightboxes — no JavaScript, CSP-safe. Only for images
+             that actually render; placeholders link straight to the file. */}}
         {{- range $i, $img := .Images}}
+        {{- if imgRenderable $img.Source $img.ConversationName $img.RelPath}}
         <div class="lightbox" id="lb-{{$i}}">
           <a class="btn btn-circle btn-ghost absolute top-4 right-4 text-2xl text-white" href="#" title="close">✕</a>
           <img src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
@@ -96,6 +108,7 @@
             · {{$img.TS}} · {{$img.Source}}
           </div>
         </div>
+        {{- end}}
         {{- end}}
         {{- else}}<p class="opacity-60">No images match.</p>{{end}}
       {{- end}}

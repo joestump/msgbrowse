@@ -108,6 +108,34 @@ SELECT m.conversation_id, c.name, m.source, m.id, a.kind, a.rel_path, a.original
 	return out, rows.Err()
 }
 
+// ListImageAttachments returns every image attachment (no filter, no limit) with
+// the conversation source/name needed to resolve its on-disk path. Used by the
+// image transcoder to find HEIC/TIFF files to convert; ordered oldest-first so a
+// resumed run makes steady forward progress.
+func (s *Store) ListImageAttachments(ctx context.Context) ([]MediaItem, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT m.conversation_id, c.name, m.source, m.id, a.kind, a.rel_path, a.original_name, m.ts, m.ts_unix
+  FROM attachments a
+  JOIN messages m      ON m.id = a.message_id
+  JOIN conversations c ON c.id = m.conversation_id
+ WHERE a.kind = 'image'
+ ORDER BY m.ts_unix ASC, m.id ASC, a.id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list image attachments: %w", err)
+	}
+	defer rows.Close()
+	var out []MediaItem
+	for rows.Next() {
+		var m MediaItem
+		if err := rows.Scan(&m.ConversationID, &m.ConversationName, &m.Source, &m.MessageID,
+			&m.Kind, &m.RelPath, &m.OriginalName, &m.TS, &m.TSUnix); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ListLinks returns links matching the filter, deduplicated by URL. Each item
 // carries its total occurrence count and the earliest message it appeared in.
 // Results are ordered by domain, then descending occurrence count.

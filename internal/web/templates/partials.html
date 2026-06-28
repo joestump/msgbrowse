@@ -82,12 +82,14 @@
       {{- if .Attachments}}
       <div class="flex flex-wrap gap-2 mt-2">
         {{- range .Attachments}}
-          {{- if eq .Kind "image"}}
+          {{- if and (eq .Kind "image") (imgRenderable $.Source $.ConvName .RelPath)}}
           <a href="{{mediaURL $.ActiveID .RelPath}}" target="_blank" rel="noopener noreferrer nofollow">
             <img class="thumb rounded-lg" loading="lazy" src="{{mediaURL $.ActiveID .RelPath}}" alt="{{.OriginalName}}">
           </a>
           {{- else}}
-          <a class="btn btn-sm btn-outline gap-1" href="{{mediaURL $.ActiveID .RelPath}}">{{template "icon-document" $}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+          {{/* Files, and images with no browser-renderable rendition (e.g. an
+               un-transcoded HEIC), render as a labeled download chip. */}}
+          <a class="btn btn-sm btn-outline gap-1" href="{{mediaURL $.ActiveID .RelPath}}">{{if eq .Kind "image"}}{{template "icon-photo" $}}{{else}}{{template "icon-document" $}}{{end}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
           {{- end}}
         {{- end}}
       </div>

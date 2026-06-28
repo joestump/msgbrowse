@@ -19,6 +19,8 @@ cmd/msgbrowse            thin main(): delegates to internal/cli
     ├── internal/llm     OpenAI-compatible client (the only network egress)
     ├── internal/embed   batch embedding orchestration
     ├── internal/facts   incremental, cited contact-fact extraction (LLM)
+    ├── internal/imageconv  transcode HEIC/TIFF → cached JPEG (external converter, ADR-0014)
+    ├── internal/archivepath shared, traversal-safe attachment path resolution
     ├── internal/mcp     Model Context Protocol server (tools over the store)
     └── internal/web     net/http + html/template + HTMX UI
 ```

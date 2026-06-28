@@ -17,9 +17,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/imageconv"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
 )
@@ -35,6 +37,7 @@ type Server struct {
 	store               *store.Store
 	archiveRoot         string // signal-export archive (export/<conv>/<rel>)
 	imessageArchiveRoot string // imessage-exporter archive (<root>/<rel>)
+	derivedDir          string // cache of transcoded JPEGs (<data_dir>/derived)
 	tmpl                *template.Template
 	log                 *slog.Logger
 	mux                 http.Handler
@@ -44,6 +47,13 @@ type Server struct {
 func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, error) {
 	if log == nil {
 		log = slog.Default()
+	}
+	s := &Server{
+		store:               st,
+		archiveRoot:         cfg.ArchiveRoot,
+		imessageArchiveRoot: cfg.IMessageArchiveRoot,
+		derivedDir:          imageconv.DerivedDir(cfg.DataDir),
+		log:                 log,
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"renderBody":       renderBody,
@@ -55,13 +65,37 @@ func NewServer(st *store.Store, cfg *config.Config, log *slog.Logger) (*Server, 
 		"initials":         initials,
 		"avatarColor":      avatarColor,
 		"humanSource":      source.Label,
+		"imgRenderable":    s.imgRenderable,
 	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
-	s := &Server{store: st, archiveRoot: cfg.ArchiveRoot, imessageArchiveRoot: cfg.IMessageArchiveRoot, tmpl: tmpl, log: log}
+	s.tmpl = tmpl
 	s.mux = s.routes()
 	return s, nil
+}
+
+// imgRenderable reports whether an image attachment will actually display in an
+// <img>: either a web-native format, or a non-web format (HEIC/TIFF) that has a
+// transcoded JPEG derivative on disk. Templates use it to render a placeholder
+// instead of a broken image.
+func (s *Server) imgRenderable(src, convName, relPath string) bool {
+	if imageconv.WebRenderable(relPath) {
+		return true
+	}
+	if !imageconv.Convertible(relPath) {
+		return false
+	}
+	abs, ok := s.mediaFilePath(src, convName, relPath)
+	if !ok {
+		return false
+	}
+	d := imageconv.DerivedPath(s.derivedDir, abs)
+	if d == "" {
+		return false
+	}
+	_, err := os.Stat(d)
+	return err == nil
 }
 
 // Handler returns the root http.Handler (security headers already applied).

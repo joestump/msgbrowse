@@ -19,6 +19,8 @@ type baseData struct {
 // sentinel (used both in the full page and the HTMX partial).
 type messageListData struct {
 	ActiveID    int64
+	Source      string // active conversation's source (for media renderability checks)
+	ConvName    string // active conversation's name (for media path resolution)
 	Messages    []store.MessageView
 	HasMore     bool
 	NextTSUnix  int64
@@ -107,6 +109,8 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		Active:   active,
 		List: messageListData{
 			ActiveID:   id,
+			Source:     active.Source,
+			ConvName:   active.Name,
 			Messages:   page.Messages,
 			HasMore:    page.HasMore,
 			NextTSUnix: page.NextTSUnix,
@@ -129,8 +133,16 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	// The conversation's source/name drive media renderability checks in the
+	// partial; fetch them (cheap, once per scroll page).
+	var src, convName string
+	if active, err := s.store.GetConversationByID(ctx, id); err == nil && active != nil {
+		src, convName = active.Source, active.Name
+	}
 	s.render(w, "message_list", messageListData{
 		ActiveID:   id,
+		Source:     src,
+		ConvName:   convName,
 		Messages:   page.Messages,
 		HasMore:    page.HasMore,
 		NextTSUnix: page.NextTSUnix,
