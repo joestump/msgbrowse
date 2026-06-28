@@ -6,7 +6,7 @@
        in" cards need backend queries that don't exist yet — skipped here (see
        SPEC-0006 REQ-0006-007 notes); nothing invents a backend. */}}
   <div class="px-6 lg:px-10 py-10">
-    <div class="screen-col" style="max-width:780px">
+    <div class="screen-col">
       <header class="mb-8">
         <h1 class="home-hero-title">msgbrowse</h1>
         <p class="home-hero-tagline">A calm, private reading room for everything you've ever said.<br>
@@ -55,7 +55,7 @@
         </a>
       </div>
       {{else}}
-      <div class="link-card" style="display:block">
+      <div class="notice-card">
         <p class="link-card-title">No messages have been ingested yet.</p>
         <p class="link-card-sub">Run <code class="font-mono">msgbrowse signal-import</code> against your archive, then refresh.</p>
       </div>

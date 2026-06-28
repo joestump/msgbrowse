@@ -109,9 +109,9 @@
         {{- range $i, $img := .Images}}
         {{- if imgRenderable $img.Source $img.ConversationName $img.RelPath}}
         <div class="lightbox" id="lb-{{$i}}">
-          <a class="navbar-toggle absolute top-4 right-4" style="color:#fff" href="#" title="close">✕</a>
+          <a class="navbar-toggle lightbox-close absolute top-4 right-4" href="#" title="close">✕</a>
           <img src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
-          <div class="text-sm" style="color:rgba(255,255,255,.8)">
+          <div class="text-sm lightbox-caption">
             <a class="link-card-title" href="/c/{{$img.ConversationID}}/at/{{$img.MessageID}}#m{{$img.MessageID}}">{{humanName $img.ConversationName}}</a>
             · <span class="font-mono">{{$img.TS}}</span> · <span class="source-pill {{sourceSlug $img.Source}}">{{humanSource $img.Source}}</span>
           </div>
