@@ -34,26 +34,28 @@ TW_OS            := $(if $(filter Darwin,$(UNAME_S)),macos,linux)
 TW_ARCH          := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,x64)
 TW_ASSET         := tailwindcss-$(TW_OS)-$(TW_ARCH)
 
-# The SQLite driver (mattn/go-sqlite3) needs cgo and the sqlite_fts5 build tag
-# to enable the FTS5 full-text search extension used by keyword search.
-TAGS        := sqlite_fts5
-export CGO_ENABLED = 1
+# The SQLite driver is pure-Go (modernc.org/sqlite) with FTS5 built in, so the
+# build needs no C toolchain and no build tag. Pin CGO off to keep it that way.
+export CGO_ENABLED = 0
 
-.PHONY: all build run test cover check fmt fmt-check vet tidy clean clean-tools css up up-bundled down logs signal-import embed journal
+.PHONY: all build install run test cover check fmt fmt-check vet tidy clean clean-tools css up up-bundled down logs signal-import embed journal
 
 all: check build
 
 build: ## Build the binary
-	$(GO) build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/msgbrowse
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/msgbrowse
+
+install: ## Install the binary into $GOBIN/$GOPATH/bin
+	$(GO) install -ldflags "$(LDFLAGS)" ./cmd/msgbrowse
 
 run: build ## Build then run the web UI
 	$(BIN_DIR)/$(BINARY) serve
 
 test: ## Run all tests
-	$(GO) test -tags "$(TAGS)" ./...
+	$(GO) test ./...
 
 cover: ## Run tests with coverage
-	$(GO) test -tags "$(TAGS)" -coverprofile=coverage.out ./...
+	$(GO) test -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -1
 
 fmt: ## Format the code
@@ -63,7 +65,7 @@ fmt-check: ## Fail if any file is not gofmt-clean
 	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 vet: ## Run go vet
-	$(GO) vet -tags "$(TAGS)" ./...
+	$(GO) vet ./...
 
 tidy: ## Tidy go.mod/go.sum
 	$(GO) mod tidy

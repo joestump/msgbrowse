@@ -100,7 +100,8 @@ the UI loads — CSS, htmx, the theme script, icons — is same-origin.
 
 ## Key decisions (ADRs)
 
-- [ADR-0001](docs/adr/0001-sqlite-driver-mattn-cgo.md) — SQLite driver: mattn + cgo + `sqlite_fts5`.
+- [ADR-0001](docs/adr/0001-sqlite-driver-mattn-cgo.md) — SQLite driver: originally mattn + cgo + `sqlite_fts5` (superseded by ADR-0013).
+- [ADR-0013](docs/adr/0013-pure-go-sqlite-driver.md) — SQLite driver: pure-Go `modernc.org/sqlite` (FTS5 built in; toolchain-free `go install`).
 - [ADR-0002](docs/adr/0002-vector-backend.md) — vector backend: brute-force default, sqlite-vec optional.
 - [ADR-0003](docs/adr/0003-dual-source-archive.md) — dual-source unified schema + manual contact reconciliation.
 - [ADR-0004](docs/adr/0004-mcp-sdk-and-rag.md) — official MCP SDK + citation-faithful hybrid RAG.
