@@ -31,3 +31,6 @@
 
 # Dev-time CSS toolchain (downloaded by `make css`)
 /.tools/
+
+# Transient agent worktrees (created under the repo by background agents)
+/.claude/

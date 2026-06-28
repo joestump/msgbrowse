@@ -49,10 +49,18 @@ func newServeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Convenience for local use: open the UI in the default browser once
+			// the listener is up. Best-effort and easily disabled (--open=false)
+			// for headless/server runs.
+			if open, _ := cmd.Flags().GetBool("open"); open {
+				go openWhenReady(ctx, cfg.ListenAddr, slog.Default())
+			}
 			return srv.Run(ctx, cfg.ListenAddr)
 		},
 	}
 	cmd.Flags().String("listen-addr", "", "override listen address (default 127.0.0.1:8787)")
+	cmd.Flags().Bool("open", true, "open the UI in your default browser on start (use --open=false for headless)")
 	return cmd
 }
 
