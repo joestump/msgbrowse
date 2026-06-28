@@ -20,6 +20,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.VectorBackend != "sqlite-vec" {
 		t.Errorf("VectorBackend = %q, want sqlite-vec", cfg.VectorBackend)
 	}
+	if cfg.LLM.ChatModel != "local-chat" {
+		t.Errorf("LLM.ChatModel = %q, want local-first default local-chat", cfg.LLM.ChatModel)
+	}
+	if cfg.LLM.EmbedModel != "local-embed" {
+		t.Errorf("LLM.EmbedModel = %q, want local-first default local-embed", cfg.LLM.EmbedModel)
+	}
 	if cfg.LLM.Timeout != 60*time.Second {
 		t.Errorf("LLM.Timeout = %v, want 60s", cfg.LLM.Timeout)
 	}

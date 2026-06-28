@@ -102,8 +102,11 @@ func SetDefaults(v *viper.Viper) {
 
 	v.SetDefault("llm.base_url", "http://127.0.0.1:4000/v1")
 	v.SetDefault("llm.api_key", "")
-	v.SetDefault("llm.chat_model", "gpt-4o-mini")
-	v.SetDefault("llm.embed_model", "text-embedding-3-small")
+	// Local-first defaults: these are LiteLLM route aliases meant to resolve to a
+	// local model (matching the loopback llm.base_url above). Routing to a hosted
+	// model must be a deliberate choice — see docs/adr/0010-security-privacy-posture.md.
+	v.SetDefault("llm.chat_model", "local-chat")
+	v.SetDefault("llm.embed_model", "local-embed")
 	v.SetDefault("llm.max_concurrency", 4)
 	v.SetDefault("llm.timeout", 60*time.Second)
 
