@@ -235,6 +235,41 @@ func TestParseReactions(t *testing.T) {
 			t.Errorf("quoted parenthetical stripped from body: %q", msgs[0].Body)
 		}
 	})
+
+	t.Run("real trailer after an earlier in-body parenthetical", func(t *testing.T) {
+		// An earlier `(- … -)` line must not shadow the real trailer at the very
+		// end — only the LAST such line is the trailer.
+		in := "[2022-03-01 09:00:00] MJ: (- not a reaction -)\nthe actual message\n(- Me: 👍 -)\n"
+		msgs, _, err := ParseAll("MJ", strings.NewReader(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(msgs) != 1 {
+			t.Fatalf("got %d messages, want 1", len(msgs))
+		}
+		if msgs[0].Body != "(- not a reaction -)\nthe actual message" {
+			t.Errorf("body = %q, want the earlier parenthetical kept + trailer stripped", msgs[0].Body)
+		}
+		if len(msgs[0].Reactions) != 1 || msgs[0].Reactions[0] != (Reaction{Emoji: "👍", Actor: "Me"}) {
+			t.Errorf("reactions = %+v, want [{👍 Me}]", msgs[0].Reactions)
+		}
+	})
+
+	t.Run("reactor name containing a colon", func(t *testing.T) {
+		// The emoji never contains ": ", but a display name can — split on the LAST
+		// ": " so the name keeps its colon and the emoji is the tail.
+		in := "[2022-03-01 09:00:00] MJ: hi\n(- Dr: Smith: 👍 -)\n"
+		msgs, _, err := ParseAll("MJ", strings.NewReader(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(msgs) != 1 || len(msgs[0].Reactions) != 1 {
+			t.Fatalf("got %d messages / reactions %+v", len(msgs), msgs[0].Reactions)
+		}
+		if got := msgs[0].Reactions[0]; got != (Reaction{Emoji: "👍", Actor: "Dr: Smith"}) {
+			t.Errorf("reaction = %+v, want {👍 \"Dr: Smith\"}", got)
+		}
+	})
 }
 
 func assertMessage(t *testing.T, i int, got, want Message) {

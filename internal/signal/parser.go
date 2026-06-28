@@ -233,28 +233,33 @@ func extract(body string) ([]Attachment, []Link) {
 // separator are skipped. A body with no trailer is returned unchanged with nil
 // reactions.
 func extractReactions(body string) (string, []Reaction) {
-	loc := reactionLineRe.FindStringSubmatchIndex(body)
-	if loc == nil {
+	all := reactionLineRe.FindAllStringSubmatchIndex(body, -1)
+	if all == nil {
 		return body, nil
 	}
-	// Only treat it as a reactions trailer when it is the LAST non-empty content of
-	// the body — signal-export always appends it last. If trailing text follows,
-	// leave the body untouched (it is an in-body parenthetical, not a trailer).
+	// signal-export always appends the reactions trailer as the FINAL line, so the
+	// trailer (if any) is the LAST matching line — take it, not the first. An
+	// earlier `(- … -)` line is an in-body parenthetical and is left alone.
+	loc := all[len(all)-1]
+	// Confirm it really is the trailer: nothing but whitespace may follow it.
 	if strings.TrimSpace(body[loc[1]:]) != "" {
 		return body, nil
 	}
 	inner := body[loc[2]:loc[3]]
 	var reactions []Reaction
 	for _, entry := range strings.Split(inner, ", ") {
-		name, emoji, ok := strings.Cut(entry, ": ")
-		if !ok {
+		// Split on the LAST ": ": the emoji never contains ": ", but a reactor's
+		// display name can, so the colon-free tail is the emoji and everything
+		// before it is the name.
+		i := strings.LastIndex(entry, ": ")
+		if i < 0 {
 			continue
 		}
-		emoji = strings.TrimSpace(emoji)
+		emoji := strings.TrimSpace(entry[i+2:])
 		if emoji == "" {
 			continue
 		}
-		reactions = append(reactions, Reaction{Emoji: emoji, Actor: strings.TrimSpace(name)})
+		reactions = append(reactions, Reaction{Emoji: emoji, Actor: strings.TrimSpace(entry[:i])})
 	}
 	// Strip the trailer (and any blank line it sat on) from the body.
 	cleaned := strings.TrimRight(body[:loc[0]], "\n \t")
