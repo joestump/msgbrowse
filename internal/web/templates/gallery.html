@@ -1,97 +1,105 @@
 {{define "gallery"}}{{template "page_start" .}}
-  <div class="p-4 lg:p-6 max-w-5xl">
-    <h1 class="text-2xl font-bold mb-1">Media</h1>
-    <p class="opacity-60 mb-4">Images, files, and links across your archive.</p>
+  {{/* Media (REQ-0006-009, brief §5): H1 + Images/Files/Links tabs with count
+       badges and an accent underline on the active tab; a filter row; an Images
+       responsive square cover grid with a bottom scrim + mono filename (keeps the
+       imgRenderable placeholder logic and the CSS :target lightbox); Files/Links
+       re-skinned to slate cards (Links grouped by domain). */}}
+  <div class="px-4 lg:px-6 py-6 max-w-5xl">
+    <h1 class="screen-h1 mb-1">Media</h1>
+    <p class="screen-sub mb-5">Images, files, and links across your archive.</p>
 
-    <form class="flex flex-wrap items-end gap-3 mb-4" action="/gallery" method="get">
+    <form class="filter-row mb-4" action="/gallery" method="get">
       <input type="hidden" name="tab" value="{{.Filter.Tab}}">
-      <label class="form-control">
-        <span class="label-text text-xs opacity-60">Conversation</span>
-        <select name="conversation" class="select select-bordered select-sm">
-          <option value="">Any</option>
+      <label class="filter-control">
+        <span class="filter-label">Conversation</span>
+        <select name="conversation" class="filter-input">
+          <option value="">All conversations</option>
           {{- range .Conversations}}
-          <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{.Name}}</option>
+          <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{humanName .Name}}</option>
           {{- end}}
         </select>
       </label>
-      <label class="form-control">
-        <span class="label-text text-xs opacity-60">Source</span>
-        <select name="source" class="select select-bordered select-sm">
-          <option value="">Any</option>
+      <label class="filter-control">
+        <span class="filter-label">Source</span>
+        <select name="source" class="filter-input">
+          <option value="">All sources</option>
           {{- range .Sources}}
-          <option value="{{.}}" {{if eq . $.Filter.Source}}selected{{end}}>{{.}}</option>
+          <option value="{{.}}" {{if eq . $.Filter.Source}}selected{{end}}>{{humanSource .}}</option>
           {{- end}}
         </select>
       </label>
-      <label class="form-control"><span class="label-text text-xs opacity-60">From</span><input type="date" name="start" value="{{.Filter.Start}}" class="input input-bordered input-sm"></label>
-      <label class="form-control"><span class="label-text text-xs opacity-60">To</span><input type="date" name="end" value="{{.Filter.End}}" class="input input-bordered input-sm"></label>
-      <button type="submit" class="btn btn-sm">Apply</button>
+      <label class="filter-control"><span class="filter-label">From</span><input type="date" name="start" value="{{.Filter.Start}}" class="filter-input"></label>
+      <label class="filter-control"><span class="filter-label">To</span><input type="date" name="end" value="{{.Filter.End}}" class="filter-input"></label>
+      <button type="submit" class="btn-search">Apply</button>
     </form>
 
-    <div role="tablist" class="tabs tabs-bordered mb-4">
-      <a role="tab" class="tab {{if eq .Filter.Tab "images"}}tab-active{{end}}" href="{{.Filter.GalleryQuery "images"}}">Images <span class="badge badge-sm badge-ghost ml-1">{{.Counts.Images}}</span></a>
-      <a role="tab" class="tab {{if eq .Filter.Tab "files"}}tab-active{{end}}" href="{{.Filter.GalleryQuery "files"}}">Files <span class="badge badge-sm badge-ghost ml-1">{{.Counts.Files}}</span></a>
-      <a role="tab" class="tab {{if eq .Filter.Tab "links"}}tab-active{{end}}" href="{{.Filter.GalleryQuery "links"}}">Links <span class="badge badge-sm badge-ghost ml-1">{{.Counts.Links}}</span></a>
+    <div role="tablist" class="media-tabs mb-5">
+      <a role="tab" class="media-tab {{if eq .Filter.Tab "images"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "images"}}">Images <span class="media-tab-badge">{{.Counts.Images}}</span></a>
+      <a role="tab" class="media-tab {{if eq .Filter.Tab "files"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "files"}}">Files <span class="media-tab-badge">{{.Counts.Files}}</span></a>
+      <a role="tab" class="media-tab {{if eq .Filter.Tab "links"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "links"}}">Links <span class="media-tab-badge">{{.Counts.Links}}</span></a>
     </div>
 
     <section>
       {{- if eq .Filter.Tab "files"}}
         {{- if .Files}}
-        <ul class="flex flex-col gap-2">
+        <ul class="media-list">
           {{- range .Files}}
-          <li class="card card-compact bg-base-200 border border-base-300">
-            <div class="card-body">
-              <a class="link link-hover font-medium inline-flex items-center gap-1" href="{{mediaURL .ConversationID .RelPath}}">{{template "icon-document" .}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
-              <span class="text-xs opacity-60">
-                {{- if .ContentType}}{{.ContentType}}{{else}}unknown{{end}}
-                {{- if .SizeHuman}} · {{.SizeHuman}}{{end}}
-                · <a class="link" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{humanName .ConversationName}}</a>
-                · {{.TS}} · {{.Source}}
-              </span>
+          <li class="media-list-card">
+            <a class="media-file-name" href="{{mediaURL .ConversationID .RelPath}}">{{template "icon-document" .}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+            <div class="media-card-meta">
+              {{- if .ContentType}}<span class="font-mono">{{.ContentType}}</span>{{else}}<span class="font-mono">unknown</span>{{end}}
+              {{- if .SizeHuman}} · <span class="font-mono">{{.SizeHuman}}</span>{{end}}
+              · <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{humanName .ConversationName}}</a>
+              · <span class="font-mono">{{.TS}}</span>
+              · <span class="source-pill {{sourceSlug .Source}}">{{humanSource .Source}}</span>
             </div>
           </li>
           {{- end}}
         </ul>
-        {{- else}}<p class="opacity-60">No files match.</p>{{end}}
+        {{- else}}<p class="results-empty">No files match.</p>{{end}}
 
       {{- else if eq .Filter.Tab "links"}}
         {{- if .Groups}}
         {{- range .Groups}}
         <div class="link-group mb-5">
-          <h3 class="font-semibold mb-1 flex items-center gap-2">{{.Domain}} <span class="badge badge-sm badge-ghost">{{len .Links}}</span></h3>
-          <ul class="flex flex-col gap-1">
+          <div class="link-group-head">
+            <span class="link-group-domain">{{.Domain}}</span>
+            <span class="link-group-count">{{len .Links}}</span>
+          </div>
+          <ul class="media-list">
             {{- range .Links}}
-            <li class="card card-compact bg-base-200 border border-base-300">
-              <div class="card-body">
-                <a class="link link-primary break-all text-sm" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
-                <span class="text-xs opacity-60">
-                  {{- if gt .Count 1}}×{{.Count}} · {{end}}
-                  <a class="link" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{humanName .ConversationName}}</a>
-                  · {{.TS}} · {{.Source}}
-                </span>
+            <li class="media-list-card">
+              <a class="media-link-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
+              <div class="media-card-meta">
+                {{- if gt .Count 1}}<span class="font-mono">×{{.Count}}</span> · {{end}}
+                <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{humanName .ConversationName}}</a>
+                · <span class="font-mono">{{.TS}}</span>
+                · <span class="source-pill {{sourceSlug .Source}}">{{humanSource .Source}}</span>
               </div>
             </li>
             {{- end}}
           </ul>
         </div>
         {{- end}}
-        {{- else}}<p class="opacity-60">No links match.</p>{{end}}
+        {{- else}}<p class="results-empty">No links match.</p>{{end}}
 
       {{- else}}
         {{- if .Images}}
-        <div class="image-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+        <div class="image-grid media-grid">
           {{- range $i, $img := .Images}}
           {{- if imgRenderable $img.Source $img.ConversationName $img.RelPath}}
-          <a class="aspect-square overflow-hidden rounded-lg bg-base-300 hover:opacity-80 transition-opacity" href="#lb-{{$i}}" title="{{$img.OriginalName}}">
-            <img class="w-full h-full object-cover" loading="lazy" src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
+          <a class="media-tile" href="#lb-{{$i}}" title="{{$img.OriginalName}}">
+            <img loading="lazy" src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
+            <span class="media-tile-scrim"><span class="media-tile-name">{{if $img.OriginalName}}{{$img.OriginalName}}{{else}}{{$img.RelPath}}{{end}}</span></span>
           </a>
           {{- else}}
           {{/* Non-web format (e.g. HEIC) with no transcoded derivative: show a
-               placeholder linking to the original for download, not a broken img. */}}
-          <a class="aspect-square rounded-lg bg-base-300 border border-base-content/10 flex flex-col items-center justify-center gap-1 p-2 text-center hover:opacity-80" href="{{mediaURL $img.ConversationID $img.RelPath}}" title="{{$img.OriginalName}} (download)">
+               striped placeholder linking to the original for download, not a
+               broken img. */}}
+          <a class="media-tile media-tile-placeholder" href="{{mediaURL $img.ConversationID $img.RelPath}}" title="{{$img.OriginalName}} (download)">
             {{template "icon-photo" $}}
-            <span class="font-mono text-[10px] opacity-60 break-all line-clamp-2">{{if $img.OriginalName}}{{$img.OriginalName}}{{else}}{{$img.RelPath}}{{end}}</span>
-            <span class="badge badge-xs badge-ghost">no preview</span>
+            <span class="ph-name">{{if $img.OriginalName}}{{$img.OriginalName}}{{else}}{{$img.RelPath}}{{end}}</span>
+            <span class="ph-tag">no preview</span>
           </a>
           {{- end}}
           {{- end}}
@@ -101,16 +109,16 @@
         {{- range $i, $img := .Images}}
         {{- if imgRenderable $img.Source $img.ConversationName $img.RelPath}}
         <div class="lightbox" id="lb-{{$i}}">
-          <a class="btn btn-circle btn-ghost absolute top-4 right-4 text-2xl text-white" href="#" title="close">✕</a>
+          <a class="navbar-toggle absolute top-4 right-4" style="color:#fff" href="#" title="close">✕</a>
           <img src="{{mediaURL $img.ConversationID $img.RelPath}}" alt="{{$img.OriginalName}}">
-          <div class="text-sm text-neutral-content/80">
-            <a class="link" href="/c/{{$img.ConversationID}}/at/{{$img.MessageID}}#m{{$img.MessageID}}">{{$img.ConversationName}}</a>
-            · {{$img.TS}} · {{$img.Source}}
+          <div class="text-sm" style="color:rgba(255,255,255,.8)">
+            <a class="link-card-title" href="/c/{{$img.ConversationID}}/at/{{$img.MessageID}}#m{{$img.MessageID}}">{{humanName $img.ConversationName}}</a>
+            · <span class="font-mono">{{$img.TS}}</span> · <span class="source-pill {{sourceSlug $img.Source}}">{{humanSource $img.Source}}</span>
           </div>
         </div>
         {{- end}}
         {{- end}}
-        {{- else}}<p class="opacity-60">No images match.</p>{{end}}
+        {{- else}}<p class="results-empty">No images match.</p>{{end}}
       {{- end}}
     </section>
   </div>

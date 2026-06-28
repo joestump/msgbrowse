@@ -67,6 +67,25 @@ func TestIndexListsConversations(t *testing.T) {
 	}
 }
 
+// TestHomeStatStrip checks the slate Home redesign (REQ-0006-007): the hero
+// wordmark, the 3-cell stat strip with mono tabular values, and the bordered
+// quick-link cards all render.
+func TestHomeStatStrip(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/").Body.String()
+	for _, want := range []string{
+		"home-hero-title", // hero wordmark
+		"stat-strip",      // 3-cell stat strip container
+		"stat-cell-value", // mono tabular stat value
+		"Newest message",  // the third stat cell label
+		"link-card",       // bordered quick-link card
+	} {
+		if !contains(body, want) {
+			t.Errorf("home missing slate marker %q", want)
+		}
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/")
@@ -205,6 +224,13 @@ func TestStatusPage(t *testing.T) {
 	for _, want := range []string{"daily", "monthly", "yearly", "never opens or decrypts"} {
 		if !contains(body, want) {
 			t.Errorf("status page missing %q", want)
+		}
+	}
+	// Slate re-skin (REQ-0006-011): slate surfaces, the freshness stat strip, the
+	// ingest-run metric grid, the snapshot table, and tier pills.
+	for _, want := range []string{"status-card", "stat-strip", "status-grid", "status-table", "tier-pill"} {
+		if !contains(body, want) {
+			t.Errorf("status page missing slate marker %q", want)
 		}
 	}
 }
