@@ -37,7 +37,7 @@ func newTestServer(t *testing.T) (*Server, *store.Store, string) {
 		t.Fatalf("ingest: %v", err)
 	}
 
-	cfg := &config.Config{ArchiveRoot: archive}
+	cfg := &config.Config{ArchiveRoot: archive, DataDir: t.TempDir()}
 	srv, err := NewServer(st, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("new server: %v", err)

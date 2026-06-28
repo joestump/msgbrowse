@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/joestump/msgbrowse/internal/imageconv"
 	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/spf13/cobra"
@@ -69,6 +70,20 @@ func newImportCommand() *cobra.Command {
 
 			if ran == 0 {
 				return fmt.Errorf("nothing to import: set archive_root and/or imessage_archive_root (flags, config, or MSGBROWSE_* env)")
+			}
+
+			// Best-effort: transcode non-web images (HEIC/TIFF) so the gallery can
+			// show them. A missing converter is fine — the UI falls back to
+			// placeholders; run `msgbrowse media` later after installing one.
+			if msum, cerr := imageconv.Run(cmd.Context(), st, imageconv.Options{
+				ArchiveRoot:         cfg.ArchiveRoot,
+				IMessageArchiveRoot: cfg.IMessageArchiveRoot,
+				DataDir:             cfg.DataDir,
+			}); cerr != nil {
+				slog.Warn("image transcode step failed; gallery may show placeholders", "error", cerr)
+			} else if !msum.NoConverter {
+				fmt.Fprintf(out, "media:    %d transcoded, %d cached, %d source-missing, %d failed\n",
+					msum.Converted, msum.Skipped, msum.Missing, msum.Failed)
 			}
 			return nil
 		},
