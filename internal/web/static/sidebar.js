@@ -1,18 +1,33 @@
 // Live "Filter conversations" box for the msgbrowse sidebar. Self-hosted (served
 // from /static under script-src 'self') so it runs under the strict CSP — no
 // inline handlers. As the user types, it shows only the conversation rows whose
-// (humanized) name contains the query, case-insensitively, and reveals a small
-// empty-state line when nothing matches (SPEC-0006 REQ-0006-003).
+// (humanized) name contains the query, case-insensitively, across BOTH the
+// PINNED and CONVERSATIONS sections, reveals a small empty-state line when
+// nothing matches, and hides the PINNED group header when none of its rows match
+// (SPEC-0006 REQ-0006-003 / REQ-0006-010).
 (function () {
   "use strict";
 
   function init() {
     var input = document.getElementById("sidebar-filter");
-    var list = document.getElementById("sidebar-conversations");
-    if (!input || !list) return;
+    if (!input) return;
+
+    // Every conversation row in either section carries .conv-item + data-name.
+    var items = Array.prototype.slice.call(document.querySelectorAll(".conv-item"));
+    if (!items.length) return;
 
     var empty = document.querySelector(".sidebar-empty");
-    var items = Array.prototype.slice.call(list.querySelectorAll(".conv-item"));
+    var pinnedUl = document.getElementById("sidebar-pinned");
+    var pinnedHead = pinnedUl ? pinnedUl.previousElementSibling : null;
+
+    function anyVisible(ul) {
+      if (!ul) return false;
+      var rows = ul.querySelectorAll(".conv-item");
+      for (var i = 0; i < rows.length; i++) {
+        if (!rows[i].hidden) return true;
+      }
+      return false;
+    }
 
     function apply() {
       var q = input.value.trim().toLowerCase();
@@ -24,6 +39,13 @@
         if (match) shown++;
       }
       if (empty) empty.hidden = shown !== 0;
+      // Drop the PINNED header + list entirely when nothing in it matches, so a
+      // filtered-out section doesn't leave a dangling "Pinned" label.
+      if (pinnedUl && pinnedHead) {
+        var visible = anyVisible(pinnedUl);
+        pinnedUl.hidden = !visible;
+        pinnedHead.hidden = !visible;
+      }
     }
 
     input.addEventListener("input", apply);

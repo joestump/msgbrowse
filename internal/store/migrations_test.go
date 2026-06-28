@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/joestump/msgbrowse/internal/source"
 	_ "modernc.org/sqlite"
 )
 
@@ -91,6 +92,67 @@ func TestMigrateV1ToV2BootstrapsContacts(t *testing.T) {
 	}
 	if nonSignalConv != 0 {
 		t.Errorf("conversations with non-signal source = %d, want 0", nonSignalConv)
+	}
+}
+
+// TestMigrateV5AddsPinnedColumn confirms schema v5 adds conversations.pinned as
+// a NOT NULL column defaulting to 0 (REQ-0006-010): a fresh database has the
+// column and a newly-inserted conversation is unpinned by default.
+func TestMigrateV5AddsPinnedColumn(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// Column exists with a 0 default.
+	var dflt sql.NullString
+	var notNull int
+	found := false
+	rows, err := st.DB().QueryContext(ctx, `PRAGMA table_info(conversations)`)
+	if err != nil {
+		t.Fatalf("table_info: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid    int
+			name   string
+			ctype  string
+			nn     int
+			defval sql.NullString
+			pk     int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &nn, &defval, &pk); err != nil {
+			t.Fatal(err)
+		}
+		if name == "pinned" {
+			found = true
+			dflt = defval
+			notNull = nn
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("conversations.pinned column missing after migrate")
+	}
+	if notNull != 1 {
+		t.Errorf("pinned should be NOT NULL (notnull=%d)", notNull)
+	}
+	if !dflt.Valid || dflt.String != "0" {
+		t.Errorf("pinned default = %q, want \"0\"", dflt.String)
+	}
+
+	// A brand-new conversation defaults to unpinned.
+	id, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	conv, err := st.GetConversationByID(ctx, id)
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if conv.Pinned {
+		t.Error("new conversation should default to unpinned")
 	}
 }
 

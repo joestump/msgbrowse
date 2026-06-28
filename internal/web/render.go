@@ -287,6 +287,20 @@ func avatarColor(name string) string {
 	return avatarPalette[h%uint32(len(avatarPalette))]
 }
 
+// convRowContext pairs a conversation with the active id for the shared
+// "conv_row" sidebar partial, so the PINNED and CONVERSATIONS sections render
+// from one definition (REQ-0006-010).
+type convRowContext struct {
+	Conv     store.ConversationSummary
+	ActiveID int64
+}
+
+// convRowCtx is the FuncMap adapter that builds a convRowContext inside a
+// template range (html/template has no native struct literals).
+func convRowCtx(c store.ConversationSummary, activeID int64) convRowContext {
+	return convRowContext{Conv: c, ActiveID: activeID}
+}
+
 // highlightSnippet converts an FTS5 snippet (whose matched terms are wrapped in
 // store.SnippetMark{Start,End} control characters) into safe highlighted HTML.
 //

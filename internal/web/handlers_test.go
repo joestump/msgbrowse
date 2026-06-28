@@ -53,6 +53,16 @@ func get(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
+// post issues a bodyless form POST (used by the pin toggle) and returns the
+// recorder without following the redirect.
+func post(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
 func TestIndexListsConversations(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/")

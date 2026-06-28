@@ -4,7 +4,7 @@ package store
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 4
+const schemaVersion = 5
 
 // migrations is the ordered list of per-version migrations applied on Open.
 // Each entry's index is its version (1-based; index 0 is unused).
@@ -29,6 +29,7 @@ var migrations = []string{
 	2: schemaV2,
 	3: schemaV3,
 	4: schemaV4,
+	5: schemaV5,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -255,4 +256,14 @@ CREATE TABLE IF NOT EXISTS fact_state (
     facts_added       INTEGER NOT NULL DEFAULT 0,
     updated_at        TEXT    NOT NULL
 );
+`
+
+// schemaV5 adds the per-conversation `pinned` flag that drives the sidebar's
+// PINNED section (SPEC-0006 REQ-0006-010). A plain additive ALTER: every
+// existing conversation defaults to 0 (unpinned), so the migration is a no-op
+// for already-populated databases and idempotent on re-run via the version
+// guard. Ordering elsewhere is unchanged — the sidebar template, not the query,
+// splits pinned from non-pinned, keeping both sections sorted by recency.
+const schemaV5 = `
+ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
 `

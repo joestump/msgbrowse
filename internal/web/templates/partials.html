@@ -51,34 +51,29 @@
         <a href="/gallery" class="sidebar-link">{{template "icon-photo" .}} <span>Media</span></a>
         <a href="/status" class="sidebar-link">{{template "icon-server" .}} <span>Status &amp; backups</span></a>
       </nav>
+      {{/* PINNED section (REQ-0006-010): pinned conversations float above the
+           CONVERSATIONS list, using the SAME row markup. Rendered only when at
+           least one conversation is pinned. sidebar.js filters BOTH sections
+           because every row carries .conv-item with data-name. */}}
+      {{- if .PinnedConversations}}
+      <div class="sidebar-section-head flex items-baseline justify-between px-4 pt-2 pb-1">
+        <span class="sidebar-section-label">Pinned</span>
+        <span class="font-mono opacity-40 text-xs">{{len .PinnedConversations}}</span>
+      </div>
+      <ul id="sidebar-pinned" class="flex flex-col gap-0.5 px-2 pb-1">
+        {{- range .PinnedConversations}}
+        {{- template "conv_row" (convRowCtx . $.ActiveID)}}
+        {{- end}}
+      </ul>
+      {{- end}}
       <div class="sidebar-section-head flex items-baseline justify-between px-4 pt-2 pb-1">
         <span class="sidebar-section-label">Conversations</span>
-        <span class="font-mono opacity-40 text-xs">{{len .Conversations}}</span>
+        <span class="font-mono opacity-40 text-xs">{{len .UnpinnedConversations}}</span>
       </div>
-      {{/* Scrolling conversation list. */}}
+      {{/* Scrolling conversation list (non-pinned). */}}
       <ul id="sidebar-conversations" class="flex flex-col gap-0.5 px-2 pb-3 overflow-y-auto flex-1">
-        {{- range .Conversations}}
-        <li class="conv-item" data-name="{{humanName .Name}}">
-          <a href="/c/{{.ID}}" class="conv-row{{if eq .ID $.ActiveID}} conv-row-selected{{end}}">
-            {{/* Monogram avatar — the archive has no avatar images, so we render
-                 initials in a per-conversation deterministic color. A presence
-                 dot bottom-right is colored by source (REQ-0006-004). */}}
-            <span class="avatar-mono {{avatarColor .Name}}">
-              {{initials .Name}}
-              <span class="presence-dot {{sourceSlug .Source}}" title="{{humanSource .Source}}"></span>
-            </span>
-            {{/* min-w-0 lets both lines truncate instead of overflowing the row. */}}
-            <span class="min-w-0 flex-1">
-              <span class="flex items-baseline justify-between gap-2">
-                <span class="conv-name truncate">{{humanName .Name}}</span>
-                <span class="conv-count font-mono shrink-0">{{.MessageCount}}</span>
-              </span>
-              <span class="conv-preview truncate">
-                {{- if .LastSender}}<span class="conv-preview-sender">{{humanName .LastSender}}:</span> {{end}}{{.LastPreview}}
-              </span>
-            </span>
-          </a>
-        </li>
+        {{- range .UnpinnedConversations}}
+        {{- template "conv_row" (convRowCtx . $.ActiveID)}}
         {{- end}}
       </ul>
       <p class="sidebar-empty px-4 py-3 text-sm opacity-50" hidden>No conversations match.</p>
@@ -87,6 +82,35 @@
 </div>
 </body>
 </html>{{end}}
+
+{{/* conv_row renders a single sidebar conversation row (REQ-0006-003/004). It is
+     shared verbatim by the PINNED and CONVERSATIONS sections so the two lists are
+     pixel-identical; the .conv-item / data-name wrapper lets sidebar.js filter
+     rows in either section. The context is built by the convRowCtx FuncMap helper
+     and carries .Conv (the ConversationSummary) and .ActiveID. */}}
+{{define "conv_row"}}
+        <li class="conv-item" data-name="{{humanName .Conv.Name}}">
+          <a href="/c/{{.Conv.ID}}" class="conv-row{{if eq .Conv.ID .ActiveID}} conv-row-selected{{end}}">
+            {{/* Monogram avatar — the archive has no avatar images, so we render
+                 initials in a per-conversation deterministic color. A presence
+                 dot bottom-right is colored by source (REQ-0006-004). */}}
+            <span class="avatar-mono {{avatarColor .Conv.Name}}">
+              {{initials .Conv.Name}}
+              <span class="presence-dot {{sourceSlug .Conv.Source}}" title="{{humanSource .Conv.Source}}"></span>
+            </span>
+            {{/* min-w-0 lets both lines truncate instead of overflowing the row. */}}
+            <span class="min-w-0 flex-1">
+              <span class="flex items-baseline justify-between gap-2">
+                <span class="conv-name truncate">{{humanName .Conv.Name}}</span>
+                <span class="conv-count font-mono shrink-0">{{.Conv.MessageCount}}</span>
+              </span>
+              <span class="conv-preview truncate">
+                {{- if .Conv.LastSender}}<span class="conv-preview-sender">{{humanName .Conv.LastSender}}:</span> {{end}}{{.Conv.LastPreview}}
+              </span>
+            </span>
+          </a>
+        </li>
+{{end}}
 
 {{/* Dense-log transcript (REQ-0006-005, ADR-0012). Each message is a row of
      [timestamp gutter | sender-colored rail | content column]; "Me" rows carry a
