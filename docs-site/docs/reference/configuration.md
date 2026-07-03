@@ -35,6 +35,7 @@ Every key maps to an environment variable with the `MSGBROWSE_` prefix; dots in 
 | Key | Environment variable |
 | --- | --- |
 | `data_dir` | `MSGBROWSE_DATA_DIR` |
+| `whatsapp_archive_root` | `MSGBROWSE_WHATSAPP_ARCHIVE_ROOT` |
 | `llm.base_url` | `MSGBROWSE_LLM_BASE_URL` |
 | `llm.api_key` | `MSGBROWSE_LLM_API_KEY` |
 | `journal.max_days_per_run` | `MSGBROWSE_JOURNAL_MAX_DAYS_PER_RUN` |
@@ -47,10 +48,10 @@ List-valued keys (such as `journal.exclude_conversations`) are easiest to set in
 
 ## Data dir vs. archive roots
 
-These three path settings have very different contracts:
+These path settings have very different contracts:
 
 - **`data_dir` is the only place msgbrowse writes.** The SQLite database (`msgbrowse.sqlite`), embeddings, and transcoded-image caches live here. It must be outside the archive.
-- **`archive_root` and `imessage_archive_root` are strictly read-only.** msgbrowse only ever opens files inside them for reading; imports never modify them, and in Docker they are mounted `:ro`. The encrypted `.snapshots/*.tar` backups inside the Signal archive are listed by name and size but never opened or decrypted.
+- **`archive_root`, `imessage_archive_root`, and `whatsapp_archive_root` are strictly read-only.** msgbrowse only ever opens files inside them for reading; imports never modify them, and in Docker they are mounted `:ro`. The encrypted `.snapshots/*.tar` backups inside the Signal archive are listed by name and size but never opened or decrypted.
 
 ## Key reference
 
@@ -60,9 +61,11 @@ These three path settings have very different contracts:
 | --- | --- | --- | --- |
 | `archive_root` | string | `""` | Path to the signal-export archive — the folder that **contains** `export/`, not `export/` itself. Read-only. Leave empty if you only import iMessage. |
 | `imessage_archive_root` | string | `""` | Path to the imessage-exporter output (a flat directory of `<ChatName>.txt` files plus attachments). Read-only. Leave empty if you only import Signal. |
+| `whatsapp_archive_root` | string | `""` | Path to the whatsapp-chat-exporter output (`result.json` plus any media directories the tool copied). Read-only. Leave empty to skip the WhatsApp source. |
 | `data_dir` | string | `./data` | Writable directory for the SQLite database, vector index, and caches. Must not be empty; must be outside the archive. |
 | `signal_export_bin` | string | `""` | Path to the Signal exporter binary used by `msgbrowse export`. Empty means look up `sigexport` on `PATH`. Set it to pin a specific binary (e.g. one inside a pipx venv). |
 | `imessage_exporter_bin` | string | `""` | Path to the `imessage-exporter` binary used by `msgbrowse export`. Empty means look it up on `PATH`. |
+| `whatsapp_exporter_bin` | string | `""` | Path to the `wtsexporter` binary used by `msgbrowse export` (the pipx package is `whatsapp-chat-exporter`). Empty means look it up on `PATH`. |
 | `listen_addr` | string | `127.0.0.1:8787` | Web UI bind address. Loopback by default; the UI has no authentication, so binding to a non-loopback interface is an explicit, deliberate choice. |
 | `vector_backend` | string | `sqlite-vec` | Vector store for semantic search: `sqlite-vec` or `qdrant`. Any other value fails validation. |
 | `ingest_on_start` | bool | `false` | Run an import pass automatically when `serve` boots. |
@@ -104,6 +107,7 @@ Persistent flags, available on every subcommand, bind directly onto config keys:
 | `--config` | which config file is loaded |
 | `--archive-root` | `archive_root` |
 | `--imessage-archive-root` | `imessage_archive_root` |
+| `--whatsapp-archive-root` | `whatsapp_archive_root` |
 | `--data-dir` | `data_dir` |
 | `--log-level` | `log_level` |
 

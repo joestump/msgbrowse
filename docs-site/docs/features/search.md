@@ -18,7 +18,8 @@ gracefully — without JavaScript it submits as a plain GET and the results
 render server-side.
 
 Results are ranked by BM25 relevance. Each result card shows the
-conversation, sender, timestamp, and a source pill (Signal or iMessage), plus
+conversation, sender, timestamp, and a source pill (Signal, iMessage, or
+WhatsApp), plus
 paperclip/link glyphs when the message carries an attachment or a link.
 Clicking a result jumps to that exact message in its transcript, centered with
 surrounding context and visually highlighted (see

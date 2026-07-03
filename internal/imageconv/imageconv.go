@@ -114,6 +114,7 @@ func (c Converter) convert(ctx context.Context, src, dst string) error {
 type Options struct {
 	ArchiveRoot         string
 	IMessageArchiveRoot string
+	WhatsAppArchiveRoot string
 	DataDir             string // derivatives are written to <DataDir>/derived
 	Concurrency         int
 	Force               bool // re-convert even if a derivative already exists
@@ -158,6 +159,11 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 		return sum, err
 	}
 	derivedDir := DerivedDir(opts.DataDir)
+	roots := archivepath.Roots{
+		Signal:   opts.ArchiveRoot,
+		IMessage: opts.IMessageArchiveRoot,
+		WhatsApp: opts.WhatsAppArchiveRoot,
+	}
 	workers := opts.Concurrency
 	if workers <= 0 {
 		workers = 6
@@ -175,7 +181,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 			if ctx.Err() != nil {
 				return
 			}
-			abs, ok := archivepath.Resolve(it.Source, opts.ArchiveRoot, opts.IMessageArchiveRoot, it.ConversationName, it.RelPath)
+			abs, ok := archivepath.Resolve(it.Source, roots, it.ConversationName, it.RelPath)
 			res := "missing"
 			if ok {
 				if _, statErr := os.Stat(abs); statErr == nil {

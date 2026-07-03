@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joestump/msgbrowse/internal/archivepath"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/imageconv"
 	"github.com/joestump/msgbrowse/internal/source"
@@ -61,14 +62,13 @@ type Store interface {
 
 // Server holds the dependencies shared by all handlers.
 type Server struct {
-	store               Store
-	archiveRoot         string // signal-export archive (export/<conv>/<rel>)
-	imessageArchiveRoot string // imessage-exporter archive (<root>/<rel>)
-	derivedDir          string // cache of transcoded JPEGs (<data_dir>/derived)
-	tmpl                *template.Template
-	log                 *slog.Logger
-	mux                 http.Handler
-	staticTags          map[string]string // embedded-static ETags, keyed by path within static/
+	store      Store
+	roots      archivepath.Roots // per-source read-only archive roots
+	derivedDir string            // cache of transcoded JPEGs (<data_dir>/derived)
+	tmpl       *template.Template
+	log        *slog.Logger
+	mux        http.Handler
+	staticTags map[string]string // embedded-static ETags, keyed by path within static/
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -77,11 +77,14 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		log = slog.Default()
 	}
 	s := &Server{
-		store:               st,
-		archiveRoot:         cfg.ArchiveRoot,
-		imessageArchiveRoot: cfg.IMessageArchiveRoot,
-		derivedDir:          imageconv.DerivedDir(cfg.DataDir),
-		log:                 log,
+		store: st,
+		roots: archivepath.Roots{
+			Signal:   cfg.ArchiveRoot,
+			IMessage: cfg.IMessageArchiveRoot,
+			WhatsApp: cfg.WhatsAppArchiveRoot,
+		},
+		derivedDir: imageconv.DerivedDir(cfg.DataDir),
+		log:        log,
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"renderBody":       renderBody,

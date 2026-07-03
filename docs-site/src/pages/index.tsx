@@ -30,8 +30,9 @@ const FEATURES: Feature[] = [
     emoji: '🗂️',
     title: 'Unified archive',
     body:
-      'Signal and iMessage in one reading room — a single local database ' +
-      'with incremental, idempotent imports and a pinnable, filterable sidebar.',
+      'Signal, iMessage, and WhatsApp in one reading room — a single local ' +
+      'database with incremental, idempotent imports and a pinnable, ' +
+      'filterable sidebar.',
     to: '/docs/features/browsing',
   },
   {
@@ -203,7 +204,7 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title={siteConfig.tagline}
-      description="msgbrowse is a self-hosted, local-only browser, search engine, and AI-editorialized journal for your Signal and iMessage archives. Nothing leaves your machine.">
+      description="msgbrowse is a self-hosted, local-only browser, search engine, and AI-editorialized journal for your Signal, iMessage, and WhatsApp archives. Nothing leaves your machine.">
       <main className={styles.home}>
         <Hero />
         <FeatureGrid />

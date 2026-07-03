@@ -16,20 +16,40 @@ import (
 // package; it must stay in sync with ingest.ExportDir.
 const exportDir = "export"
 
+// Roots bundles the per-source read-only archive roots that Resolve maps
+// attachments into. An empty root means the source is not configured, so its
+// attachments do not resolve (ok=false) rather than falling back to another
+// source's archive.
+type Roots struct {
+	// Signal is the signal-export archive root (media is per-conversation:
+	// <root>/export/<conversation>/<rel>).
+	Signal string
+	// IMessage is the imessage-exporter output root (flat: <root>/<rel>,
+	// rel like "attachments/AB/CD/IMG.HEIC").
+	IMessage string
+	// WhatsApp is the whatsapp-chat-exporter output root (flat: <root>/<rel>,
+	// rel like "Message/Media/<jid>/photo.jpg" — the parser stores RelPaths
+	// root-relative, SPEC-0009 REQ-0009-006).
+	WhatsApp string
+}
+
 // Resolve maps an attachment's (source, conversation, rel) to an absolute path
 // under the correct archive, returning ok=false on traversal or misconfig:
 //
-//   - signal:   <archiveRoot>/export/<conversation>/<rel>
-//   - imessage: <imessageRoot>/<rel>  (flat export; rel like "attachments/…")
-func Resolve(src, archiveRoot, imessageRoot, convName, rel string) (string, bool) {
+//   - signal:   <roots.Signal>/export/<conversation>/<rel>
+//   - imessage: <roots.IMessage>/<rel>  (flat export; rel like "attachments/…")
+//   - whatsapp: <roots.WhatsApp>/<rel>  (flat export; rel like "Message/Media/…")
+func Resolve(src string, roots Roots, convName, rel string) (string, bool) {
 	switch src {
 	case source.IMessage:
-		return Contain(imessageRoot, rel)
+		return Contain(roots.IMessage, rel)
+	case source.WhatsApp:
+		return Contain(roots.WhatsApp, rel)
 	default: // signal (and legacy rows with empty source)
-		if archiveRoot == "" {
+		if roots.Signal == "" {
 			return "", false
 		}
-		return Contain(filepath.Join(archiveRoot, exportDir, convName), rel)
+		return Contain(filepath.Join(roots.Signal, exportDir, convName), rel)
 	}
 }
 

@@ -16,6 +16,7 @@ These persistent flags work on every subcommand and override the corresponding c
 | `--config` | string | search order | Config file (default: `./config.yaml`, `~/.config/msgbrowse/config.yaml`, or `/etc/msgbrowse/config.yaml`). |
 | `--archive-root` | string | from config | Path to the signal-export archive (read-only). |
 | `--imessage-archive-root` | string | from config | Path to the imessage-exporter archive (read-only). |
+| `--whatsapp-archive-root` | string | from config | Path to the whatsapp-chat-exporter output (read-only). |
 | `--data-dir` | string | from config | Writable directory for the database and caches. |
 | `--log-level` | string | from config | Log level: `debug`, `info`, `warn`, `error`. |
 
@@ -23,7 +24,7 @@ These persistent flags work on every subcommand and override the corresponding c
 
 ## `msgbrowse export`
 
-Runs the two upstream exporters msgbrowse reads from, so a fresh install can populate its archives in one step: `sigexport` into `<archive_root>/export/` (per-conversation `chat.md` + media) and `imessage-exporter -f txt -c clone -o <imessage_archive_root>` for iMessage. A source whose archive root is unset is skipped. msgbrowse never auto-installs the tools, stores no secrets, and reads no Keychain — the invoked exporters do, with your consent, and their output streams to your terminal.
+Runs the upstream exporters msgbrowse reads from, so a fresh install can populate its archives in one step: `sigexport` into `<archive_root>/export/` (per-conversation `chat.md` + media), `imessage-exporter -f txt -c clone -o <imessage_archive_root>` for iMessage, and `wtsexporter` with JSON output into `<whatsapp_archive_root>` for WhatsApp (which additionally needs a database to read — see [the platform prerequisites](../getting-started/exporting-your-archives.md#whatsapp-platform-prerequisites), passed via `--whatsapp-exporter-args`). A source whose archive root is unset is skipped. msgbrowse never auto-installs the tools, stores no secrets, and reads no Keychain — the invoked exporters do, with your consent, and their output streams to your terminal.
 
 ```bash
 msgbrowse export
@@ -36,8 +37,10 @@ msgbrowse export -- --some-shared-flag   # trailing args go to BOTH tools
 | --- | --- | --- | --- |
 | `--signal-export-bin` | string | `sigexport` on `PATH` | Path to the Signal exporter (or set the `signal_export_bin` config key). |
 | `--imessage-exporter-bin` | string | `imessage-exporter` on `PATH` | Path to imessage-exporter (or set the `imessage_exporter_bin` config key). |
+| `--whatsapp-exporter-bin` | string | `wtsexporter` on `PATH` | Path to the WhatsApp exporter (or set the `whatsapp_exporter_bin` config key). |
 | `--signal-export-args` | string array | none | Extra arg for `sigexport` only; repeatable. |
 | `--imessage-exporter-args` | string array | none | Extra arg for `imessage-exporter` only; repeatable. |
+| `--whatsapp-exporter-args` | string array | none | Extra arg for `wtsexporter` only; repeatable (use it to pass the database/backup flags). |
 | `--skip-on-error` | bool | `false` | Log and skip a failing or missing source instead of aborting; the run still exits non-zero if any configured source failed. |
 
 :::warning
@@ -45,12 +48,12 @@ iMessage export **always** runs in copy mode (`-c clone`) so attachments are cop
 :::
 
 :::tip
-The Signal exporter's console command is `sigexport` — the pip *package* is named `signal-export`. Install with `pipx install signal-export`; install imessage-exporter with `brew install imessage-exporter`.
+The exporters' console commands differ from their package names: the Signal exporter's command is `sigexport` (pip package `signal-export`, `pipx install signal-export`) and the WhatsApp exporter's command is `wtsexporter` (pip package `whatsapp-chat-exporter`, `pipx install whatsapp-chat-exporter`). Install imessage-exporter with `brew install imessage-exporter`.
 :::
 
 ## `msgbrowse import`
 
-The all-in-one importer: runs the Signal and iMessage importers for whichever archive roots are configured (`archive_root` and/or `imessage_archive_root`) into one database, then transcodes non-web images (HEIC/TIFF) as a best-effort final step. A source whose root is unset is skipped; a source whose root is set but missing is an error. It does **not** embed — run `msgbrowse embed` separately, since that step needs the LLM endpoint.
+The all-in-one importer: runs the Signal, iMessage, and WhatsApp importers for whichever archive roots are configured (`archive_root`, `imessage_archive_root`, and/or `whatsapp_archive_root`) into one database, then transcodes non-web images (HEIC/TIFF) as a best-effort final step. A source whose root is unset is skipped; a source whose root is set but missing is an error. It does **not** embed — run `msgbrowse embed` separately, since that step needs the LLM endpoint.
 
 ```bash
 msgbrowse import
@@ -89,7 +92,7 @@ msgbrowse imessage-import
 
 ## `msgbrowse sync`
 
-The one-command refresh: chains every step that turns a fresh install into a populated, browsable archive, reusing the other commands end to end — **export → import → media → embed → facts**. The database is opened once and shared by every stage; a source whose archive root is unset is skipped, so Signal-only or iMessage-only setups just work.
+The one-command refresh: chains every step that turns a fresh install into a populated, browsable archive, reusing the other commands end to end — **export → import → media → embed → facts**. The database is opened once and shared by every stage; a source whose archive root is unset is skipped, so single-source (or any subset) setups just work.
 
 Error policy: export/import/media failures abort the run unless `--skip-on-error`. The `embed` and `facts` stages need the LLM endpoint and **always** warn-and-continue on failure, so a fully local run with no reachable LLM still completes export/import/media and exits successfully.
 
@@ -108,10 +111,12 @@ msgbrowse sync --no-embed --no-facts
 | `--skip-on-error` | bool | `false` | Log and continue past a failing export/import/media stage instead of aborting (run still exits non-zero). |
 | `--signal-export-bin` | string | `sigexport` on `PATH` | Path to the Signal exporter (as in `export`). |
 | `--imessage-exporter-bin` | string | on `PATH` | Path to imessage-exporter (as in `export`). |
+| `--whatsapp-exporter-bin` | string | `wtsexporter` on `PATH` | Path to the WhatsApp exporter (as in `export`). |
 | `--signal-export-args` | string array | none | `sigexport`-only extra arg, repeatable. |
 | `--imessage-exporter-args` | string array | none | `imessage-exporter`-only extra arg, repeatable. |
+| `--whatsapp-exporter-args` | string array | none | `wtsexporter`-only extra arg, repeatable. |
 
-Trailing `-- <args>` are passed through to **both** upstream exporters.
+Trailing `-- <args>` are passed through to **every** upstream exporter.
 
 ## `msgbrowse serve`
 

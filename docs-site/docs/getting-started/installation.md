@@ -28,8 +28,8 @@ msgbrowse version
 
 ## Install the exporters
 
-msgbrowse reads archives produced by two upstream tools. Install whichever
-sources you have — a Signal-only or iMessage-only setup works fine.
+msgbrowse reads archives produced by three upstream tools. Install whichever
+sources you have — any subset (Signal-only, iMessage-only, …) works fine.
 
 **Signal** — [`signal-export`](https://github.com/carderne/signal-export),
 installed with pipx:
@@ -50,9 +50,17 @@ installed with Homebrew on macOS:
 brew install imessage-exporter
 ```
 
+**WhatsApp** — [`whatsapp-chat-exporter`](https://github.com/KnugiHK/WhatsApp-Chat-Exporter),
+installed with pipx (the console command is `wtsexporter`):
+
+```sh
+pipx install whatsapp-chat-exporter
+```
+
 msgbrowse never auto-installs these tools and never touches the sensitive
-sources (the Signal database, the macOS Keychain, `chat.db`) itself — it only
-spawns your own, already-installed exporters at your explicit request.
+sources (the Signal database, the macOS Keychain, `chat.db`,
+`ChatStorage.sqlite`) itself — it only spawns your own, already-installed
+exporters at your explicit request.
 
 ## Alternative: Docker
 

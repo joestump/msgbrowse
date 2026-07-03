@@ -95,6 +95,7 @@ func newImportCommand() *cobra.Command {
 			if msum, cerr := imageconv.Run(cmd.Context(), st, imageconv.Options{
 				ArchiveRoot:         cfg.ArchiveRoot,
 				IMessageArchiveRoot: cfg.IMessageArchiveRoot,
+				WhatsAppArchiveRoot: cfg.WhatsAppArchiveRoot,
 				DataDir:             cfg.DataDir,
 			}); cerr != nil {
 				slog.Warn("image transcode step failed; gallery may show placeholders", "error", cerr)

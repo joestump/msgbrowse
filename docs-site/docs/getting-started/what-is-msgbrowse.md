@@ -1,25 +1,28 @@
 ---
 title: What is msgbrowse?
 sidebar_position: 1
-description: A self-hosted, local-only browser, search engine, and AI-editorialized journal over your Signal and iMessage archives.
+description: A self-hosted, local-only browser, search engine, and AI-editorialized journal over your Signal, iMessage, and WhatsApp archives.
 ---
 
 # What is msgbrowse?
 
 msgbrowse is a **self-hosted, local-only** browser, search engine, and
-(upcoming) AI-editorialized journal over your personal **Signal** and **Apple
-iMessage** archives. Think of it as a private reading room for your own message
-history: everything runs on your machine, the archive is treated as strictly
-read-only, and nothing leaves the box.
+(upcoming) AI-editorialized journal over your personal **Signal**, **Apple
+iMessage**, and **WhatsApp** archives. Think of it as a private reading room
+for your own message history: everything runs on your machine, the archive is
+treated as strictly read-only, and nothing leaves the box.
 
 ![msgbrowse](/img/hero-screenshot.png)
 
 It is a single Go binary — server-rendered templates plus HTMX, backed by
-pure-Go SQLite — that sits on top of the Markdown output of two upstream
-exporters: [`signal-export`](https://github.com/carderne/signal-export) for
-Signal and [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter)
-for iMessage. You export, msgbrowse imports, and your history becomes
-browsable and searchable.
+pure-Go SQLite — that sits on top of the output of three upstream exporters:
+[`signal-export`](https://github.com/carderne/signal-export) for Signal,
+[`imessage-exporter`](https://github.com/ReagentX/imessage-exporter) for
+iMessage, and
+[`whatsapp-chat-exporter`](https://github.com/KnugiHK/WhatsApp-Chat-Exporter)
+for WhatsApp. You export, msgbrowse imports, and your history becomes
+browsable and searchable — with conversations from the same person unifiable
+across sources by their shared phone number.
 
 ## What you can do with it
 
@@ -67,10 +70,10 @@ behind your own access control.
 
 ## How the pieces fit
 
-1. **Export** — the upstream exporters dump your Signal and iMessage history
-   to on-disk Markdown/text archives. `msgbrowse export` can run both for you.
-   See [Exporting your archives](exporting-your-archives.md).
-2. **Import** — `msgbrowse import` ingests both archives into one local SQLite
+1. **Export** — the upstream exporters dump your Signal, iMessage, and
+   WhatsApp history to on-disk archives. `msgbrowse export` can run them for
+   you. See [Exporting your archives](exporting-your-archives.md).
+2. **Import** — `msgbrowse import` ingests the archives into one local SQLite
    database, incrementally and idempotently. See [First import](first-import.md).
 3. **Serve** — `msgbrowse serve` runs the local web UI; `msgbrowse mcp` runs
    the MCP server; `msgbrowse embed` and `msgbrowse facts` add the AI layers.

@@ -96,14 +96,17 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 // under the correct archive for its source, returning ok=false on traversal or
 // misconfiguration:
 //
-//   - signal:   <archiveRoot>/export/<conversation>/<rel> (media is per-conv)
-//   - imessage: <imessageArchiveRoot>/<rel> (a flat export; rel is e.g.
+//   - signal:   <roots.Signal>/export/<conversation>/<rel> (media is per-conv)
+//   - imessage: <roots.IMessage>/<rel> (a flat export; rel is e.g.
 //     "attachments/AB/CD/IMG.HEIC" relative to the export root)
+//   - whatsapp: <roots.WhatsApp>/<rel> (a flat export; rel is e.g.
+//     "Message/Media/<jid>/photo.jpg" relative to the exporter output root —
+//     SPEC-0009 REQ-0009-006)
 //
-// Both go through containWithin, which neutralizes ".." and verifies the result
+// All go through containWithin, which neutralizes ".." and verifies the result
 // stays inside the base directory.
 func (s *Server) mediaFilePath(src, convName, rel string) (string, bool) {
-	return archivepath.Resolve(src, s.archiveRoot, s.imessageArchiveRoot, convName, rel)
+	return archivepath.Resolve(src, s.roots, convName, rel)
 }
 
 // containWithin is a thin wrapper over archivepath.Contain (the shared,

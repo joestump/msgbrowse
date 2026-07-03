@@ -6,8 +6,8 @@ sidebar_position: 1
 
 # Browsing conversations
 
-msgbrowse renders your Signal and iMessage archives as a fast, local,
-server-rendered web UI. Everything happens on your machine: the pages are Go
+msgbrowse renders your Signal, iMessage, and WhatsApp archives as a fast,
+local, server-rendered web UI. Everything happens on your machine: the pages are Go
 templates over your local SQLite database, progressively enhanced with HTMX,
 and served on loopback by default. No CDN, no external fonts or scripts, no
 tracking.
@@ -30,9 +30,11 @@ authenticating reverse proxy, an SSH tunnel).
 
 ## The sidebar
 
-The sidebar lists every conversation — person or group, across both sources —
+The sidebar lists every conversation — person or group, across all sources —
 with the message count and a one-line preview of the most recent message and
-its sender.
+its sender. Each row's avatar carries a source-colored presence dot (Signal
+blue, iMessage green, WhatsApp's brand green) so mixed archives stay
+scannable.
 
 - **Live filter.** The "Filter conversations" box narrows the list as you
   type, entirely client-side. It filters both the pinned and unpinned sections

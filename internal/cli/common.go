@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/joestump/msgbrowse/internal/archivepath"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/store"
@@ -38,6 +39,16 @@ func newLLMClient(cfg *config.Config) *llm.OpenAIClient {
 		EmbedModel: cfg.LLM.EmbedModel,
 		Timeout:    cfg.LLM.Timeout,
 	})
+}
+
+// archiveRoots bundles the configured per-source archive roots for
+// archivepath.Resolve callers (media transcoding, doctor sampling).
+func archiveRoots(cfg *config.Config) archivepath.Roots {
+	return archivepath.Roots{
+		Signal:   cfg.ArchiveRoot,
+		IMessage: cfg.IMessageArchiveRoot,
+		WhatsApp: cfg.WhatsAppArchiveRoot,
+	}
 }
 
 // requireArchive verifies the archive root is configured and present.

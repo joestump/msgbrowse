@@ -383,13 +383,14 @@ func checkAttachments(ctx context.Context, r *report, cfg *config.Config, st *st
 	}
 
 	bySource := map[string]*attachmentStats{}
+	roots := archiveRoots(cfg)
 	for _, it := range sample {
 		s := bySource[it.Source]
 		if s == nil {
 			s = &attachmentStats{}
 			bySource[it.Source] = s
 		}
-		s.add(classifyAttachment(it.Source, cfg.ArchiveRoot, cfg.IMessageArchiveRoot, cfg.WhatsAppArchiveRoot, it.ConversationName, it.RelPath, os.Stat))
+		s.add(classifyAttachment(it.Source, roots, it.ConversationName, it.RelPath, os.Stat))
 	}
 
 	for _, src := range sortedSources(bySource) {
@@ -425,12 +426,13 @@ func checkConverter(ctx context.Context, r *report, cfg *config.Config, st *stor
 		return // already surfaced in checkAttachments
 	}
 	derivedDir := imageconv.DerivedDir(cfg.DataDir)
+	roots := archiveRoots(cfg)
 	var needDeriv int
 	for _, it := range items {
 		if !imageconv.Convertible(it.RelPath) {
 			continue
 		}
-		abs, resolved := archivepath.Resolve(it.Source, cfg.ArchiveRoot, cfg.IMessageArchiveRoot, it.ConversationName, it.RelPath)
+		abs, resolved := archivepath.Resolve(it.Source, roots, it.ConversationName, it.RelPath)
 		if !resolved {
 			continue // unresolvable (e.g. absolute path) — not a transcode candidate
 		}
@@ -544,21 +546,11 @@ const (
 // leading "/" and folds it UNDER the archive root, which would mis-classify it as
 // present/missing rather than flagging the real problem. So the explicit IsAbs
 // check must come first.
-//
-// WhatsApp rows resolve flat under whatsappRoot here (the same containment
-// archivepath.Contain provides); their media-resolution branch in
-// archivepath.Resolve is the surface story's scope (REQ-0009-006).
-func classifyAttachment(src, archiveRoot, imessageRoot, whatsappRoot, convName, rel string, statFn func(string) (os.FileInfo, error)) attachmentClass {
+func classifyAttachment(src string, roots archivepath.Roots, convName, rel string, statFn func(string) (os.FileInfo, error)) attachmentClass {
 	if filepath.IsAbs(rel) {
 		return attachAbsolute
 	}
-	var abs string
-	var ok bool
-	if src == source.WhatsApp {
-		abs, ok = archivepath.Contain(whatsappRoot, rel)
-	} else {
-		abs, ok = archivepath.Resolve(src, archiveRoot, imessageRoot, convName, rel)
-	}
+	abs, ok := archivepath.Resolve(src, roots, convName, rel)
 	if !ok {
 		// Unresolvable for a non-absolute path means the relevant archive root is
 		// unset/misconfigured; treat as missing so it still counts against health.

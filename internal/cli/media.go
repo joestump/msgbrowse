@@ -39,6 +39,7 @@ func newMediaCommand() *cobra.Command {
 			sum, err := imageconv.Run(cmd.Context(), st, imageconv.Options{
 				ArchiveRoot:         cfg.ArchiveRoot,
 				IMessageArchiveRoot: cfg.IMessageArchiveRoot,
+				WhatsAppArchiveRoot: cfg.WhatsAppArchiveRoot,
 				DataDir:             cfg.DataDir,
 				Concurrency:         conc,
 				Force:               force,

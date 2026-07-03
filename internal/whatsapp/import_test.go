@@ -138,6 +138,73 @@ func TestImportIdempotent(t *testing.T) {
 	}
 }
 
+// TestCrossSourceIdentityMerge verifies REQ-0009-007's contact half at the
+// fixture level: a phone-named WhatsApp conversation (the fixture's
+// 15550004444@lid chat, imported by Run) participates in the phone-keyed
+// contact_identifiers machinery, so once its number is unified with an
+// existing iMessage contact — the deliberate contacts-page action, ADR-0003 —
+// both conversations surface each other's handles as identifier chips.
+func TestCrossSourceIdentityMerge(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	runImport(t, st, false)
+
+	// The fixture's nameless @lid chat imports under its JID local part — the
+	// bare phone number — which is what keys the merge.
+	wa, err := st.GetConversation(ctx, "15550004444")
+	if err != nil || wa == nil {
+		t.Fatalf("whatsapp conversation missing: %v", err)
+	}
+	if wa.Source != source.WhatsApp {
+		t.Fatalf("conversation source = %q, want whatsapp", wa.Source)
+	}
+	// Pre-merge: the auto-created contact carries only the conversation's own
+	// (whatsapp, 15550004444) identity, so no chips render — and, per
+	// ADR-0003, import alone never silently merged it onto anyone.
+	if ids, err := st.ConversationIdentifiers(ctx, wa.ID); err != nil || len(ids) != 0 {
+		t.Fatalf("pre-merge identifiers = %+v (err=%v), want none", ids, err)
+	}
+
+	// The same person already exists as an iMessage thread on the number.
+	imID, err := st.UpsertConversation(ctx, source.IMessage, "+15550004444")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Unify identities the way the contacts page does: repoint the WhatsApp
+	// conversation and its identifiers onto the iMessage contact.
+	var keepContact, loseContact int64
+	if err := st.DB().QueryRow(`SELECT contact_id FROM conversations WHERE id = ?`, imID).Scan(&keepContact); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DB().QueryRow(`SELECT contact_id FROM conversations WHERE id = ?`, wa.ID).Scan(&loseContact); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().Exec(`UPDATE contact_identifiers SET contact_id = ? WHERE contact_id = ?`, keepContact, loseContact); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().Exec(`UPDATE conversations SET contact_id = ? WHERE id = ?`, keepContact, wa.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The WhatsApp conversation's header chips now show the iMessage handle…
+	ids, err := st.ConversationIdentifiers(ctx, wa.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0].Source != source.IMessage || ids[0].Identifier != "+15550004444" {
+		t.Errorf("whatsapp-side identifiers = %+v, want [{imessage +15550004444}]", ids)
+	}
+	// …and the iMessage conversation shows the WhatsApp identity.
+	ids, err = st.ConversationIdentifiers(ctx, imID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0].Source != source.WhatsApp || ids[0].Identifier != "15550004444" {
+		t.Errorf("imessage-side identifiers = %+v, want [{whatsapp 15550004444}]", ids)
+	}
+}
+
 func TestImportArchiveNotFound(t *testing.T) {
 	st := newStore(t)
 	_, err := Run(context.Background(), st, Options{
