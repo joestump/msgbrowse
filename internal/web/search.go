@@ -25,11 +25,15 @@ type searchForm struct {
 
 type searchData struct {
 	baseData
-	Form    searchForm
-	Sources []string
-	Hits    []store.SearchHit
-	Ran     bool // a query was actually executed
-	Count   int
+	// FilterConversations feeds the conversation dropdown: the lightweight
+	// id+name listing, NOT the sidebar summaries, so partial renders never need
+	// the expensive listing (SPEC-0008 REQ-0008-006). Ordered alphabetically.
+	FilterConversations []store.ConversationRef
+	Form                searchForm
+	Sources             []string
+	Hits                []store.SearchHit
+	Ran                 bool // a query was actually executed
+	Count               int
 }
 
 // searchContextWindow is how many messages on each side of a hit the
@@ -41,16 +45,30 @@ const searchContextWindow = 20
 // render server-side.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	base, err := s.baseData(ctx, "Search · msgbrowse", 0)
+	var base baseData
+	if isPartialRequest(r) {
+		base = partialBase("Search · msgbrowse", 0)
+	} else {
+		var err error
+		base, err = s.baseData(ctx, "Search · msgbrowse", 0)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	// The dropdown uses the cheap id+name listing on BOTH paths so partial and
+	// full renders show the identical (alphabetical) option order.
+	refs, err := s.store.ConversationRefs(ctx)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	form, opts := parseSearchForm(r)
 	data := searchData{
-		baseData: base,
-		Form:     form,
-		Sources:  source.All,
+		baseData:            base,
+		FilterConversations: refs,
+		Form:                form,
+		Sources:             source.All,
 	}
 	if opts.Query != "" {
 		hits, err := s.store.SearchMessages(ctx, opts)
@@ -62,7 +80,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		data.Count = len(hits)
 		data.Ran = true
 	}
-	s.render(w, "search", data)
+	s.render(w, r, "search", data)
 }
 
 // handleSearchResults renders just the results list for HTMX live search.
@@ -80,7 +98,7 @@ func (s *Server) handleSearchResults(w http.ResponseWriter, r *http.Request) {
 		data.Count = len(hits)
 		data.Ran = true
 	}
-	s.render(w, "search_results", data)
+	s.render(w, r, "search_results", data)
 }
 
 // handleConversationAt renders a conversation transcript centered on a specific
@@ -145,12 +163,20 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 	list.NextTSUnix = last.TSUnix
 	list.NextID = last.ID
 
-	base, err := s.baseData(ctx, active.Name+" · msgbrowse", id)
-	if err != nil {
-		s.serverError(w, err)
-		return
+	// Jump-to-context links are deliberately un-boosted (the #m{id} anchor needs
+	// a full-page load), but the partial contract still holds if an HTMX request
+	// arrives here (REQ-0008-006).
+	var base baseData
+	if isPartialRequest(r) {
+		base = partialBase(active.Name+" · msgbrowse", id)
+	} else {
+		base, err = s.baseData(ctx, active.Name+" · msgbrowse", id)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
-	s.render(w, "conversation", conversationData{
+	s.render(w, r, "conversation", conversationData{
 		baseData: base,
 		Active:   active,
 		List:     list,

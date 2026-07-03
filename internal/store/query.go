@@ -92,9 +92,13 @@ type Page struct {
 // joins — never from MIN/MAX(ts) string aggregation, which sorts iMessage's
 // month-name-first strings alphabetically (REQ-0008-002). The attachment/link
 // counts group the denormalized conversation_id column directly (schemaV7)
-// instead of joining messages. The last-message body ships as a 320-char prefix
-// — plenty for the 80-rune preview — so 2,000+ full bodies never cross the
-// driver. Deliberately NOT a window function: the ROW_NUMBER() variant measured
+// instead of joining messages. The last-message body ships as a 1024-char
+// prefix — so 2,000+ full bodies never cross the driver. 1024 (not the
+// original 320) because preview() strips markdown/quote markers and collapses
+// whitespace before taking its 80 runes: a body that front-loads whitespace or
+// stripped tokens could starve an over-tight prefix into an empty preview (the
+// #80 adversarial review's substr-starvation finding). Deliberately NOT a
+// window function: the ROW_NUMBER() variant measured
 // 2.1s on the same archive (see SPEC-0008 design.md's measured rejects).
 func (s *Store) ListConversations(ctx context.Context) ([]ConversationSummary, error) {
 	const q = `
@@ -104,7 +108,7 @@ SELECT c.id, c.name, c.source, c.pinned,
        COALESCE(lm.ts, '')                   AS last_ts,
        COALESCE(ms.last_unix, 0)             AS last_unix,
        COALESCE(lm.sender, '')               AS last_sender,
-       COALESCE(substr(lm.body, 1, 320), '') AS last_body,
+       COALESCE(substr(lm.body, 1, 1024), '') AS last_body,
        COALESCE(ac.image_count, 0)           AS image_count,
        COALESCE(ac.file_count, 0)            AS file_count,
        COALESCE(lc.link_count, 0)            AS link_count
@@ -142,6 +146,57 @@ SELECT c.id, c.name, c.source, c.pinned,
 		out = append(out, cs)
 	}
 	return out, rows.Err()
+}
+
+// ConversationRef is the minimal id+name pair the filter dropdowns (search,
+// gallery) render. It exists so HTMX partial renders can populate those
+// dropdowns without paying for the full summary listing (SPEC-0008
+// REQ-0008-006).
+type ConversationRef struct {
+	ID   int64
+	Name string
+}
+
+// ConversationRefs lists every conversation as an id+name pair, alphabetically
+// (case-insensitive). Single-table, no message join — sub-millisecond even on
+// the reference archive, vs the ~350ms summary listing.
+func (s *Store) ConversationRefs(ctx context.Context) ([]ConversationRef, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name FROM conversations ORDER BY name COLLATE NOCASE ASC, id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("conversation refs: %w", err)
+	}
+	defer rows.Close()
+	var out []ConversationRef
+	for rows.Next() {
+		var ref ConversationRef
+		if err := rows.Scan(&ref.ID, &ref.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
+}
+
+// ArchiveStats is the pair of global counts the home/status stat strips show.
+type ArchiveStats struct {
+	Conversations int
+	Messages      int
+}
+
+// ArchiveStats returns the global conversation and message counts in one
+// statement. Full-page renders derive these from the sidebar listing for free
+// (REQ-0008-004); HTMX partial renders — which skip that listing entirely —
+// use this instead (REQ-0008-006).
+func (s *Store) ArchiveStats(ctx context.Context) (ArchiveStats, error) {
+	var st ArchiveStats
+	err := s.db.QueryRowContext(ctx,
+		`SELECT (SELECT COUNT(*) FROM conversations), (SELECT COUNT(*) FROM messages)`).
+		Scan(&st.Conversations, &st.Messages)
+	if err != nil {
+		return ArchiveStats{}, fmt.Errorf("archive stats: %w", err)
+	}
+	return st, nil
 }
 
 // SetPinned sets a conversation's pinned flag to an explicit state

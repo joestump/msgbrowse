@@ -29,11 +29,12 @@
       <span class="navbar-counts font-mono hidden sm:inline" title="Global archive totals">{{len .Conversations}} conversations · {{.TotalMessages}} messages</span>
       <button type="button" data-theme-toggle class="navbar-toggle ml-3" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
     </header>
-    <main id="main-content" class="flex-1">
+{{/* <main id="main-content"> is owned by each page's *_content define (not by
+     this shell), so HTMX partial renders can emit just <title> + <main> without
+     the navbar/sidebar chrome (SPEC-0008 REQ-0008-006). */}}
 {{end}}
 
 {{define "page_end"}}
-    </main>
   </div>
   {{/* Sidebar (REQ-0006-003): 320px, surface base-300 (#161a20). */}}
   <div class="drawer-side z-40">

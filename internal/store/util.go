@@ -20,14 +20,19 @@ var (
 // preview returns a single-line, length-capped excerpt of a message body for
 // sidebar previews. Raw Markdown never leaks into the sidebar: image tokens
 // collapse to a 📷 placeholder and links to their text. Invisible Unicode
-// format runes (zero-width joiners etc.) are dropped and leading blockquote
-// markers stripped, then whitespace is collapsed and the result truncated on a
-// rune boundary.
+// format runes (zero-width spaces, BOMs, directional marks) are dropped and
+// leading blockquote markers stripped, then whitespace is collapsed and the
+// result truncated on a rune boundary.
+//
+// U+200D ZERO WIDTH JOINER is deliberately KEPT even though it is a Cf rune:
+// it is the glue inside composed emoji (👩‍👧 is 👩 + ZWJ + 👧), so stripping it
+// splits family/profession emoji into their components in the sidebar (the
+// #81 adversarial review's ZWJ finding).
 func preview(body string, max int) string {
 	s := previewImageRe.ReplaceAllString(body, "📷 ")
 	s = previewLinkRe.ReplaceAllString(s, "$1")
 	s = strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Cf, r) {
+		if r != '\u200d' && unicode.Is(unicode.Cf, r) {
 			return -1
 		}
 		return r

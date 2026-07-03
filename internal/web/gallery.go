@@ -38,12 +38,16 @@ type linkGroup struct {
 
 type galleryData struct {
 	baseData
-	Filter  galleryFilterForm
-	Sources []string
-	Counts  store.MediaCounts
-	Images  []store.MediaItem
-	Files   []galleryFileView
-	Groups  []linkGroup
+	// FilterConversations feeds the conversation dropdown: the lightweight
+	// id+name listing, NOT the sidebar summaries, so partial renders never need
+	// the expensive listing (SPEC-0008 REQ-0008-006). Ordered alphabetically.
+	FilterConversations []store.ConversationRef
+	Filter              galleryFilterForm
+	Sources             []string
+	Counts              store.MediaCounts
+	Images              []store.MediaItem
+	Files               []galleryFileView
+	Groups              []linkGroup
 }
 
 // validTabs are the gallery's three views.
@@ -51,7 +55,20 @@ var validTabs = map[string]bool{"images": true, "files": true, "links": true}
 
 func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	base, err := s.baseData(ctx, "Media · msgbrowse", 0)
+	var base baseData
+	if isPartialRequest(r) {
+		base = partialBase("Media · msgbrowse", 0)
+	} else {
+		var err error
+		base, err = s.baseData(ctx, "Media · msgbrowse", 0)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	// The dropdown uses the cheap id+name listing on BOTH paths so partial and
+	// full renders show the identical (alphabetical) option order.
+	refs, err := s.store.ConversationRefs(ctx)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -65,10 +82,11 @@ func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := galleryData{
-		baseData: base,
-		Filter:   form,
-		Sources:  source.All,
-		Counts:   counts,
+		baseData:            base,
+		FilterConversations: refs,
+		Filter:              form,
+		Sources:             source.All,
+		Counts:              counts,
 	}
 
 	switch form.Tab {
@@ -94,7 +112,7 @@ func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.render(w, "gallery", data)
+	s.render(w, r, "gallery", data)
 }
 
 // decorateFiles stats each file in the read-only archive to add size and type.

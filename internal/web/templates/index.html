@@ -1,4 +1,10 @@
-{{define "index"}}{{template "page_start" .}}
+{{define "index"}}{{template "page_start" .}}{{template "index_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* index_content is the boosted-swap unit (SPEC-0008 REQ-0008-006): the
+     <title> rides along so htmx keeps history entries titled, and the define
+     owns <main id="main-content"> so partial responses carry no shell. */}}
+{{define "index_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1">
   {{/* Home (REQ-0006-007, brief §3): a centered ~780px column on the base bg.
        Hero wordmark + two-line tagline, a 3-cell stat strip from existing data
        (Conversations / Messages / Newest message), then bordered quick-link
@@ -14,11 +20,13 @@
       </header>
 
       {{if .HasArchive}}
-      {{/* 3-cell stat strip: one bordered bar split by hairline dividers. */}}
+      {{/* 3-cell stat strip: one bordered bar split by hairline dividers. The
+           counts come from dedicated fields (not len .Conversations) so partial
+           renders can skip the sidebar listing (REQ-0008-006). */}}
       <div class="stat-strip mb-8">
         <div class="stat-cell">
           <div class="stat-cell-label">Conversations</div>
-          <div class="stat-cell-value">{{len .Conversations}}</div>
+          <div class="stat-cell-value">{{.ConversationCount}}</div>
         </div>
         <div class="stat-cell">
           <div class="stat-cell-label">Messages</div>
@@ -64,4 +72,5 @@
       {{end}}
     </div>
   </div>
-{{template "page_end" .}}{{end}}
+    </main>
+{{end}}
