@@ -204,3 +204,56 @@ func TestServeDrainsInFlightRequests(t *testing.T) {
 	}
 	waitServe(t, done)
 }
+
+// TestServeHandlerMountsSideHandler covers the ServeHandler hook the desktop
+// shell uses to mount the MCP streamable-HTTP handler beside the web app on
+// the one embedded loopback listener (SPEC-0010 bind surface): the side route
+// answers from the custom handler while "/" still traverses the server's own
+// middleware stack, and the graceful-shutdown path is unchanged.
+func TestServeHandlerMountsSideHandler(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+
+	root := http.NewServeMux()
+	root.HandleFunc("/side", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+	root.Handle("/", srv.Handler())
+
+	ln, err := srv.Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.ServeHandler(ctx, ln, root) }()
+
+	resp, err := http.Get("http://" + addr + "/side")
+	if err != nil {
+		t.Fatalf("GET /side: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTeapot {
+		t.Errorf("GET /side status = %d; want %d from the side handler", resp.StatusCode, http.StatusTeapot)
+	}
+
+	resp, err = http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET / status = %d; want 200", resp.StatusCode)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("CSP = %q; want the strict policy — web routes must keep their middleware under ServeHandler", csp)
+	}
+	if !strings.Contains(string(body), "msgbrowse") {
+		t.Error("GET / body does not render the app shell under ServeHandler")
+	}
+
+	cancel()
+	waitServe(t, done)
+}

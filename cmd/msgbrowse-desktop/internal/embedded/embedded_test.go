@@ -20,6 +20,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/store"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func testConfig(t *testing.T) *config.Config {
@@ -154,5 +155,96 @@ func TestEphemeralPortsDoNotCollide(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET / status = %d; want 200", resp.StatusCode)
+	}
+}
+
+// TestMCPEndpointSharesTheListener proves the menubar's MCP endpoint is real
+// and honest: MCPURL is a path on the same loopback listener the webview uses
+// (SPEC-0010 bind surface — no second listener), and a full MCP client
+// session works against it over streamable HTTP.
+func TestMCPEndpointSharesTheListener(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	es := startServer(t, ctx, cancel)
+
+	if es.MCPURL != es.URL+MCPPath {
+		t.Fatalf("MCPURL = %q; want %q on the same listener", es.MCPURL, es.URL+MCPPath)
+	}
+
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test-client", Version: "0"}, nil)
+	cs, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{Endpoint: es.MCPURL}, nil)
+	if err != nil {
+		t.Fatalf("MCP connect over the embedded listener: %v", err)
+	}
+	defer cs.Close()
+	tools, err := cs.ListTools(ctx, &mcpsdk.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	if len(tools.Tools) == 0 {
+		t.Error("no MCP tools served from the embedded endpoint")
+	}
+}
+
+// TestMCPMountLeavesWebRoutesAlone guards against handler divergence: with
+// the MCP handler mounted, "/" still renders the app shell through the strict
+// security-header middleware, and only the exact MCPPath is diverted.
+func TestMCPMountLeavesWebRoutesAlone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	es := startServer(t, ctx, cancel)
+
+	resp, err := http.Get(es.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET / status = %d; want 200", resp.StatusCode)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("CSP = %q; want the strict policy — web middleware must survive the MCP mount", csp)
+	}
+
+	// A GET without an MCP session must not 404 (the route exists) and must
+	// not render HTML (it is not the web app).
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, es.MCPURL, nil)
+	mcpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", es.MCPURL, err)
+	}
+	defer mcpResp.Body.Close()
+	if mcpResp.StatusCode == http.StatusNotFound {
+		t.Errorf("GET %s = 404; the MCP handler is not mounted", es.MCPURL)
+	}
+	if ct := mcpResp.Header.Get("Content-Type"); strings.Contains(ct, "text/html") {
+		t.Errorf("GET %s Content-Type = %q; the MCP path must not fall through to the web app", es.MCPURL, ct)
+	}
+}
+
+// TestHealthyReflectsServerState drives the status-line health source: true
+// while the embedded server answers, false once shutdown has taken the serve
+// loop down (SPEC-0010 "Status accuracy" — degraded when unhealthy).
+func TestHealthyReflectsServerState(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg := testConfig(t)
+	es, err := Start(ctx, cfg, testLogger())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if !es.Healthy(context.Background()) {
+		t.Error("Healthy = false while the embedded server is running")
+	}
+
+	cancel()
+	select {
+	case <-es.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve loop did not exit after context cancel")
+	}
+	if es.Healthy(context.Background()) {
+		t.Error("Healthy = true after the serve loop exited")
+	}
+	if err := es.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 }

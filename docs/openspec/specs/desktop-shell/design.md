@@ -78,6 +78,47 @@ mode too — it's a web page, not a desktop feature.
   an alpha); a second helper process for the tray (IPC complexity for no
   gain); menubar-only via macOS-specific NSStatusItem bindings (loses
   Linux/Windows parity).
+- **Mechanics (as built, #118):**
+  - **Loop coexistence:** `systray.RunWithExternalLoop` — the library's
+    documented mode for living beside another toolkit's main loop. The
+    returned `start()` runs on the main goroutine *before* `wails.Run` (on
+    macOS that is the main thread, where the NSStatusItem must be created;
+    subsequent menu updates dispatch onto the NSApplication run loop Wails
+    owns; on Linux the backend is pure-Go D-Bus StatusNotifierItem, fully
+    independent of Wails' GTK loop), `end()` after `wails.Run` returns.
+  - **Close-to-tray:** built on Wails' native `HideWindowOnClose`, **not**
+    `OnBeforeClose` as this section originally sketched. Wails v2.12's
+    platform code funnels the window-close button *and* every explicit quit
+    path (Cmd+Q / `applicationShouldTerminate`, `runtime.Quit`, app-menu
+    Quit) into the same `OnBeforeClose` callback, so hiding there would
+    swallow Cmd+Q — quitting must stay explicit *and working* (SPEC-0010
+    "Menubar residency"). `HideWindowOnClose` hides on the close button at
+    the platform layer (`hideOnClose` in the mac WindowDelegate, GTK
+    delete-event) without entering the quit flow, leaving every quit path an
+    honest quit.
+  - **MCP endpoint:** the MCP streamable-HTTP handler mounts at `/mcp` on
+    the embedded server's own loopback listener (a `web.ServeHandler` hook +
+    `mcp.HTTPHandler` accessor) — the SPEC-0010 bind surface allows no
+    listener beyond the embedded server, so the desktop's MCP endpoint is a
+    path, not a port. The status line polls `GET /status` (as an HTMX
+    partial) with a 2 s budget every 15 s for running/degraded; activation
+    copies the endpoint URL, and Copy MCP Config copies the JSON block built
+    by `internal/mcp.ClientConfigJSON` — the same builder the `/settings`
+    page consumes when #100 lands. The copied URL dies with the ephemeral
+    port on relaunch (the "Ephemeral URLs" risk below, accepted).
+  - **Hidden launch:** menubar-only launch is behind `-hidden` (Wails
+    `StartHidden`), not the default, until the status item is validated on
+    macOS hardware — a default-hidden launch with a broken tray would strand
+    the user with no window and no tray. The packaging story revisits the
+    default.
+  - **Headless/Linux degrade:** the tray needs a StatusNotifier host; without
+    one fyne-io/systray logs the D-Bus failure and menu calls no-op, and the
+    shell panic-guards tray start/stop so a missing tray can never take down
+    the app or its graceful shutdown.
+  - **Startup race (#114 review):** quit requests (signals, server death)
+    arriving before Wails `OnStartup` are latched in a pure state machine
+    (`internal/shellstate`) and replayed once the runtime context exists,
+    instead of being dropped.
 
 ### Loopback HTTP on an ephemeral port, not the Wails asset handler
 
@@ -249,15 +290,20 @@ Rollback at any step is deletion: nothing in the core depends on the shell.
   desktop command takes a single `-config` flag (same default search path as
   the CLI), and the Makefile targets are `desktop-linux` / `desktop-test`
   (per-OS build targets for macOS/Windows land with the CI-matrix story).
-  Further flags (headless escape hatch, `--open`-style conventions) remain
-  TBD.
+  The menubar story added `-hidden` (start menubar-only, window on demand);
+  whether hidden becomes the default launch mode is deferred to the
+  packaging story after macOS validation. Further flags (`--open`-style
+  conventions) remain TBD.
 - **macOS signing/notarization timeline.** Deferred per ADR-0017; needs an
   Apple Developer ID and CI notary step. When does unsigned stop being
   acceptable — first external user?
 - **Wails v3.** Currently pre-stable; it reworks the application/window API.
   Adopt on stable release or skip v2 hardening work that v3 would discard?
 - **Open-at-login.** Still MAY; menubar residency (now a MUST, owner request
-  2026-07-03) makes it the natural companion — decide with the menubar story.
+  2026-07-03) makes it the natural companion. The menubar story (#118)
+  deliberately did not take it — login-item registration is per-OS packaging
+  surface (launchd plist / XDG autostart / registry), which belongs with the
+  CI-matrix packaging story.
 - **Settings page scope creep.** `/settings` starts as Connect (MCP + QR);
   whether runtime-editable settings (theme, roots) ever live there is a
   separate future spec.
