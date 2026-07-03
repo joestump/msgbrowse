@@ -43,8 +43,11 @@
          (and its scroll position + filter state) is preserved across navigation.
          The active-row highlight is re-synced client-side by sidebar.js on
          htmx:afterSettle. Media/download/external links live in the transcript,
-         outside this sidebar, so they are never boosted. Degrades to plain links
-         without JS. */}}
+         outside this sidebar, so they are never boosted. Internal cross-links
+         inside #main-content (gallery/search jump-to-context, gallery tabs) are
+         also intentionally un-boosted: their #m{id} fragment scroll relies on a
+         full-page load, and hx-select would drop the anchor jump. Degrades to
+         plain links without JS. */}}
     <aside class="app-sidebar w-80 min-h-full bg-base-300 border-r border-neutral flex flex-col"
            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
       {{/* Filter input — live-narrows the conversation list via sidebar.js. */}}
