@@ -111,6 +111,11 @@
 /* Tell Tailwind where utility classes are used (v4 content detection). */
 @source "../templates";
 
+/* The Docusaurus site is a separate app with its own styling; auto source
+   detection would otherwise pick daisyUI component classes out of its sources
+   and drift the committed app.css. */
+@source not "../../../docs-site";
+
 /* Monogram-avatar background palette: chosen dynamically in Go (avatarColor),
    so it never appears literally in a template for the content scan. Safelist it.
    These match the avatarPalette in render.go (SPEC-0006 avatar palette). */
