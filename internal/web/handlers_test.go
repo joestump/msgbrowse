@@ -96,6 +96,25 @@ func TestHomeStatStrip(t *testing.T) {
 	}
 }
 
+// TestBoostedNavigation verifies the HTMX-boosted navigation shell (issue #65):
+// the scoped swap target exists, and the shell nav is boosted to swap only
+// #main-content and push the URL (so the sidebar is preserved across navigation).
+func TestBoostedNavigation(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/").Body.String()
+	for _, want := range []string{
+		`id="main-content"`,         // the scoped swap target wraps page content
+		`hx-boost="true"`,           // navigation is boosted
+		`hx-select="#main-content"`, // only the main region is pulled from the response
+		`hx-swap="outerHTML"`,       // the whole main element is replaced
+		`hx-push-url="true"`,        // URL + history updated
+	} {
+		if !contains(body, want) {
+			t.Errorf("boosted-nav marker missing: %q", want)
+		}
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/")

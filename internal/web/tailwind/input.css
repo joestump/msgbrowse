@@ -1336,3 +1336,9 @@ html {
   color: var(--color-error);
   border-color: color-mix(in oklab, var(--color-error) 35%, transparent);
 }
+
+/* Boosted navigation swaps #main-content and htmx scrolls its top into view;
+   offset the 54px sticky navbar so page headings are never covered. */
+#main-content {
+  scroll-margin-top: 54px;
+}

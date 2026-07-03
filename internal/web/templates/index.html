@@ -30,8 +30,10 @@
         </div>
       </div>
 
-      {{/* Quick-links: bordered cards with accent icons + dim subtitles. */}}
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {{/* Quick-links: bordered cards with accent icons + dim subtitles. Boosted
+           (same scoped #main-content swap as the sidebar nav) for instant loads. */}}
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3"
+           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
         <a href="/search" class="link-card">
           <span class="link-card-icon">{{template "icon-search" .}}</span>
           <span class="min-w-0">
