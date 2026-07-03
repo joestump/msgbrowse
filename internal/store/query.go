@@ -273,39 +273,40 @@ func (s *Store) GetConversationByID(ctx context.Context, id int64) (*Conversatio
 	return &cs, nil
 }
 
-// GetMessages returns a chronological page of a conversation's messages using a
-// keyset cursor on (ts_unix, id). Pass afterTSUnix=0, afterID=0 for the first
-// (oldest) page; pass the returned NextTSUnix/NextID for subsequent pages.
-func (s *Store) GetMessages(ctx context.Context, convID, afterTSUnix, afterID int64, limit int) (*Page, error) {
+// GetMessages returns one page of a conversation's messages using a keyset
+// cursor on (ts_unix, id). With desc=false the page walks oldest→newest and the
+// cursor means "strictly after"; with desc=true it walks newest→oldest and the
+// cursor means "strictly before". Pass cursorTSUnix=0, cursorID=0 for the first
+// page (the oldest messages ascending, the newest descending); pass the
+// returned NextTSUnix/NextID — the last row of the page in walk order — for
+// subsequent pages. HasMore is detected by probing limit+1 rows in either
+// direction.
+func (s *Store) GetMessages(ctx context.Context, convID, cursorTSUnix, cursorID int64, limit int, desc bool) (*Page, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
+	cmp, order := ">", "ASC"
+	if desc {
+		cmp, order = "<", "DESC"
+	}
+	q := `SELECT id, hash, sender, is_system, ts, ts_unix, body
+	   FROM messages
+	  WHERE conversation_id = ?`
+	args := []any{convID}
+	// The zero cursor means "from the top of the walk" — no keyset predicate.
+	// (Ascending it would be a no-op filter; descending it would exclude every
+	// row, so it must be omitted.)
+	if cursorTSUnix != 0 || cursorID != 0 {
+		q += ` AND (ts_unix ` + cmp + ` ? OR (ts_unix = ? AND id ` + cmp + ` ?))`
+		args = append(args, cursorTSUnix, cursorTSUnix, cursorID)
+	}
 	// Fetch limit+1 to detect whether more pages exist.
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, hash, sender, is_system, ts, ts_unix, body
-		   FROM messages
-		  WHERE conversation_id = ?
-		    AND (ts_unix > ? OR (ts_unix = ? AND id > ?))
-		  ORDER BY ts_unix ASC, id ASC
-		  LIMIT ?`, convID, afterTSUnix, afterTSUnix, afterID, limit+1)
+	q += ` ORDER BY ts_unix ` + order + `, id ` + order + ` LIMIT ?`
+	args = append(args, limit+1)
+
+	msgs, err := s.queryMessages(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get messages: %w", err)
-	}
-	defer rows.Close()
-
-	var msgs []MessageView
-	for rows.Next() {
-		var m MessageView
-		var isSystem int
-		if err := rows.Scan(&m.ID, &m.Hash, &m.Sender, &isSystem, &m.TS, &m.TSUnix, &m.Body); err != nil {
-			return nil, err
-		}
-		m.IsSystem = isSystem == 1
-		m.IsOwner = m.Sender == signal.OwnerSender
-		msgs = append(msgs, m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	page := &Page{}

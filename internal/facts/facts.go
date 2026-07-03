@@ -332,7 +332,7 @@ func processConversation(ctx context.Context, st *store.Store, client llm.Client
 		if err := ctx.Err(); err != nil {
 			return stats, err
 		}
-		page, err := st.GetMessages(ctx, fc.ID, cursorTS, cursorID, batch)
+		page, err := st.GetMessages(ctx, fc.ID, cursorTS, cursorID, batch, false)
 		if err != nil {
 			return stats, err
 		}

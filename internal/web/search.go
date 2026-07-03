@@ -135,6 +135,7 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 		ActiveID:    id,
 		Source:      active.Source,
 		ConvName:    active.Name,
+		Sort:        sortAsc, // context reads chronologically regardless of the transcript default
 		Messages:    msgs,
 		HighlightID: mid,
 	}

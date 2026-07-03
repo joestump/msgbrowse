@@ -14,12 +14,19 @@ import (
 // (non-greedy up to the first colon), and the (possibly empty) inline body.
 var anchorRe = regexp.MustCompile(`^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+(.*?):\s?(.*)$`)
 
+// mdTarget matches a Markdown link/image target, tolerating ONE level of nested
+// parentheses: Signal media names routinely contain parens ("Image_from_iOS_(1).jpg",
+// "…_(2006).jpg"), which a naive `[^)]+` truncates at the first `)` — issue #66.
+// A greedy `.+` would instead over-match when several tokens share a line, so the
+// target is one or more of: a paren-free character, or a balanced (…) group.
+const mdTarget = `(?:[^()]|\([^()]*\))+`
+
 var (
 	// imageRe matches Markdown image syntax: ![alt](target).
-	imageRe = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
+	imageRe = regexp.MustCompile(`!\[([^\]]*)\]\((` + mdTarget + `)\)`)
 	// linkRe matches Markdown link syntax: [text](target). It is applied after
 	// images are removed so an image is never also counted as a link.
-	linkRe = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
+	linkRe = regexp.MustCompile(`\[([^\]]*)\]\((` + mdTarget + `)\)`)
 	// urlRe matches a bare http(s) URL up to the first whitespace or delimiter.
 	urlRe = regexp.MustCompile(`https?://[^\s<>()\[\]"'` + "`" + `]+`)
 	// reactionLineRe matches signal-export's reactions trailer at the end of a

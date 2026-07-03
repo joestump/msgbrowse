@@ -5,7 +5,7 @@
        unchanged. */}}
   <header class="conv-header sticky top-[54px] z-20 bg-base-100/90 backdrop-blur border-b border-neutral px-4 lg:px-6 py-3">
     <div class="conv-header-top">
-      <span class="avatar-mono {{avatarColor .Active.Name}}">
+      <span class="avatar-mono {{avatarColor .Active.Name}}" aria-hidden="true">
         {{initials .Active.Name}}
         <span class="presence-dot {{sourceSlug .Active.Source}}" title="{{humanSource .Active.Source}}"></span>
       </span>
@@ -19,6 +19,19 @@
         </div>
         {{- end}}
       </div>
+      {{/* Sort toggle: the transcript defaults to newest-first; this flips to the
+           legacy chronological (oldest-first) walk via ?sort=. It reuses the
+           pin-btn styling (no new CSS) and is boosted like the shell nav so the
+           reorder swaps only #main-content. aria-pressed reflects whether the
+           "Oldest first" order is engaged. */}}
+      {{- $asc := eq .List.Sort "asc"}}
+      <a href="/c/{{.Active.ID}}{{if not $asc}}?sort=asc{{end}}"
+         class="pin-btn shrink-0{{if $asc}} pin-btn-active{{end}}"
+         role="button" aria-pressed="{{if $asc}}true{{else}}false{{end}}"
+         title="{{if $asc}}Sort newest first{{else}}Sort oldest first{{end}}"
+         hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+        <span>Oldest first</span>
+      </a>
       {{/* Pin/unpin (REQ-0006-010): a CSP-clean form POST to /c/{id}/pin that
            flips the flag and 303-redirects back. The label/state reflects the
            current pinned value. */}}

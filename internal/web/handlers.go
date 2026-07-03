@@ -75,6 +75,7 @@ type messageListData struct {
 	ActiveID    int64
 	Source      string // active conversation's source (for media renderability checks)
 	ConvName    string // active conversation's name (for media path resolution)
+	Sort        string // display order: sortDesc (default) or sortAsc; carried on the load-more URL
 	Messages    []store.MessageView
 	HasMore     bool
 	NextTSUnix  int64
@@ -104,6 +105,24 @@ type statusData struct {
 
 // pageSize is the number of messages per transcript page.
 const pageSize = 50
+
+// Transcript sort orders (the ?sort= query value). Newest-first is the default
+// so a conversation opens at its most recent messages; oldest-first is the
+// legacy chronological walk (and the order jump-to-context always uses).
+const (
+	sortDesc = "desc"
+	sortAsc  = "asc"
+)
+
+// parseSort normalizes a ?sort= query value: "asc" selects the legacy
+// oldest-first order, anything else (including absent) the newest-first
+// default.
+func parseSort(r *http.Request) string {
+	if r.URL.Query().Get("sort") == sortAsc {
+		return sortAsc
+	}
+	return sortDesc
+}
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -145,7 +164,8 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	page, err := s.store.GetMessages(ctx, id, 0, 0, pageSize)
+	sort := parseSort(r)
+	page, err := s.store.GetMessages(ctx, id, 0, 0, pageSize, sort == sortDesc)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -157,6 +177,7 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 			ActiveID:   id,
 			Source:     active.Source,
 			ConvName:   active.Name,
+			Sort:       sort,
 			Messages:   page.Messages,
 			HasMore:    page.HasMore,
 			NextTSUnix: page.NextTSUnix,
@@ -197,9 +218,16 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	afterTS, _ := strconv.ParseInt(r.URL.Query().Get("after_ts"), 10, 64)
-	afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
-	page, err := s.store.GetMessages(ctx, id, afterTS, afterID, pageSize)
+	// The keyset cursor param matches the walk direction: ascending pages
+	// continue strictly after it, descending pages strictly before it.
+	sort := parseSort(r)
+	cursorTSParam, cursorIDParam := "after_ts", "after_id"
+	if sort == sortDesc {
+		cursorTSParam, cursorIDParam = "before_ts", "before_id"
+	}
+	cursorTS, _ := strconv.ParseInt(r.URL.Query().Get(cursorTSParam), 10, 64)
+	cursorID, _ := strconv.ParseInt(r.URL.Query().Get(cursorIDParam), 10, 64)
+	page, err := s.store.GetMessages(ctx, id, cursorTS, cursorID, pageSize, sort == sortDesc)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -217,6 +245,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		ActiveID:   id,
 		Source:     src,
 		ConvName:   convName,
+		Sort:       sort,
 		Messages:   page.Messages,
 		HasMore:    page.HasMore,
 		NextTSUnix: page.NextTSUnix,

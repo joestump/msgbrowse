@@ -105,8 +105,10 @@
           <a href="/c/{{.Conv.ID}}" class="conv-row{{if eq .Conv.ID .ActiveID}} conv-row-selected{{end}}">
             {{/* Monogram avatar — the archive has no avatar images, so we render
                  initials in a per-conversation deterministic color. A presence
-                 dot bottom-right is colored by source (REQ-0006-004). */}}
-            <span class="avatar-mono {{avatarColor .Conv.Name}}">
+                 dot bottom-right is colored by source (REQ-0006-004). The whole
+                 monogram is decorative (the name follows as text), so it is
+                 hidden from assistive tech. */}}
+            <span class="avatar-mono {{avatarColor .Conv.Name}}" aria-hidden="true">
               {{initials .Conv.Name}}
               <span class="presence-dot {{sourceSlug .Conv.Source}}" title="{{humanSource .Conv.Source}}"></span>
             </span>
@@ -127,10 +129,13 @@
 {{/* Dense-log transcript (REQ-0006-005, ADR-0012). Each message is a row of
      [timestamp gutter | sender-colored rail | content column]; "Me" rows carry a
      faint accent wash + accent edge. Day separators are emitted when the
-     calendar date changes between consecutive rows; the sender name is suppressed
-     when the same sender posts again within the same day block (grouping); system
-     events are centered italic/mono with no rail/gutter. Anchors (id="m{ID}") and
-     the .target jump-to-context flash are preserved. */}}
+     calendar date changes between consecutive rows — the walk runs in display
+     order, so this holds for both the newest-first default and the ?sort=asc
+     chronological view (the separator always labels the day of the rows below
+     it); the sender name is suppressed when the same sender posts again within
+     the same day block (grouping); system events are centered italic/mono with
+     no rail/gutter. Anchors (id="m{ID}") and the .target jump-to-context flash
+     are preserved. */}}
 {{define "message_list"}}
 {{- $prevDate := "" }}
 {{- $prevSender := "" }}
@@ -138,17 +143,14 @@
   {{- $body := renderBody .Body}}
   {{- $date := dateKey .TS}}
   {{- $newDay := ne $date $prevDate}}
-  {{- if .IsSystem}}
-    {{- if $newDay}}
+  {{- if $newDay}}
   <div class="day-sep" role="separator"><span>{{dateLabel .TS}}</span></div>
-    {{- end}}
+  {{- end}}
+  {{- if .IsSystem}}
   <div class="sys-event{{if and $.HighlightID (eq .ID $.HighlightID)}} target{{end}}" id="m{{.ID}}">{{if $body}}{{$body}}{{else}}—{{end}}</div>
     {{- $prevDate = $date}}
     {{- $prevSender = ""}}
   {{- else}}
-    {{- if $newDay}}
-  <div class="day-sep" role="separator"><span>{{dateLabel .TS}}</span></div>
-    {{- end}}
     {{- /* Group consecutive same-sender rows: show the name only on the first row
            of a run, or whenever a new day was just opened. */}}
     {{- $showSender := or $newDay (ne .Sender $prevSender)}}
@@ -193,9 +195,19 @@
   {{- end}}
 {{- end}}
 {{- if .HasMore}}
-<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?after_ts={{.NextTSUnix}}&after_id={{.NextID}}"
+{{/* Infinite-scroll sentinel: carries the sort order and the direction-correct
+     keyset cursor (after_* continues an ascending walk, before_* a descending
+     one) so the next page keeps loading in the same display order. */}}
+{{- if eq .Sort "asc"}}
+<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?sort=asc&after_ts={{.NextTSUnix}}&after_id={{.NextID}}"
      hx-trigger="revealed" hx-swap="outerHTML">
   <span class="loading loading-dots loading-md opacity-60"></span>
 </div>
+{{- else}}
+<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?sort=desc&before_ts={{.NextTSUnix}}&before_id={{.NextID}}"
+     hx-trigger="revealed" hx-swap="outerHTML">
+  <span class="loading loading-dots loading-md opacity-60"></span>
+</div>
+{{- end}}
 {{- end}}
 {{end}}

@@ -72,6 +72,21 @@ func TestParse(t *testing.T) {
 			}},
 		},
 		{
+			// Signal media names routinely contain parens; the target match must
+			// not truncate at the first ')' (issue #66).
+			name:  "attachment target with parentheses kept whole",
+			conv:  "Harper",
+			input: "[2022-03-03 12:02:00] Harper: ![Image_from_iOS_(1).jpg](media/Image_from_iOS_(1).jpg) and [doc_(v2).pdf](media/doc_(v2).pdf)\n",
+			want: []Message{{
+				Conversation: "Harper", TimestampRaw: "2022-03-03 12:02:00", Sender: "Harper",
+				Body: "![Image_from_iOS_(1).jpg](media/Image_from_iOS_(1).jpg) and [doc_(v2).pdf](media/doc_(v2).pdf)",
+				Attachments: []Attachment{
+					{Kind: KindImage, OriginalName: "Image_from_iOS_(1).jpg", RelPath: "media/Image_from_iOS_(1).jpg"},
+					{Kind: KindFile, OriginalName: "doc_(v2).pdf", RelPath: "media/doc_(v2).pdf"},
+				},
+			}},
+		},
+		{
 			name:  "bare and markdown links deduped",
 			conv:  "MJ",
 			input: "[2022-04-04 08:00:00] MJ: see https://example.com/x and [same](https://example.com/x).\n",

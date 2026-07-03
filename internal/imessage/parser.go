@@ -242,8 +242,13 @@ func classifyContent(line string, bodyLines *[]string, atts *[]signal.Attachment
 	}
 }
 
-// parseTimestamp returns the normalized timestamp text and parsed time if line
-// begins with an imessage-exporter timestamp.
+// parseTimestamp returns the canonical timestamp text and parsed time if line
+// begins with an imessage-exporter timestamp. The raw text is re-emitted in
+// [signal.TimestampLayout] ("YYYY-MM-DD HH:MM:SS") — NOT the source-formatted
+// string — so stored ts values sort chronologically as strings and render
+// helpers see one canonical shape regardless of source. This changes the
+// content hash of every iMessage message, so switching layouts requires a full
+// re-ingest (reactions re-key automatically via ReplaceConversationMessages).
 func parseTimestamp(line string) (raw string, t time.Time, ok bool) {
 	m := timestampLineRe.FindStringSubmatch(line)
 	if m == nil {
@@ -254,7 +259,7 @@ func parseTimestamp(line string) (raw string, t time.Time, ok bool) {
 	if err != nil {
 		return "", time.Time{}, false
 	}
-	return norm, parsed, true
+	return parsed.Format(signal.TimestampLayout), parsed, true
 }
 
 type senderState int

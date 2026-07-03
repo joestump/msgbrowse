@@ -8,22 +8,31 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/joestump/msgbrowse/internal/signal"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
+// mdTarget matches a Markdown link/image target, tolerating one level of nested
+// parentheses (Signal media names contain parens, e.g. "Image_from_iOS_(1).jpg" —
+// issue #66). Keep in lockstep with the parser's mdTarget in internal/signal.
+const mdTarget = `(?:[^()]|\([^()]*\))+`
+
 // bodyTokenRe matches, in priority order, a Markdown image, a Markdown link, or
 // a bare http(s) URL. Everything else is treated as plain text and escaped.
 var bodyTokenRe = regexp.MustCompile(
-	`(!\[[^\]]*\]\([^)]+\))` + // 1: image
-		`|(\[[^\]]*\]\([^)]+\))` + // 2: markdown link
+	`(!\[[^\]]*\]\(` + mdTarget + `\))` + // 1: image
+		`|(\[[^\]]*\]\(` + mdTarget + `\))` + // 2: markdown link
 		`|(https?://[^\s<>()\[\]"'` + "`" + `]+)`, // 3: bare url
 )
 
 // mdLinkParts extracts the text and target from a Markdown link/image token.
-var mdLinkParts = regexp.MustCompile(`^!?\[([^\]]*)\]\(([^)]+)\)$`)
+// The token is already delimited by bodyTokenRe, so the anchored greedy `.+`
+// cannot over-match, and it keeps paren-bearing targets whole.
+var mdLinkParts = regexp.MustCompile(`^!?\[([^\]]*)\]\((.+)\)$`)
 
 // renderBody converts a raw message body into safe HTML for the transcript.
 // Image markdown is dropped (images are rendered separately as thumbnails);
@@ -170,11 +179,43 @@ var monthNames = [...]string{
 	"July", "August", "September", "October", "November", "December",
 }
 
+// legacyIMessageLayout is the source-formatted timestamp iMessage rows carried
+// BEFORE ingest canonicalized them to signal.TimestampLayout. Databases that
+// have not been re-ingested still hold this shape, so the render helpers below
+// parse it as a fallback rather than dumping the raw string into the gutter
+// (which wrapped the 76px column) and the day separator (which fired on every
+// row because no two raw strings shared a "YYYY-MM-DD" prefix).
+const legacyIMessageLayout = "Jan 2, 2006 3:04:05 PM"
+
+// isCanonicalTS reports whether ts looks like the canonical stored layout
+// ("YYYY-MM-DD HH:MM:SS"). A cheap shape check, not a full parse — these
+// helpers run once per transcript row, so the canonical fast path must not
+// allocate.
+func isCanonicalTS(ts string) bool {
+	return len(ts) >= 19 && ts[4] == '-' && ts[7] == '-' && ts[10] == ' '
+}
+
+// canonicalTS returns ts in the canonical "YYYY-MM-DD HH:MM:SS" layout,
+// parsing the legacy iMessage layout only on a shape mismatch. Anything that
+// parses as neither is returned unchanged so callers keep their existing
+// whole-string fallback.
+func canonicalTS(ts string) string {
+	if isCanonicalTS(ts) {
+		return ts
+	}
+	if t, err := time.Parse(legacyIMessageLayout, ts); err == nil {
+		return t.Format(signal.TimestampLayout)
+	}
+	return ts
+}
+
 // dateKey returns the calendar-date prefix ("YYYY-MM-DD") of a stored timestamp
-// ("YYYY-MM-DD HH:MM:SS"). The transcript compares consecutive rows' dateKey to
-// decide when to emit a day separator. An unrecognized timestamp returns the
-// whole string so two equal odd values still group together.
+// ("YYYY-MM-DD HH:MM:SS"; legacy iMessage timestamps are canonicalized first).
+// The transcript compares consecutive rows' dateKey to decide when to emit a day
+// separator. An unrecognized timestamp returns the whole string so two equal odd
+// values still group together.
 func dateKey(ts string) string {
+	ts = canonicalTS(ts)
 	if len(ts) >= 10 && ts[4] == '-' && ts[7] == '-' {
 		return ts[:10]
 	}
@@ -182,9 +223,11 @@ func dateKey(ts string) string {
 }
 
 // clockTime returns the "HH:MM:SS" portion of a stored timestamp for the
-// transcript's left gutter. Falls back to the whole string if the format is
-// unexpected, so the gutter is never blank.
+// transcript's left gutter (legacy iMessage timestamps are canonicalized
+// first). Falls back to the whole string if the format is unexpected, so the
+// gutter is never blank.
 func clockTime(ts string) string {
+	ts = canonicalTS(ts)
 	if len(ts) >= 19 && ts[10] == ' ' {
 		return ts[11:19]
 	}
@@ -214,14 +257,41 @@ var camelBoundary = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 
 // humanName makes a conversation/sender display name readable by inserting
 // spaces at CamelCase boundaries ("JonStump" → "Jon Stump", "TheStumpLoft" →
-// "The Stump Loft"). Names that already contain spaces (e.g. group names) are
-// left unchanged. It is display-only; the stored name (used in URLs and media
-// paths) is untouched. Exact display names will come from the contacts page.
+// "The Stump Loft"). Empty and imessage-exporter's literal "None" become
+// "Unknown"; an email address renders as its humanized local part ("joe.stump@…"
+// → "Joe Stump" — the raw address still appears in the header id-chips). Names
+// that already contain spaces (e.g. group names) are left unchanged. It is
+// display-only; the stored name (used in URLs and media paths) is untouched.
+// Exact display names will come from the contacts page.
 func humanName(name string) string {
+	if name == "" || name == "None" {
+		return "Unknown"
+	}
 	if strings.ContainsRune(name, ' ') {
 		return name
 	}
+	if i := strings.IndexByte(name, '@'); i > 0 {
+		return humanizeLocalPart(name[:i])
+	}
 	return camelBoundary.ReplaceAllString(name, "$1 $2")
+}
+
+// humanizeLocalPart turns an email local part into a display name: separator
+// runs (dots, underscores, hyphens, plus) become spaces and each word is
+// capitalized ("joe.stump" → "Joe Stump", "jsmith" → "Jsmith").
+func humanizeLocalPart(local string) string {
+	words := strings.FieldsFunc(local, func(r rune) bool {
+		return r == '.' || r == '_' || r == '-' || r == '+'
+	})
+	if len(words) == 0 {
+		return local
+	}
+	for i, w := range words {
+		r := []rune(w)
+		r[0] = unicode.ToUpper(r[0])
+		words[i] = string(r)
+	}
+	return strings.Join(words, " ")
 }
 
 // reactionTitle builds the hover tooltip for a reaction badge from its reactors.
@@ -238,10 +308,20 @@ func reactionTitle(r store.ReactionView) string {
 	return strings.Join(names, ", ")
 }
 
-// initials returns up to two uppercase letters for a monogram avatar: the first
-// letters of the first and last humanized words, or the first two letters of a
-// single-word name.
+// initials returns up to two characters for a monogram avatar. Phone-like names
+// ("+15551234567") use their last two digits so a screenful of unsaved numbers
+// doesn't render identical "+1" monograms; comma-joined group names ("A, B, C")
+// use the member count; everything else takes the first letters of the first and
+// last humanized words, or the first two letters of a single-word name.
 func initials(name string) string {
+	// Comma groups first: a group of phone handles ("+1…, +1…") is still a
+	// group, not one phone.
+	if strings.ContainsRune(name, ',') {
+		return strconv.Itoa(commaGroupSize(name))
+	}
+	if phoneLike(name) {
+		return lastTwoDigits(name)
+	}
 	fields := strings.Fields(humanName(name))
 	switch len(fields) {
 	case 0:
@@ -257,6 +337,49 @@ func initials(name string) string {
 		last := []rune(fields[len(fields)-1])
 		return strings.ToUpper(string(first[0]) + string(last[0]))
 	}
+}
+
+// phoneLike reports whether a raw name is an unsaved phone handle: a '+' prefix
+// with the remainder mostly digits (separators like spaces/dashes/parens are
+// tolerated).
+func phoneLike(name string) bool {
+	if !strings.HasPrefix(name, "+") {
+		return false
+	}
+	rest := name[1:]
+	digits := 0
+	for _, r := range rest {
+		if r >= '0' && r <= '9' {
+			digits++
+		}
+	}
+	return digits >= 2 && digits*2 >= len(rest)
+}
+
+// lastTwoDigits returns the final two digits of a phone-like name (or however
+// many exist, guarded by phoneLike requiring at least two).
+func lastTwoDigits(name string) string {
+	var d [2]byte
+	n := 0
+	for i := len(name) - 1; i >= 0 && n < 2; i-- {
+		if name[i] >= '0' && name[i] <= '9' {
+			d[1-n] = name[i]
+			n++
+		}
+	}
+	return string(d[2-n:])
+}
+
+// commaGroupSize counts the members of a comma-joined group name ("MJ, Harper,
+// Sam" → 3), skipping empty segments.
+func commaGroupSize(name string) int {
+	n := 0
+	for _, part := range strings.Split(name, ",") {
+		if strings.TrimSpace(part) != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // avatarPalette is the set of monogram-avatar background classes. They are

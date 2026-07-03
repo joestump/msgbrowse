@@ -14,11 +14,11 @@ func TestParseTimestamp(t *testing.T) {
 		wantOK   bool
 		wantYear int
 	}{
-		{"May 20, 2020  9:10:11 AM", "May 20, 2020 9:10:11 AM", true, 2020},  // space-padded single-digit hour
-		{"May 20, 2020 10:00:00 AM", "May 20, 2020 10:00:00 AM", true, 2020}, // double-digit hour
-		{"Jun 05, 2020  2:30:00 PM", "Jun 05, 2020 2:30:00 PM", true, 2020},  // zero-padded day + PM
-		{"Hey, are we still on?", "", false, 0},                              // body line
-		{"Me", "", false, 0},                                                 // sender line
+		{"May 20, 2020  9:10:11 AM", "2020-05-20 09:10:11", true, 2020}, // space-padded single-digit hour
+		{"May 20, 2020 10:00:00 AM", "2020-05-20 10:00:00", true, 2020}, // double-digit hour
+		{"Jun 05, 2020  2:30:00 PM", "2020-06-05 14:30:00", true, 2020}, // zero-padded day + PM
+		{"Hey, are we still on?", "", false, 0},                         // body line
+		{"Me", "", false, 0},                                            // sender line
 		{"", "", false, 0},
 	}
 	for _, tt := range tests {
