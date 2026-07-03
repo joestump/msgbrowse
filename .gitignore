@@ -32,5 +32,12 @@
 # Dev-time CSS toolchain (downloaded by `make css`)
 /.tools/
 
+# Docs site: generated MDX (rebuilt by docs-site/scripts/build-docs.js on
+# every `npm run build`) and Docusaurus install/build artifacts
+/docs-generated/
+/docs-site/node_modules/
+/docs-site/build/
+/docs-site/.docusaurus/
+
 # Transient agent worktrees (created under the repo by background agents)
 /.claude/

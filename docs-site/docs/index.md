@@ -1,0 +1,35 @@
+---
+title: Documentation
+sidebar_label: Overview
+sidebar_position: 0
+---
+
+# msgbrowse Documentation
+
+msgbrowse is a self-hosted, local-only browser, search engine, and (upcoming)
+AI-editorialized journal over your personal Signal and iMessage archives. It is
+a single pure-Go binary (`go install`, no C toolchain) that renders a clean
+local UI over the Markdown output of the two upstream exporters
+([`signal-export`](https://github.com/carderne/signal-export) and
+[`imessage-exporter`](https://github.com/ReagentX/imessage-exporter)), adds
+FTS5 keyword search and semantic search, and exposes an MCP server so AI
+assistants can answer questions over your history. Nothing leaves your machine
+except calls to the one OpenAI-compatible LLM endpoint you configure.
+
+## Where to start
+
+- **[Getting Started](getting-started/what-is-msgbrowse.md)** — what msgbrowse
+  is, [installation](getting-started/installation.md),
+  [exporting your archives](getting-started/exporting-your-archives.md), and
+  your [first import](getting-started/first-import.md).
+- **Features** — [browsing](features/browsing.md),
+  [search](features/search.md), the [media gallery](features/media-gallery.md),
+  [status & backups](features/status-and-backups.md),
+  [AI features](features/ai-features.md), and the
+  [MCP server](features/mcp-server.md).
+- **Reference** — the [CLI](reference/cli.md),
+  [configuration](reference/configuration.md), the
+  [security model](reference/security-model.md), and
+  [troubleshooting](reference/troubleshooting.md).
+- **[Architecture](/architecture)** — the generated ADR and specification
+  section (also reachable from the **ADRs** and **Specifications** tabs above).
