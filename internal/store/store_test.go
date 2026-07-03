@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -111,6 +112,69 @@ func TestReplaceConversationMessagesAndFTS(t *testing.T) {
 	if n := scalar(t, st, `SELECT count(*) FROM links`); n != 0 {
 		t.Errorf("after replace, links = %d, want 0 (cascade)", n)
 	}
+}
+
+// TestGetMessagesPagination walks a five-message conversation two rows at a
+// time in both directions, checking page contents, keyset-cursor continuation,
+// and the limit+1 HasMore probe at each step.
+func TestGetMessagesPagination(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	id, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgs []signal.Message
+	for i := 0; i < 5; i++ {
+		msgs = append(msgs, msg("Harper", fmt.Sprintf("2022-03-01 09:0%d:00", i), "Harper", fmt.Sprintf("m%d", i), nil, nil))
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, id, source.Signal, msgs); err != nil {
+		t.Fatal(err)
+	}
+
+	// walk pages through the conversation and returns the bodies in visit order.
+	walk := func(desc bool) []string {
+		t.Helper()
+		var bodies []string
+		var cursorTS, cursorID int64
+		for i := 0; ; i++ {
+			page, err := st.GetMessages(ctx, id, cursorTS, cursorID, 2, desc)
+			if err != nil {
+				t.Fatalf("GetMessages(desc=%v) page %d: %v", desc, i, err)
+			}
+			for _, m := range page.Messages {
+				bodies = append(bodies, m.Body)
+			}
+			wantMore := len(bodies) < len(msgs)
+			if page.HasMore != wantMore {
+				t.Errorf("desc=%v page %d HasMore = %v, want %v", desc, i, page.HasMore, wantMore)
+			}
+			if !page.HasMore {
+				break
+			}
+			cursorTS, cursorID = page.NextTSUnix, page.NextID
+		}
+		return bodies
+	}
+
+	if got, want := walk(false), []string{"m0", "m1", "m2", "m3", "m4"}; !slicesEqual(got, want) {
+		t.Errorf("ascending walk = %v, want %v", got, want)
+	}
+	if got, want := walk(true), []string{"m4", "m3", "m2", "m1", "m0"}; !slicesEqual(got, want) {
+		t.Errorf("descending walk = %v, want %v", got, want)
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // TestReplaceConversationMessagesReactions verifies reactions round-trip through

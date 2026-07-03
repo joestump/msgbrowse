@@ -41,6 +41,19 @@ func TestRenderBody(t *testing.T) {
 			excludes: []string{"media/lease.pdf", "<a"},
 		},
 		{
+			// Paren-bearing targets (issue #66): the whole token must be consumed —
+			// no truncated remainder like "(1).jpg)" may leak into the text.
+			name:     "image markdown with parens in target fully dropped",
+			in:       "pic ![img](media/Image_from_iOS_(1).jpg) sent",
+			contains: []string{"pic ", " sent"},
+			excludes: []string{"Image_from_iOS", "(1).jpg", "!["},
+		},
+		{
+			name:     "markdown url link with parens in target stays whole",
+			in:       "[wiki](https://example.com/Go_(game))",
+			contains: []string{`href="https://example.com/Go_(game)"`, ">wiki<"},
+		},
+		{
 			name:     "newlines become br",
 			in:       "line1\nline2",
 			contains: []string{"line1<br>line2"},
@@ -195,7 +208,14 @@ func TestHumanName(t *testing.T) {
 		"TheStumpLoft":    "The Stump Loft",
 		"Harper":          "Harper",     // single word, no boundary
 		"Group Trip":      "Group Trip", // already spaced — unchanged
-		"":                "",
+		"":                "Unknown",    // empty → placeholder, not a blank row
+		"None":            "Unknown",    // imessage-exporter's literal missing-name
+		// Email handles display as a humanized local part (the raw address still
+		// shows in the header id-chips).
+		"joe.stump@example.com": "Joe Stump",
+		"j_smith@example.com":   "J Smith",
+		"jsmith@example.com":    "Jsmith",
+		"+15551234567":          "+15551234567", // phone handles pass through
 	}
 	for in, want := range cases {
 		if got := humanName(in); got != want {
@@ -210,7 +230,19 @@ func TestInitials(t *testing.T) {
 		"Harper":     "HA",
 		"Group Trip": "GT",
 		"X":          "X",
-		"":           "?",
+		"":           "UN", // empty humanizes to "Unknown"
+		"None":       "UN",
+		// Phone-like handles: the last two digits beat a screenful of "+1"s.
+		"+15551234567":    "67",
+		"+1 555 123 4589": "89",
+		// Comma-joined group names render their member count.
+		"MJ, Harper, Sam":                 "3",
+		"+15551234567, +15559876543":      "2",
+		"A, B, C, D, E":                   "5",
+		"joe.stump@example.com":           "JS", // email → humanized local part
+		"Weber, Anna":                     "2",  // ambiguous "Last, First" reads as a 2-group
+		"+notaphone":                      "+N", // '+' but not mostly digits — not phone-like
+		"+15551234567 something wordier ": "+W", // digits diluted below half — falls through
 	}
 	for in, want := range cases {
 		if got := initials(in); got != want {
@@ -224,6 +256,11 @@ func TestDateKey(t *testing.T) {
 		"2022-03-01 09:00:00": "2022-03-01",
 		"2026-12-31 23:59:59": "2026-12-31",
 		"garbage":             "garbage", // unrecognized format → whole string
+		// Legacy iMessage rows (ingested before ts canonicalization) parse via
+		// the fallback instead of degrading to the whole string — which made the
+		// transcript emit a day separator on every row.
+		"Nov 13, 2015 5:53:29 AM": "2015-11-13",
+		"Jun 5, 2020 2:30:00 PM":  "2020-06-05",
 	}
 	for in, want := range cases {
 		if got := dateKey(in); got != want {
@@ -237,6 +274,10 @@ func TestClockTime(t *testing.T) {
 		"2022-03-01 09:00:00": "09:00:00",
 		"2026-12-31 23:59:59": "23:59:59",
 		"odd":                 "odd", // unrecognized → fall back to whole string
+		// Legacy iMessage rows reformat to HH:MM:SS instead of wrapping the
+		// 76px gutter with the full source-formatted string.
+		"Nov 13, 2015 5:53:29 AM": "05:53:29",
+		"Jun 5, 2020 2:30:00 PM":  "14:30:00",
 	}
 	for in, want := range cases {
 		if got := clockTime(in); got != want {
@@ -251,6 +292,8 @@ func TestDateLabel(t *testing.T) {
 		"2022-10-22 20:17:13": "October 22, 2022",
 		"2026-12-09 00:00:00": "December 9, 2026",
 		"not-a-date":          "not-a-date", // unparseable → echoed back
+		// Legacy iMessage rows label correctly via the canonicalTS fallback.
+		"Nov 13, 2015 5:53:29 AM": "November 13, 2015",
 	}
 	for in, want := range cases {
 		if got := dateLabel(in); got != want {

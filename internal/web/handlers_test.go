@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -171,10 +172,28 @@ func TestConversationTranscript(t *testing.T) {
 		t.Errorf("transcript does not render the owner's name as \"Me\"")
 	}
 
-	// Day separator: the fixture is all one calendar day, so one labeled
-	// separator should appear.
+	// Day separator: the fixture is all one calendar day, so exactly one labeled
+	// separator should appear (a regression here means the per-row day-sep bug
+	// from source-formatted timestamps is back).
 	if !contains(body, `class="day-sep"`) || !contains(body, "March 1, 2022") {
 		t.Errorf("transcript missing the day separator label")
+	}
+	if n := strings.Count(body, `class="day-sep"`); n != 1 {
+		t.Errorf("day separators = %d, want exactly 1 for a single-day fixture", n)
+	}
+
+	// Default order is newest-first: the fixture's latest message body renders
+	// before its earliest.
+	newest := strings.Index(body, "looks great")
+	oldest := strings.Index(body, "morning! ready for the trip?")
+	if newest < 0 || oldest < 0 || newest > oldest {
+		t.Errorf("default transcript not newest-first (newest at %d, oldest at %d)", newest, oldest)
+	}
+
+	// The header carries the sort toggle: it links to the legacy ascending order
+	// and is not pressed by default.
+	if !contains(body, "?sort=asc") || !contains(body, "Oldest first") {
+		t.Errorf("transcript missing the sort toggle")
 	}
 
 	// System event (the No-Sender row) renders as a centered sys-event line, not
@@ -218,6 +237,93 @@ func TestConversationTranscript(t *testing.T) {
 	// The reactions trailer must NOT appear as message body text or a standalone row.
 	if contains(body, "(- Me") || contains(body, "-)") {
 		t.Errorf("reactions trailer leaked into transcript body as text")
+	}
+}
+
+// TestConversationSortAscRoundTrip verifies the ?sort=asc legacy view: oldest
+// message first, the toggle pressed and linking back to the newest-first
+// default.
+func TestConversationSortAscRoundTrip(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	conv, err := st.GetConversation(context.Background(), "Harper")
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	rec := get(t, srv, "/c/"+itoa(conv.ID)+"?sort=asc")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+
+	oldest := strings.Index(body, "morning! ready for the trip?")
+	newest := strings.Index(body, "looks great")
+	if oldest < 0 || newest < 0 || oldest > newest {
+		t.Errorf("?sort=asc not oldest-first (oldest at %d, newest at %d)", oldest, newest)
+	}
+	// The toggle reflects the engaged state and links back to the default.
+	if !contains(body, `aria-pressed="true"`) {
+		t.Errorf("sort toggle not marked pressed in asc view")
+	}
+	// Day-sep and grouping stay sane in the chronological walk too.
+	if n := strings.Count(body, `class="day-sep"`); n != 1 {
+		t.Errorf("asc day separators = %d, want 1", n)
+	}
+	if !contains(body, "msg-row-grouped") {
+		t.Errorf("asc view missing consecutive-sender grouping")
+	}
+}
+
+// TestMessagesPartialCarriesSortCursor verifies the infinite-scroll partial:
+// a descending page continues strictly before the cursor and its load-more URL
+// carries the sort plus the direction-correct (before_*) keyset params.
+func TestMessagesPartialCarriesSortCursor(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	ctx := context.Background()
+	conv, err := st.GetConversation(ctx, "Harper")
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	// First descending page of 2 straight from the store gives us a real cursor.
+	first, err := st.GetMessages(ctx, conv.ID, 0, 0, 2, true)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if !first.HasMore {
+		t.Fatalf("fixture should have more than 2 messages")
+	}
+
+	path := "/c/" + itoa(conv.ID) + "/messages?sort=desc&before_ts=" + itoa(first.NextTSUnix) + "&before_id=" + itoa(first.NextID)
+	rec := get(t, srv, path)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	// The page after (09:05, 09:04) descending starts at the 09:03 message and
+	// must not repeat the cursor row.
+	if !contains(body, "and the agreement") {
+		t.Errorf("descending continuation missing the next-older message")
+	}
+	if contains(body, "looks great") {
+		t.Errorf("descending continuation repeated a row from before the cursor")
+	}
+
+	// The load-more sentinel carries the direction-correct cursor params. The
+	// fixture fits in one page, so render the partial directly with HasMore set.
+	sentinel := func(sort string) string {
+		var buf bytes.Buffer
+		err := srv.tmpl.ExecuteTemplate(&buf, "message_list", messageListData{
+			ActiveID: conv.ID, Sort: sort, HasMore: true, NextTSUnix: 123, NextID: 45,
+		})
+		if err != nil {
+			t.Fatalf("render message_list: %v", err)
+		}
+		return buf.String()
+	}
+	if got := sentinel(sortDesc); !contains(got, "/messages?sort=desc&before_ts=123&before_id=45") {
+		t.Errorf("desc load-more sentinel lost sort/cursor params: %q", got)
+	}
+	if got := sentinel(sortAsc); !contains(got, "/messages?sort=asc&after_ts=123&after_id=45") {
+		t.Errorf("asc load-more sentinel lost sort/cursor params: %q", got)
 	}
 }
 
