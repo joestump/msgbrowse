@@ -20,7 +20,8 @@
          right-aligned global counts in dim mono; circular theme toggle. */}}
     <header class="navbar app-navbar sticky top-0 z-30 bg-base-300/95 backdrop-blur border-b border-neutral px-3 lg:px-4">
       <label for="nav-drawer" class="btn btn-ghost btn-square btn-sm lg:hidden" aria-label="Open menu">{{template "icon-menu" .}}</label>
-      <a href="/" class="flex items-center gap-2 px-1" aria-label="msgbrowse home">
+      <a href="/" class="flex items-center gap-2 px-1" aria-label="msgbrowse home"
+         hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
         <span class="text-primary inline-flex">{{template "icon-home" .}}</span>
         <span class="navbar-wordmark">msgbrowse</span>
       </a>
@@ -28,7 +29,7 @@
       <span class="navbar-counts font-mono hidden sm:inline" title="Global archive totals">{{len .Conversations}} conversations · {{.TotalMessages}} messages</span>
       <button type="button" data-theme-toggle class="navbar-toggle ml-3" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
     </header>
-    <main class="flex-1">
+    <main id="main-content" class="flex-1">
 {{end}}
 
 {{define "page_end"}}
@@ -37,7 +38,15 @@
   {{/* Sidebar (REQ-0006-003): 320px, surface base-300 (#161a20). */}}
   <div class="drawer-side z-40">
     <label for="nav-drawer" class="drawer-overlay" aria-label="Close menu"></label>
-    <aside class="app-sidebar w-80 min-h-full bg-base-300 border-r border-neutral flex flex-col">
+    {{/* hx-boost turns the nav + conversation links below into HTMX GETs that
+         swap ONLY #main-content (hx-select) and push the URL, so the sidebar DOM
+         (and its scroll position + filter state) is preserved across navigation.
+         The active-row highlight is re-synced client-side by sidebar.js on
+         htmx:afterSettle. Media/download/external links live in the transcript,
+         outside this sidebar, so they are never boosted. Degrades to plain links
+         without JS. */}}
+    <aside class="app-sidebar w-80 min-h-full bg-base-300 border-r border-neutral flex flex-col"
+           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
       {{/* Filter input — live-narrows the conversation list via sidebar.js. */}}
       <div class="p-3 pb-2">
         <label class="sidebar-filter flex items-center gap-2">

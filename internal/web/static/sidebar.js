@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  function init() {
+  function initFilter() {
     var input = document.getElementById("sidebar-filter");
     if (!input) return;
 
@@ -51,6 +51,30 @@
     input.addEventListener("input", apply);
     apply();
   }
+
+  // Keep the active-conversation highlight correct. A boosted navigation swaps
+  // only #main-content, leaving the sidebar DOM (including the server-rendered
+  // .conv-row-selected) untouched — so move the highlight to the row whose href
+  // matches the current path. Runs on initial load, after every HTMX settle
+  // (boosted nav), and on browser back/forward.
+  function syncActive() {
+    var path = window.location.pathname;
+    var rows = document.querySelectorAll("a.conv-row");
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle(
+        "conv-row-selected",
+        rows[i].getAttribute("href") === path
+      );
+    }
+  }
+
+  function init() {
+    initFilter();
+    syncActive();
+  }
+
+  document.addEventListener("htmx:afterSettle", syncActive);
+  window.addEventListener("popstate", syncActive);
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
