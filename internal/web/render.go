@@ -398,16 +398,19 @@ var avatarPalette = []string{
 }
 
 // sourceSlug maps a stored source string to the CSS modifier class used by the
-// presence dot and source pill (`src-signal` / `src-imessage`). The slate +
-// slate-light variants both style these via theme-aware CSS in input.css, so the
-// template never needs an inline style (CSP-safe). Unknown sources fall back to a
-// neutral class so nothing renders unstyled.
+// presence dot and source pill (`src-signal` / `src-imessage` / `src-whatsapp`,
+// REQ-0009-007). The slate + slate-light variants both style these via
+// theme-aware CSS in input.css, so the template never needs an inline style
+// (CSP-safe). Unknown sources fall back to a neutral class so nothing renders
+// unstyled.
 func sourceSlug(src string) string {
 	switch src {
 	case source.Signal:
 		return "src-signal"
 	case source.IMessage:
 		return "src-imessage"
+	case source.WhatsApp:
+		return "src-whatsapp"
 	default:
 		return "src-unknown"
 	}

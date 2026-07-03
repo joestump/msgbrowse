@@ -298,6 +298,7 @@ func syncDepsFromConfig(st *store.Store, cfg *config.Config, out io.Writer, w sy
 			sum, err := imageconv.Run(ctx, st, imageconv.Options{
 				ArchiveRoot:         cfg.ArchiveRoot,
 				IMessageArchiveRoot: cfg.IMessageArchiveRoot,
+				WhatsAppArchiveRoot: cfg.WhatsAppArchiveRoot,
 				DataDir:             cfg.DataDir,
 			})
 			if err != nil {

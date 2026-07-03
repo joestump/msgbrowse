@@ -96,6 +96,7 @@ func TestSourceSlug(t *testing.T) {
 	cases := map[string]string{
 		source.Signal:   "src-signal",
 		source.IMessage: "src-imessage",
+		source.WhatsApp: "src-whatsapp",
 		"":              "src-unknown",
 		"bogus":         "src-unknown",
 	}
@@ -124,13 +125,17 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 		".avatar-mono",               // monogram avatar
 		".presence-dot.src-signal",   // Signal presence dot
 		".presence-dot.src-imessage", // iMessage presence dot
+		".presence-dot.src-whatsapp", // WhatsApp presence dot (REQ-0009-007)
 		".source-pill.src-signal",    // Signal source pill
 		".source-pill.src-imessage",  // iMessage source pill
+		".source-pill.src-whatsapp",  // WhatsApp source pill (REQ-0009-007)
 		".conv-row-selected",         // selected-row modifier
 		".pin-btn",                   // pin/unpin toggle (REQ-0006-010)
 		".pin-btn-active",            // pinned-state fill
 		"--color-info:#3b82f6",       // Signal blue token (slate)
 		"--color-success:#34c759",    // iMessage green token (slate)
+		"--color-whatsapp:#25d366",   // WhatsApp green token (slate)
+		"--color-whatsapp:#128c7e",   // WhatsApp teal-green token (slate-light)
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("built app.css missing %q (rebuild: rm -rf .tools && make css)", want)
@@ -140,6 +145,9 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 	// slate-light variants restyle automatically.
 	if !strings.Contains(out, ".presence-dot.src-signal{background:var(--color-info)}") {
 		t.Error("presence dot should derive its color from --color-info")
+	}
+	if !strings.Contains(out, ".presence-dot.src-whatsapp{background:var(--color-whatsapp)}") {
+		t.Error("whatsapp presence dot should derive its color from --color-whatsapp")
 	}
 }
 

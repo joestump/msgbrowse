@@ -122,9 +122,22 @@
 @source inline("bg-rose-500 bg-sky-500 bg-amber-500 bg-teal-500 bg-fuchsia-500 bg-orange-500 bg-indigo-500 bg-emerald-500");
 
 /* NOTE: the source modifier classes used by presence dots and pills
-   (.src-signal / .src-imessage, chosen in Go via sourceSlug) are hand-written
-   component rules below, not generated Tailwind utilities, so they survive the
-   content scan without an @source inline safelist. */
+   (.src-signal / .src-imessage / .src-whatsapp, chosen in Go via sourceSlug)
+   are hand-written component rules below, not generated Tailwind utilities, so
+   they survive the content scan without an @source inline safelist. */
+
+/* WhatsApp source color (SPEC-0009 REQ-0009-007). The slate themes carry no
+   spare daisyUI semantic token for a third source, so this is a bespoke
+   variable from the WhatsApp brand family, theme-switched like the built-in
+   tokens: #25d366 (bubble green) on the dark slate, #128c7e (the brand's
+   dark teal-green) on slate-light where the bright green would wash out —
+   and both stay distinguishable from iMessage's --color-success greens. */
+:root {
+  --color-whatsapp: #25d366;
+}
+[data-theme="slate-light"] {
+  --color-whatsapp: #128c7e;
+}
 
 /* --- typography: system fonts only (no web fonts; CSP/ADR-0010 holds) --- */
 
@@ -364,9 +377,11 @@ html {
   box-sizing: border-box;
 }
 /* Source colors come from the theme: Signal = info (#3b82f6),
-   iMessage = success (#34c759). */
+   iMessage = success (#34c759), WhatsApp = the bespoke --color-whatsapp
+   (#25d366 family, theme-switched above). */
 .presence-dot.src-signal { background: var(--color-info); }
 .presence-dot.src-imessage { background: var(--color-success); }
+.presence-dot.src-whatsapp { background: var(--color-whatsapp); }
 .presence-dot.src-unknown {
   background: color-mix(in oklab, var(--color-base-content) 40%, transparent);
 }
@@ -398,6 +413,16 @@ html {
 [data-theme="slate-light"] .source-pill.src-imessage {
   /* On the light variant the white-mix would wash out; use the green directly. */
   color: var(--color-success);
+}
+/* WhatsApp mirrors the iMessage pill treatment on its own brand green
+   (REQ-0009-007): white-lightened on dark slate, the theme-switched darker
+   teal-green used directly on slate-light. */
+.source-pill.src-whatsapp {
+  color: color-mix(in oklab, var(--color-whatsapp) 80%, white);
+  border-color: color-mix(in oklab, var(--color-whatsapp) 30%, transparent);
+}
+[data-theme="slate-light"] .source-pill.src-whatsapp {
+  color: var(--color-whatsapp);
 }
 .source-pill.src-unknown {
   color: color-mix(in oklab, var(--color-base-content) 60%, transparent);

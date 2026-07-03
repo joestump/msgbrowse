@@ -13,17 +13,18 @@ SQLite database, `msgbrowse serve` puts a web UI on top, and
 ## Run the import
 
 `import` is the all-in-one importer: it ingests every configured archive
-(Signal and/or iMessage) into one database. A source whose root is unset is
-skipped; a source whose root is set but missing is an error.
+(Signal, iMessage, and/or WhatsApp) into one database. A source whose root is
+unset is skipped; a source whose root is set but missing is an error.
 
 ```sh
 msgbrowse --archive-root ~/Signal-Archive \
           --imessage-archive-root ~/iMessage-Archive \
+          --whatsapp-archive-root ~/WhatsApp-Archive \
           --data-dir ./data \
           import
 ```
 
-Both archive roots (and `data_dir`) can also live in `config.yaml` or
+The archive roots (and `data_dir`) can also live in `config.yaml` or
 `MSGBROWSE_*` environment variables (see the
 [configuration reference](../reference/configuration.md)), in which case a
 bare `msgbrowse import` does the same thing. You can also import one source at
