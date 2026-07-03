@@ -58,19 +58,36 @@ contacts: phone-keyed contact_identifiers merge — free (existing machinery)
   question on the epic — it decides which doc path gets written first, not
   the architecture.)
 
-## Field mapping (pinned during implementation)
+## Field mapping (pinned)
+
+Pinned by the foundation story (#89) against the exporter's own serialization
+(`data_model.py` `Message.to_json()` / `ChatStore.to_json()`, plus
+`ios_handler.py` / `android_handler.py` field assignments) and the committed
+fixtures in `internal/whatsapp/testdata/`. The export is one `result.json`: a
+top-level object keyed by chat JID; each chat object carries `name`, `type`,
+`media_base`, avatar/status fields, and a `messages` object keyed by database
+row id.
 
 | store field | exporter JSON source | notes |
 |---|---|---|
-| conversation name | chat key / group subject | groups keep subject; 1:1 keep number |
-| sender | per-message sender name/number | owner detection → `Me` mapping TBD vs fixture |
-| ts_unix / TimestampRaw | epoch field | canonical format at ingest |
-| body | text field | media-only messages: empty body + attachment |
-| Attachments.RelPath | media path relative to root | must survive archivepath.Contain |
-| Reactions | reactions array (emoji, actor) | aggregate per emoji at render (existing) |
+| conversation name | chat `name`, else JID local part | `name` is the contact name or group subject; a null name falls back to the JID's local part (the phone number). Display-name collisions get the JID local part appended (`"Name (1555…)"`) so distinct JIDs never merge. |
+| group detection | chat key suffix `@g.us` | 1:1 chats end `@s.whatsapp.net` (or `@lid`); the chat `type` field is the DEVICE ("ios"/"android"), not the chat kind. |
+| sender | `from_me`, `sender` | `from_me:true` → `signal.OwnerSender` ("Me"). Group messages carry the member name/number in `sender`; 1:1 messages leave it null and map to the conversation name. |
+| IsSystem | `meta` (+ `media`, `data`) | `meta:true` without media (group renames, deleted messages, calls) → `signal.SystemSender` + IsSystem. `meta` is ALSO set on missing-media and vCard rows, which stay regular messages. A `data:null`, media-less row (unsupported internal message — polls, calls, unsynced media on companion exports) is kept as an empty system event, mirroring the exporter's own rendering. |
+| ts_unix / TimestampRaw | `timestamp` | The epoch-seconds field (`Message.__init__` normalizes ms→s; floats truncate). `TimestampRaw = time.Unix(epoch).In(loc).Format(signal.TimestampLayout)` at parse time — canonical from day one (REQ-0009-004). The pre-formatted `time` (HH:MM), `received_timestamp`, and `read_timestamp` strings are ignored. `loc` defaults to local time, matching the wall-clock convention of the other sources. |
+| body | `data`, `caption` | Text messages: `data`, with the exporter's `<br>` newline substitution undone; exporter-injected anchors collapse to their labels, but user text is never tag-stripped/unescaped. Media messages: `caption` (empty when absent). The missing-media sentinel (`data:"The media is missing"`, `mime:"media"`) never becomes body text. |
+| Attachments.RelPath | `media_base` + `data` (when `media:true`) | Full path = `media_base` + `data` (the exporter's own `<base href>` semantics). Stored root-relative ONLY (the iMessage absolute-path lesson): absolute paths under the archive root are relativized; absolute paths elsewhere fall back to the relative `data` part; a last-resort basename beats persisting a foreign absolute path. Kind: `mime` prefix `image/` → image (stickers included), else file chip (voice notes, PDFs). Missing media keeps a pathless attachment labeled with the sentinel so the chip fallback renders. |
+| vCard messages | `mime:"text/x-vcard"`, `data` | `data` is exporter HTML (`…vCard file(s):<br><a href="….vcf">Name</a>`); anchors become file attachments (label = contact name, href relativized) and the prose is stored as plain text — markup never reaches the body. |
+| Reactions | `reactions` object `{actor: emoji}` | → `[]signal.Reaction`, ordered by actor for determinism; the exporter's own-reaction actor `"You"` maps to `signal.OwnerSender`. Reaction text never lands in bodies (REQ-0009-005). |
+| quoted replies | `reply`, `quoted_data` | `reply` is the quoted parent's `key_id`, `quoted_data` its text; neither merges into the replying body (the parent is its own message). Thread affordances are a possible follow-on. |
+| ignored | `key_id`, `safe`, `thumb`, `message_type`, avatars, `status`, `my_avatar` | Unknown/unneeded fields are ignored per REQ-0009-003. `message_type` semantics (6=metadata, 14=deleted, 15=sticker on iOS) are informational — the `meta`/`sticker`/`mime` flags already carry the decision. |
 
-*This table is intentionally shape-level until fixtures exist; the foundation
-story fills exact key names and commits them alongside the fixtures.*
+Message ordering: `messages` object keys are database row ids; entries sort by
+epoch timestamp with numeric-key tie-break (original database order), which is
+what makes re-parses deterministic (Go maps are unordered). Malformed chats
+and messages (missing/invalid `timestamp`, missing `from_me`, non-object
+entries) are skip-logged via `whatsapp.ParseError` and never abort the rest of
+the chat.
 
 ## Non-goals (this spec)
 

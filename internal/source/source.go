@@ -17,11 +17,15 @@ const (
 	// IMessage identifies conversations and messages imported from an
 	// imessage-exporter Markdown archive. Wired up in Slice 2.5.
 	IMessage = "imessage"
+
+	// WhatsApp identifies conversations and messages imported from a
+	// WhatsApp-Chat-Exporter JSON archive (SPEC-0009).
+	WhatsApp = "whatsapp"
 )
 
 // All is the canonical list of recognized sources. Validation paths should
 // consult this rather than building their own switch.
-var All = []string{Signal, IMessage}
+var All = []string{Signal, IMessage, WhatsApp}
 
 // IsKnown reports whether s is a recognized source string.
 func IsKnown(s string) bool {
@@ -42,6 +46,8 @@ func Label(s string) string {
 		return "Signal"
 	case IMessage:
 		return "iMessage"
+	case WhatsApp:
+		return "WhatsApp"
 	default:
 		return s
 	}
