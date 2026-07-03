@@ -1,0 +1,380 @@
+/**
+ * Homepage styles (CSS module — scoped to src/pages/index.tsx only).
+ *
+ * Palette mirrors the app's own slate theme (SPEC-0006 design tokens,
+ * internal/web/tailwind/input.css): app bg #0f1216, raised panel #13171c,
+ * surface #161a20, hairline #232a33, text #dbe2ea, slate-blue accent #6f93d6.
+ *
+ * The hero and the "Private by design" band are intentionally always-dark
+ * (fixed slate colors, never Infima variables) so they render identically in
+ * Docusaurus light and dark modes. The feature grid in between is theme-aware
+ * via Infima variables plus [data-theme='dark'] overrides.
+ */
+
+.home {
+  --mb-bg: #0f1216;
+  --mb-panel: #13171c;
+  --mb-surface: #161a20;
+  --mb-border: #232a33;
+  --mb-text: #dbe2ea;
+  --mb-dim: #96a1b0;
+  --mb-accent: #6f93d6;
+  --mb-accent-light: #9bb6e6;
+  --mb-imessage-green: #34c759;
+}
+
+/* ============================================
+   Hero (always dark slate)
+   ============================================ */
+
+.hero {
+  background-color: var(--mb-bg);
+  background-image:
+    radial-gradient(60rem 32rem at 12% -12%, rgba(111, 147, 214, 0.16), transparent 60%),
+    radial-gradient(52rem 28rem at 88% -4%, rgba(59, 130, 246, 0.10), transparent 60%);
+  color: var(--mb-text);
+  padding: 4.5rem 1.5rem 4rem;
+  text-align: center;
+  overflow: hidden;
+}
+
+.heroInner {
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+.title {
+  font-size: clamp(2.6rem, 7vw, 3.9rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin-bottom: 1rem;
+  color: #fff;
+}
+
+.tagline {
+  font-size: clamp(1.05rem, 2.5vw, 1.3rem);
+  line-height: 1.55;
+  color: var(--mb-text);
+  margin-bottom: 1.25rem;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--mb-border);
+  background-color: rgba(19, 23, 28, 0.75);
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  color: var(--mb-dim);
+  margin-bottom: 1.75rem;
+}
+
+.pillDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: var(--mb-imessage-green);
+  box-shadow: 0 0 8px rgba(52, 199, 89, 0.55);
+  flex-shrink: 0;
+}
+
+.ctaRow {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.ctaPrimary,
+.ctaGhost {
+  display: inline-block;
+  padding: 0.7rem 1.5rem;
+  border-radius: 0.625rem;
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ctaPrimary {
+  background-color: var(--mb-accent);
+  color: var(--mb-bg);
+  border: 1px solid var(--mb-accent);
+}
+
+.ctaPrimary:hover {
+  background-color: var(--mb-accent-light);
+  border-color: var(--mb-accent-light);
+  color: var(--mb-bg);
+  text-decoration: none;
+}
+
+.ctaGhost {
+  background-color: rgba(255, 255, 255, 0.03);
+  color: var(--mb-text);
+  border: 1px solid var(--mb-border);
+}
+
+.ctaGhost:hover {
+  border-color: var(--mb-accent);
+  color: #fff;
+  text-decoration: none;
+}
+
+/* ============================================
+   Screenshot in a browser frame (inside hero)
+   ============================================ */
+
+.frame {
+  max-width: 72rem;
+  margin: 3.25rem auto 0;
+  border-radius: 0.875rem;
+  background-color: var(--mb-surface);
+  border: 1px solid var(--mb-border);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(111, 147, 214, 0.07);
+  overflow: hidden;
+  text-align: left;
+}
+
+.frameBar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+}
+
+.frameDots {
+  display: flex;
+  gap: 0.45rem;
+  justify-self: start;
+}
+
+.frameDots span {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background-color: #2a323d;
+}
+
+.frameUrl {
+  justify-self: center;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  color: var(--mb-dim);
+  background-color: rgba(15, 18, 22, 0.85);
+  border: 1px solid var(--mb-border);
+  border-radius: 0.375rem;
+  padding: 0.22rem 1.1rem;
+}
+
+.screenshot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-top: 1px solid var(--mb-border);
+}
+
+/* ============================================
+   Feature tiles (theme-aware)
+   ============================================ */
+
+.features {
+  padding: 4rem 1.5rem 4.5rem;
+}
+
+.featuresInner {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.kicker {
+  display: block;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.6rem;
+}
+
+.sectionTitle {
+  text-align: center;
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 2.5rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 996px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 0.875rem;
+  padding: 1.5rem;
+  background-color: var(--ifm-background-surface-color);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tile:hover {
+  color: inherit;
+  text-decoration: none;
+  border-color: var(--mb-accent);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(15, 18, 22, 0.12);
+}
+
+[data-theme='dark'] .tile {
+  background-color: var(--mb-panel);
+  border-color: var(--mb-border);
+}
+
+[data-theme='dark'] .tile:hover {
+  border-color: var(--mb-accent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.tileEmoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.35rem;
+  line-height: 1;
+  border-radius: 0.625rem;
+  background-color: rgba(111, 147, 214, 0.12);
+  border: 1px solid rgba(111, 147, 214, 0.28);
+  margin-bottom: 1rem;
+}
+
+.tileTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+
+.tileBody {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 0;
+}
+
+.tileCta {
+  margin-top: auto;
+  padding-top: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #3e63a8;
+}
+
+[data-theme='dark'] .tileCta {
+  color: var(--mb-accent-light);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+
+  .tile:hover {
+    transform: none;
+  }
+}
+
+/* ============================================
+   "Private by design" band (always dark slate)
+   ============================================ */
+
+.privacy {
+  background-color: var(--mb-bg);
+  border-top: 1px solid var(--mb-border);
+  color: var(--mb-text);
+  padding: 3.25rem 1.5rem;
+  text-align: center;
+}
+
+.privacyInner {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.privacyTitle {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.5rem;
+  color: #fff;
+}
+
+.privacySub {
+  font-size: 0.95rem;
+  color: var(--mb-dim);
+  margin-bottom: 1.5rem;
+}
+
+.privacyList {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.75rem;
+}
+
+.privacyItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--mb-border);
+  background-color: var(--mb-panel);
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.87rem;
+  color: #b9c3d0;
+}
+
+.privacyItem::before {
+  content: '';
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background-color: var(--mb-accent);
+  flex-shrink: 0;
+}
+
+.privacyLink {
+  font-weight: 600;
+  color: var(--mb-accent-light);
+}
+
+.privacyLink:hover {
+  color: #cddcf5;
+  text-decoration: underline;
+}
