@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 8
+const schemaVersion = 9
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -47,6 +47,7 @@ var migrations = []string{
 	6: schemaV6,
 	7: schemaV7,
 	8: schemaV8,
+	9: schemaV9,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -367,4 +368,61 @@ UPDATE links SET ts_unix = m.ts_unix FROM messages m WHERE m.id = links.message_
 
 CREATE INDEX IF NOT EXISTS idx_attachments_kind_ts ON attachments(kind, ts_unix);
 CREATE INDEX IF NOT EXISTS idx_links_gallery       ON links(url, ts_unix, domain, conversation_id, message_id);
+`
+
+// schemaV9 adds the node-local device-sync state tables (ADR-0018 /
+// SPEC-0011 "Database Operation Standards"). Two tables, never synchronized —
+// they describe THIS node's view of its paired peers — and completely inert
+// on nodes that never enable device sync (created empty, no triggers, no
+// changes to existing tables).
+//
+// paired_devices is the peer registry: one row per paired device, keyed by
+// the pinned certificate fingerprint (canonical lowercase-hex SHA-256 of the
+// peer's certificate DER, UNIQUE — a fingerprint identifies exactly one
+// peer). roles is a JSON object mapping source name → the role the PEER
+// plays for that source ("importer" | "replica"); it lives in a JSON column
+// rather than a child table because the registry is tiny (a handful of
+// devices), is always read whole, and single-importer-per-source enforcement
+// (SPEC-0011 "Importer and Replica Roles") happens in one transaction in
+// internal/store/devices.go where it can name the conflicting incumbent.
+// Deleting a row IS revocation: unpair removes the pin, and the TLS layer
+// rejects the certificate from then on.
+//
+// sync_state carries both halves of the replica's durable sync bookkeeping,
+// keyed (peer_id, source, rel_path):
+//
+//   - rel_path = ” is the per-(peer, source) MANIFEST GENERATION row —
+//     `generation` records the last manifest generation fully adopted from
+//     that peer.
+//   - rel_path <> ” rows are TRANSFER CURSORS: one in-flight or verified
+//     file, its manifest-declared size/hash, and the resumable byte offset.
+//
+// One table for both means "round adoption is atomic in sync state"
+// (SPEC-0011 scenario) is a single-transaction UPDATE across rows of the same
+// table — a crash can never record a generation as complete with stale
+// cursors. Cursor rows cascade with their peer: unpairing severs future sync
+// but never touches archive files (SPEC-0011 "Unpairing and Revocation").
+const schemaV9 = `
+CREATE TABLE IF NOT EXISTS paired_devices (
+    id           INTEGER PRIMARY KEY,
+    name         TEXT    NOT NULL,
+    fingerprint  TEXT    NOT NULL UNIQUE,
+    address      TEXT    NOT NULL,
+    roles        TEXT    NOT NULL DEFAULT '{}',
+    paired_at    TEXT    NOT NULL,
+    last_seen_at TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+    peer_id       INTEGER NOT NULL REFERENCES paired_devices(id) ON DELETE CASCADE,
+    source        TEXT    NOT NULL,
+    rel_path      TEXT    NOT NULL DEFAULT '',
+    generation    INTEGER NOT NULL DEFAULT 0,
+    size_bytes    INTEGER NOT NULL DEFAULT 0,
+    sha256        TEXT    NOT NULL DEFAULT '',
+    fetched_bytes INTEGER NOT NULL DEFAULT 0,
+    verified      INTEGER NOT NULL DEFAULT 0,
+    updated_at    TEXT    NOT NULL,
+    PRIMARY KEY (peer_id, source, rel_path)
+);
 `

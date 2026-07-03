@@ -149,6 +149,68 @@ of manifests preserves "DB is derived, archives are truth."
 for the cursor+generation atomicity the spec requires); embedding state in
 the archive tree (violates read-only archives).
 
+**As built (schema v9, #104)**: two tables. `paired_devices` is the peer
+registry — one row per peer keyed by the UNIQUE pinned fingerprint, with a
+JSON `roles` column mapping source → role (the registry holds a handful of
+rows, is read whole, and single-importer-per-source enforcement happens in
+one transaction where the error can name the incumbent). `sync_state` holds
+both manifest generations (the `rel_path = ''` row per peer+source) and
+per-file transfer cursors (`rel_path <> ''` rows) so "round adoption is
+atomic in sync state" is a single-transaction write to one table. Deleting a
+`paired_devices` row IS revocation; cursor rows cascade with their peer.
+
+### Naming: the `devices` namespace
+
+**Choice** (resolving the naming Open Question, #104): the `sync` verb stays
+with ADR-0015's export→import pipeline (`msgbrowse sync`); device sync uses
+the **devices** namespace everywhere. The canonical spellings every later
+story in the epic uses:
+
+| Surface | Spelling |
+|---|---|
+| Go package | `internal/devices` |
+| Config block | `device_sync:` (`enabled`, `listen_addr`, `device_name`, `poll_interval`, `staging_dir`) |
+| CLI | `msgbrowse devices pair\|list\|unpair\|status` |
+| Web routes | `/settings/devices/...` (pairing open/close, unpair) |
+| Schema | `paired_devices`, `sync_state` |
+| DNS-SD service type | `_msgbrowse-devices._tcp` (provisional until the mDNS story) |
+
+**Rationale**: `devices` names the noun the user manages (pair/list/unpair a
+*device*), leaving `sync` unambiguous. The config block keeps the
+`device_sync` spelling because `devices:` alone reads as a list of devices
+rather than a feature toggle; it is the one deliberately different surface.
+The ADR-0015 collision is thereby **resolved**.
+
+### Pairing payload wire format (v1)
+
+Owned by this spec, rendered by SPEC-0010's Connect page, defined in code at
+`internal/devices/payload.go` (`PairingPayload`). Version 1 is compact JSON
+with exactly four fields:
+
+```json
+{
+  "v": 1,
+  "endpoint": "192.168.1.10:8788",
+  "token": "Kf3…43-char-base64url…",
+  "fp": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+}
+```
+
+- `v` — integer protocol version; decoders reject anything but `1` (the
+  payload is a one-shot secret between two builds the same operator
+  controls, so there is no compatibility window).
+- `endpoint` — the importer's sync listener as literal `host:port`.
+- `token` — the single-use pairing token: base64url (RawURLEncoding, 43
+  chars) of 32 `crypto/rand` bytes.
+- `fp` — SHA-256 of the importer's TLS certificate DER: exactly 64 lowercase
+  hex characters, no colons (the canonical fingerprint form used everywhere:
+  payload, registry, logs).
+
+Two presentations carry identical fields: the **QR bytes** are the compact
+JSON itself; the **manual code** is `MSGB1.` + base64url(compact JSON, no
+padding) — one paste-safe token with no whitespace. The payload contains a
+live secret: loopback-only display, never logged, dead within ≤ 10 minutes.
+
 ## Architecture
 
 Two flows carry the whole design: the one-time pairing handshake, and the
@@ -244,13 +306,13 @@ sequenceDiagram
 
 ## Migration Plan
 
-1. **Config**: a new device-sync block (enabled flag, listener address, poll
-   interval, staging location — key spellings provisional, see Open
-   Questions). Absent block ⇒ feature fully off; no existing key changes
-   meaning.
-2. **Schema**: one migration adding the node-local sync-state tables (peers,
-   manifest cache, cursors). No existing table changes; the tables are inert
-   on nodes that never enable device sync.
+1. **Config**: a new `device_sync` block (`enabled`, `listen_addr`,
+   `device_name`, `poll_interval`, `staging_dir` — spellings final per the
+   naming decision above; landed in #104). Absent block ⇒ feature fully off;
+   no existing key changes meaning.
+2. **Schema**: one migration (v9, landed in #104) adding the node-local
+   sync-state tables (`paired_devices`, `sync_state`). No existing table
+   changes; the tables are inert on nodes that never enable device sync.
 3. **Surfaces**: settings gains the devices section; CLI gains pair/status/
    unpair commands; `doctor` gains the listener-posture, peer-reachability,
    cert-validity, staleness, and staging-leftover checks.
@@ -274,11 +336,9 @@ sequenceDiagram
   looks structurally sound (multi-importer-per-distinct-source). Deliberately
   unvalidated in v1 — the enforcement only forbids two importers for the
   *same* source.
-- **Naming**: the `sync` word is taken — `msgbrowse sync` is the ADR-0015
-  export→import pipeline. The device-sync config block, CLI verbs, flag
-  spellings, and web routes in these documents are placeholders pending a
-  naming pass (e.g. a `device_sync` block and `msgbrowse device …`
-  subcommands).
+- ~~**Naming**: the `sync` word is taken~~ — **resolved** in #104: the
+  `devices` namespace on every surface (see "Naming: the `devices`
+  namespace" above).
 - **mDNS library**: which pure-Go mDNS/DNS-SD implementation (must keep
   `CGO_ENABLED=0`), and the service-type string to register.
 - **Cert rotation**: renewal/re-pairing UX before long-lived certs expire;

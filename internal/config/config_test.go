@@ -35,6 +35,17 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Journal.DigestPrompt != DefaultDigestPrompt {
 		t.Error("Journal.DigestPrompt should default to DefaultDigestPrompt")
 	}
+	// Device sync (ADR-0018) MUST default off: absent config means no sync
+	// listener and the loopback-only posture unchanged (SPEC-0011).
+	if cfg.DeviceSync.Enabled {
+		t.Error("DeviceSync.Enabled should default false (strictly opt-in)")
+	}
+	if cfg.DeviceSync.ListenAddr != ":8788" {
+		t.Errorf("DeviceSync.ListenAddr = %q, want :8788 (distinct from web UI)", cfg.DeviceSync.ListenAddr)
+	}
+	if cfg.DeviceSync.PollInterval != 15*time.Minute {
+		t.Errorf("DeviceSync.PollInterval = %v, want 15m", cfg.DeviceSync.PollInterval)
+	}
 }
 
 func TestEnvOverride(t *testing.T) {
@@ -71,6 +82,24 @@ func TestValidate(t *testing.T) {
 		{"bad vector backend", func(c *Config) { c.VectorBackend = "pinecone" }, true},
 		{"bad log level", func(c *Config) { c.LogLevel = "trace" }, true},
 		{"empty data dir", func(c *Config) { c.DataDir = "" }, true},
+		{"device sync enabled with defaults ok", func(c *Config) { c.DeviceSync.Enabled = true }, false},
+		{"device sync empty listen addr", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.DeviceSync.ListenAddr = ""
+		}, true},
+		{"device sync colliding with web ui addr", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.DeviceSync.ListenAddr = c.ListenAddr
+		}, true},
+		{"device sync non-positive poll interval", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.DeviceSync.PollInterval = 0
+		}, true},
+		{"device sync disabled skips its checks", func(c *Config) {
+			c.DeviceSync.Enabled = false
+			c.DeviceSync.ListenAddr = ""
+			c.DeviceSync.PollInterval = 0
+		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
