@@ -1,0 +1,312 @@
+[
+  {
+    "JID": "15550001111@s.whatsapp.net",
+    "Name": "Ada Fixture",
+    "IsGroup": false,
+    "Messages": [
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-01T09:00:00Z",
+        "TimestampRaw": "2025-06-01 09:00:00",
+        "Sender": "Ada Fixture",
+        "Body": "Hey, are we still on for tomorrow?",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-01T09:05:00Z",
+        "TimestampRaw": "2025-06-01 09:05:00",
+        "Sender": "Me",
+        "Body": "Yes! Landing at 9am\nSee you at the cafe \u0026 bring the map",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": [
+          {
+            "Emoji": "❤️",
+            "Actor": "Ada Fixture"
+          },
+          {
+            "Emoji": "👍",
+            "Actor": "Me"
+          }
+        ]
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-01T09:05:00Z",
+        "TimestampRaw": "2025-06-01 09:05:00",
+        "Sender": "Ada Fixture",
+        "Body": "Can't wait 🥳 details at https://example.com/trip",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": [
+          {
+            "URL": "https://example.com/trip"
+          }
+        ],
+        "Reactions": null
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-01T10:15:00Z",
+        "TimestampRaw": "2025-06-01 10:15:00",
+        "Sender": "Ada Fixture",
+        "Body": "the view from the trail",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": [
+          {
+            "Kind": "image",
+            "RelPath": "Message/Media/15550001111@s.whatsapp.net/photo-fixture-001.jpg",
+            "OriginalName": "photo-fixture-001.jpg"
+          }
+        ],
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-01T10:20:00Z",
+        "TimestampRaw": "2025-06-01 10:20:00",
+        "Sender": "Me",
+        "Body": "",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": [
+          {
+            "Kind": "file",
+            "RelPath": "Message/Media/15550001111@s.whatsapp.net/audio-fixture-002.opus",
+            "OriginalName": "audio-fixture-002.opus"
+          }
+        ],
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-02T08:00:00Z",
+        "TimestampRaw": "2025-06-02 08:00:00",
+        "Sender": "Ada Fixture",
+        "Body": "",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": [
+          {
+            "Kind": "file",
+            "RelPath": "",
+            "OriginalName": "The media is missing"
+          }
+        ],
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-02T08:30:00Z",
+        "TimestampRaw": "2025-06-02 08:30:00",
+        "Sender": "Me",
+        "Body": "float timestamps still canonicalize",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Ada Fixture",
+        "Timestamp": "2025-06-04T12:00:00Z",
+        "TimestampRaw": "2025-06-04 12:00:00",
+        "Sender": "Ada Fixture",
+        "Body": "This media include the following vCard file(s):\nCasey Fixture | Rowan Fixture",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": [
+          {
+            "Kind": "file",
+            "RelPath": "Message/Media/vCards/CaseyFixture.vcf",
+            "OriginalName": "Casey Fixture"
+          },
+          {
+            "Kind": "file",
+            "RelPath": "Message/Media/vCards/RowanFixture.vcf",
+            "OriginalName": "Rowan Fixture"
+          }
+        ],
+        "Links": null,
+        "Reactions": null
+      }
+    ]
+  },
+  {
+    "JID": "15550002222-1600000000@g.us",
+    "Name": "Fixture Crew",
+    "IsGroup": true,
+    "Messages": [
+      {
+        "Conversation": "Fixture Crew",
+        "Timestamp": "2025-06-03T19:45:00Z",
+        "TimestampRaw": "2025-06-03 19:45:00",
+        "Sender": "No-Sender",
+        "Body": "The group name changed to Fixture Crew",
+        "IsSystem": true,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Fixture Crew",
+        "Timestamp": "2025-06-03T19:46:00Z",
+        "TimestampRaw": "2025-06-03 19:46:00",
+        "Sender": "Bo Fixture",
+        "Body": "Pizza tonight?",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Fixture Crew",
+        "Timestamp": "2025-06-03T19:47:00Z",
+        "TimestampRaw": "2025-06-03 19:47:00",
+        "Sender": "15550003333",
+        "Body": "in!",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Fixture Crew",
+        "Timestamp": "2025-06-03T19:48:00Z",
+        "TimestampRaw": "2025-06-03 19:48:00",
+        "Sender": "Me",
+        "Body": "count me in too",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Fixture Crew",
+        "Timestamp": "2025-06-03T19:50:00Z",
+        "TimestampRaw": "2025-06-03 19:50:00",
+        "Sender": "No-Sender",
+        "Body": "",
+        "IsSystem": true,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Fixture Crew",
+        "Timestamp": "2025-06-05T15:30:00Z",
+        "TimestampRaw": "2025-06-05 15:30:00",
+        "Sender": "Bo Fixture",
+        "Body": "Booked the table",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": [
+          {
+            "Emoji": "🎉",
+            "Actor": "Me"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "JID": "15550004444@lid",
+    "Name": "15550004444",
+    "IsGroup": false,
+    "Messages": [
+      {
+        "Conversation": "15550004444",
+        "Timestamp": "2025-06-06T11:11:11Z",
+        "TimestampRaw": "2025-06-06 11:11:11",
+        "Sender": "15550004444",
+        "Body": "hello from a linked-device chat with no name",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      }
+    ]
+  },
+  {
+    "JID": "15550005555@s.whatsapp.net",
+    "Name": "Ada Fixture (15550005555)",
+    "IsGroup": false,
+    "Messages": [
+      {
+        "Conversation": "Ada Fixture (15550005555)",
+        "Timestamp": "2025-06-06T11:11:11Z",
+        "TimestampRaw": "2025-06-06 11:11:11",
+        "Sender": "Ada Fixture (15550005555)",
+        "Body": "a different person who shares a display name",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": null,
+        "Links": null,
+        "Reactions": null
+      }
+    ]
+  },
+  {
+    "JID": "15550006666@s.whatsapp.net",
+    "Name": "Abs Path Fixture",
+    "IsGroup": false,
+    "Messages": [
+      {
+        "Conversation": "Abs Path Fixture",
+        "Timestamp": "2025-06-06T11:11:11Z",
+        "TimestampRaw": "2025-06-06 11:11:11",
+        "Sender": "Abs Path Fixture",
+        "Body": "",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": [
+          {
+            "Kind": "file",
+            "RelPath": "Message/Media/15550006666@s.whatsapp.net/doc-fixture-003.pdf",
+            "OriginalName": "doc-fixture-003.pdf"
+          }
+        ],
+        "Links": null,
+        "Reactions": null
+      },
+      {
+        "Conversation": "Abs Path Fixture",
+        "Timestamp": "2025-06-06T11:12:11Z",
+        "TimestampRaw": "2025-06-06 11:12:11",
+        "Sender": "Me",
+        "Body": "",
+        "IsSystem": false,
+        "Seq": 0,
+        "Attachments": [
+          {
+            "Kind": "image",
+            "RelPath": "Message/Media/15550006666@s.whatsapp.net/sticker-fixture-004.webp",
+            "OriginalName": "sticker-fixture-004.webp"
+          }
+        ],
+        "Links": null,
+        "Reactions": null
+      }
+    ]
+  }
+]
