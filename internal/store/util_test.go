@@ -39,9 +39,24 @@ func TestPreview(t *testing.T) {
 		},
 		{
 			name: "format runes dropped",
-			in:   "wat\u200b\u200dch this\ufeff", // zero-width space/joiner + BOM (all Cf)
+			in:   "wat\u200bch this\ufeff", // zero-width space + BOM (both Cf)
 			max:  80,
 			want: "watch this",
+		},
+		{
+			// U+200D ZERO WIDTH JOINER must survive: it glues composed emoji
+			// together (woman-girl family = WOMAN + ZWJ + GIRL). Stripping it split families into
+			// separate people in sidebar previews (#81 review finding).
+			name: "ZWJ emoji sequence stays composed",
+			in:   "\U0001F469\u200d\U0001F467 at the park",
+			max:  80,
+			want: "\U0001F469\u200d\U0001F467 at the park",
+		},
+		{
+			name: "ZWJ kept while other Cf runes around it drop",
+			in:   "\u200bhi \U0001F468\u200d\U0001F4BB\ufeff", // ZWSP + man-technologist + BOM
+			max:  80,
+			want: "hi \U0001F468\u200d\U0001F4BB",
 		},
 		{
 			name: "leading quote markers stripped",

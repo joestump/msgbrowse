@@ -1,4 +1,10 @@
-{{define "gallery"}}{{template "page_start" .}}
+{{define "gallery"}}{{template "page_start" .}}{{template "gallery_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* gallery_content is the boosted-swap unit (SPEC-0008 REQ-0008-006): <title>
+     keeps history entries titled; the define owns <main id="main-content"> so
+     partial responses carry no shell. */}}
+{{define "gallery_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1">
   {{/* Media (REQ-0006-009, brief §5): H1 + Images/Files/Links tabs with count
        badges and an accent underline on the active tab; a filter row; an Images
        responsive square cover grid with a bottom scrim + mono filename (keeps the
@@ -12,9 +18,12 @@
       <input type="hidden" name="tab" value="{{.Filter.Tab}}">
       <label class="filter-control">
         <span class="filter-label">Conversation</span>
+        {{/* FilterConversations is the lightweight id+name listing — NOT the
+             sidebar summaries — so partial renders never pay for the full
+             listing (REQ-0008-006). */}}
         <select name="conversation" class="filter-input">
           <option value="">All conversations</option>
-          {{- range .Conversations}}
+          {{- range .FilterConversations}}
           <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{humanName .Name}}</option>
           {{- end}}
         </select>
@@ -122,4 +131,5 @@
       {{- end}}
     </section>
   </div>
-{{template "page_end" .}}{{end}}
+    </main>
+{{end}}

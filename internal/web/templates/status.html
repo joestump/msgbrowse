@@ -1,8 +1,15 @@
-{{define "status"}}{{template "page_start" .}}
+{{define "status"}}{{template "page_start" .}}{{template "status_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* status_content is the boosted-swap unit (SPEC-0008 REQ-0008-006): <title>
+     keeps history entries titled; the define owns <main id="main-content"> so
+     partial responses carry no shell. */}}
+{{define "status_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1">
   {{/* Status & backups (REQ-0006-011): re-skinned to the slate system — slate
        surfaces/borders, mono tabular values — with no behavioral change. Keeps
        the archive-freshness stat strip, the ingest-run metric grid, and the
-       snapshot table. */}}
+       snapshot table. The counts come from dedicated fields (not
+       len .Conversations) so partial renders can skip the sidebar listing. */}}
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
     <h1 class="screen-h1">Status &amp; backups</h1>
 
@@ -11,7 +18,7 @@
       <div class="stat-strip">
         <div class="stat-cell">
           <div class="stat-cell-label">Conversations</div>
-          <div class="stat-cell-value">{{len .Conversations}}</div>
+          <div class="stat-cell-value">{{.ConversationCount}}</div>
         </div>
         <div class="stat-cell">
           <div class="stat-cell-label">Messages</div>
@@ -66,4 +73,5 @@
       {{end}}
     </div>
   </div>
-{{template "page_end" .}}{{end}}
+    </main>
+{{end}}

@@ -1,4 +1,10 @@
-{{define "search"}}{{template "page_start" .}}
+{{define "search"}}{{template "page_start" .}}{{template "search_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* search_content is the boosted-swap unit (SPEC-0008 REQ-0008-006): <title>
+     keeps history entries titled; the define owns <main id="main-content"> so
+     partial responses carry no shell. */}}
+{{define "search_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1">
   {{/* Search (REQ-0006-008, brief §4): a large field with a leading glyph, a
        wrapping filter row (conversation / source / sender / from / to + Has-
        attachment / Has-link toggles + accent Search button), a results meta line
@@ -21,9 +27,12 @@
       <div class="filter-row mt-3">
         <label class="filter-control">
           <span class="filter-label">Conversation</span>
+          {{/* FilterConversations is the lightweight id+name listing — NOT the
+               sidebar summaries — so partial renders never pay for the full
+               listing (REQ-0008-006). */}}
           <select name="conversation" class="filter-input">
             <option value="">All conversations</option>
-            {{- range .Conversations}}
+            {{- range .FilterConversations}}
             <option value="{{.ID}}" {{if eq .ID $.Form.ConversationID}}selected{{end}}>{{humanName .Name}}</option>
             {{- end}}
           </select>
@@ -60,7 +69,8 @@
       {{template "search_results" .}}
     </section>
   </div>
-{{template "page_end" .}}{{end}}
+    </main>
+{{end}}
 
 {{define "search_results"}}
   {{- if .Ran}}

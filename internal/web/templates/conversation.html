@@ -1,4 +1,10 @@
-{{define "conversation"}}{{template "page_start" .}}
+{{define "conversation"}}{{template "page_start" .}}{{template "conversation_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* conversation_content is the boosted-swap unit (SPEC-0008 REQ-0008-006):
+     <title> keeps history entries titled; the define owns
+     <main id="main-content"> so partial responses carry no shell. */}}
+{{define "conversation_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1">
   {{/* Conversation header (REQ-0006-006): avatar + name (22–26/700), inline
        phone/email identifier chips, then a meta line — N messages · date range —
        with image/link/attachment icon+count chips. The AI-facts panel below is
@@ -34,8 +40,12 @@
       </a>
       {{/* Pin/unpin (REQ-0006-010): a CSP-clean form POST to /c/{id}/pin that
            flips the flag and 303-redirects back. The label/state reflects the
-           current pinned value. */}}
-      <form method="post" action="/c/{{.Active.ID}}/pin" class="conv-pin-form shrink-0">
+           current pinned value. Boosted (SPEC-0008 REQ-0008-005): htmx issues
+           the POST, follows the 303 with HX-Request set, and swaps only
+           #main-content — so the toggle costs a partial render, not a full
+           page. Degrades to the plain form POST without JS. */}}
+      <form method="post" action="/c/{{.Active.ID}}/pin" class="conv-pin-form shrink-0"
+            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
         <button type="submit" class="pin-btn{{if .Active.Pinned}} pin-btn-active{{end}}" title="{{if .Active.Pinned}}Unpin this conversation{{else}}Pin this conversation{{end}}" aria-pressed="{{if .Active.Pinned}}true{{else}}false{{end}}">
           {{template "icon-pin" .}}<span>{{if .Active.Pinned}}Unpin{{else}}Pin{{end}}</span>
         </button>
@@ -83,4 +93,5 @@
       {{template "message_list" .List}}
     </div>
   </section>
-{{template "page_end" .}}{{end}}
+    </main>
+{{end}}

@@ -52,6 +52,10 @@ func (b baseData) UnpinnedConversations() []store.ConversationSummary {
 // of a standalone COUNT(*) over all messages — that global aggregate measured
 // 133ms per render on the reference archive for a number the sidebar query
 // already knows (SPEC-0008 REQ-0008-004).
+//
+// HTMX partial renders MUST NOT call this: the listing measured 82–316ms per
+// boosted click for sidebar markup the swap then discards. Use partialBase
+// instead (SPEC-0008 REQ-0008-006).
 func (s *Server) baseData(ctx context.Context, title string, activeID int64) (baseData, error) {
 	convs, err := s.store.ListConversations(ctx)
 	if err != nil {
@@ -67,6 +71,23 @@ func (s *Server) baseData(ctx context.Context, title string, activeID int64) (ba
 		ActiveID:      activeID,
 		TotalMessages: total,
 	}, nil
+}
+
+// partialBase is the shell-free baseData for HTMX partial renders: title and
+// active id only, zero store work. The *_content defines never touch
+// .Conversations, so the sidebar listing is skipped entirely (REQ-0008-006).
+func partialBase(title string, activeID int64) baseData {
+	return baseData{Title: title, ActiveID: activeID}
+}
+
+// isPartialRequest reports whether the request is an HTMX boosted navigation
+// that wants only the <title> + #main-content region. History restores
+// (HX-History-Restore-Request: true) need the full document — htmx rebuilds
+// the whole page from them. The headers are consumed strictly as booleans and
+// never echoed into output.
+func isPartialRequest(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true" &&
+		r.Header.Get("HX-History-Restore-Request") != "true"
 }
 
 // messageListData drives the transcript message list and its infinite-scroll
@@ -85,8 +106,9 @@ type messageListData struct {
 
 type indexData struct {
 	baseData
-	NewestTS   string
-	HasArchive bool
+	ConversationCount int // stat-strip count; independent of the sidebar listing (REQ-0008-006)
+	NewestTS          string
+	HasArchive        bool
 }
 
 type conversationData struct {
@@ -97,6 +119,7 @@ type conversationData struct {
 
 type statusData struct {
 	baseData
+	ConversationCount int // stat-strip count; independent of the sidebar listing (REQ-0008-006)
 	Run               *store.IngestRun
 	Snapshots         []store.Snapshot
 	NewestTS          string
@@ -126,20 +149,41 @@ func parseSort(r *http.Request) string {
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	base, err := s.baseData(ctx, "msgbrowse", 0)
-	if err != nil {
-		s.serverError(w, err)
-		return
+	var (
+		base      baseData
+		convCount int
+	)
+	if isPartialRequest(r) {
+		// The home stat strip still needs the global counts, but the one-row
+		// ArchiveStats aggregate is far cheaper than the full summary listing
+		// the sidebar needs (REQ-0008-006).
+		stats, err := s.store.ArchiveStats(ctx)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		base = partialBase("msgbrowse", 0)
+		base.TotalMessages = stats.Messages
+		convCount = stats.Conversations
+	} else {
+		var err error
+		base, err = s.baseData(ctx, "msgbrowse", 0)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		convCount = len(base.Conversations)
 	}
 	newest, err := s.store.NewestMessageTS(ctx)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	s.render(w, "index", indexData{
-		baseData:   base,
-		NewestTS:   newest,
-		HasArchive: len(base.Conversations) > 0,
+	s.render(w, r, "index", indexData{
+		baseData:          base,
+		ConversationCount: convCount,
+		NewestTS:          newest,
+		HasArchive:        convCount > 0,
 	})
 }
 
@@ -159,10 +203,18 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	base, err := s.baseData(ctx, active.Name+" · msgbrowse", id)
-	if err != nil {
-		s.serverError(w, err)
-		return
+	// Boosted clicks skip the sidebar listing entirely: the partial response
+	// carries no sidebar markup, so its 82–316ms would be pure waste
+	// (SPEC-0008 REQ-0008-006).
+	var base baseData
+	if isPartialRequest(r) {
+		base = partialBase(active.Name+" · msgbrowse", id)
+	} else {
+		base, err = s.baseData(ctx, active.Name+" · msgbrowse", id)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	sort := parseSort(r)
 	page, err := s.store.GetMessages(ctx, id, 0, 0, pageSize, sort == sortDesc)
@@ -170,7 +222,7 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	s.render(w, "conversation", conversationData{
+	s.render(w, r, "conversation", conversationData{
 		baseData: base,
 		Active:   active,
 		List: messageListData{
@@ -241,7 +293,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.log.Error("conversation lookup failed", "error", err, "conversation", id)
 	}
-	s.render(w, "message_list", messageListData{
+	s.render(w, r, "message_list", messageListData{
 		ActiveID:   id,
 		Source:     src,
 		ConvName:   convName,
@@ -255,10 +307,29 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	base, err := s.baseData(ctx, "Status · msgbrowse", 0)
-	if err != nil {
-		s.serverError(w, err)
-		return
+	var (
+		base      baseData
+		convCount int
+	)
+	if isPartialRequest(r) {
+		// Same shape as handleIndex: the freshness stat strip needs the global
+		// counts, but never the full sidebar listing (REQ-0008-006).
+		stats, err := s.store.ArchiveStats(ctx)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		base = partialBase("Status · msgbrowse", 0)
+		base.TotalMessages = stats.Messages
+		convCount = stats.Conversations
+	} else {
+		var err error
+		base, err = s.baseData(ctx, "Status · msgbrowse", 0)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		convCount = len(base.Conversations)
 	}
 	run, err := s.store.LatestIngestRun(ctx)
 	if err != nil {
@@ -279,8 +350,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	for _, sn := range snaps {
 		footprint += sn.SizeBytes
 	}
-	s.render(w, "status", statusData{
+	s.render(w, r, "status", statusData{
 		baseData:          base,
+		ConversationCount: convCount,
 		Run:               run,
 		Snapshots:         snaps,
 		NewestTS:          newest,
@@ -290,7 +362,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // render executes a named template into a buffer first, so a template error
 // never produces a half-written response.
-func (s *Server) render(w http.ResponseWriter, name string, data any) {
+//
+// HTMX boosted navigations (HX-Request: true, not a history restore) get only
+// the page's *_content define — <title> + <main id="main-content"> — instead
+// of the full document (SPEC-0008 REQ-0008-006). htmx swaps the <main> via
+// hx-select="#main-content" and lifts the <title> into history. Fragment
+// templates without a *_content sibling (message_list, search_results) render
+// unchanged, so the infinite-scroll and live-search contracts are untouched.
+// Everything still flows through the same html/template escaping.
+func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, data any) {
+	if isPartialRequest(r) {
+		if content := name + "_content"; s.tmpl.Lookup(content) != nil {
+			name = content
+		}
+	}
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
 		s.serverError(w, err)

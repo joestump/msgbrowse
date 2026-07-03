@@ -18,9 +18,10 @@ import (
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
-// newTestServer ingests the committed fixture archive into a temp store and
-// returns a Server wired to it.
-func newTestServer(t *testing.T) (*Server, *store.Store, string) {
+// newTestStoreAndConfig ingests the committed fixture archive into a temp
+// store and returns it with a matching config (shared by newTestServer and the
+// counting-store variant in partial_test.go).
+func newTestStoreAndConfig(t *testing.T) (*store.Store, *config.Config, string) {
 	t.Helper()
 	archive := filepath.Join("..", "..", "testdata", "archive")
 	st, err := store.Open(filepath.Join(t.TempDir(), "web.sqlite"))
@@ -39,6 +40,14 @@ func newTestServer(t *testing.T) (*Server, *store.Store, string) {
 	}
 
 	cfg := &config.Config{ArchiveRoot: archive, DataDir: t.TempDir()}
+	return st, cfg, archive
+}
+
+// newTestServer ingests the committed fixture archive into a temp store and
+// returns a Server wired to it.
+func newTestServer(t *testing.T) (*Server, *store.Store, string) {
+	t.Helper()
+	st, cfg, archive := newTestStoreAndConfig(t)
 	srv, err := NewServer(st, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("new server: %v", err)
