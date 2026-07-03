@@ -64,12 +64,21 @@ func (s *Server) RunStdio(ctx context.Context) error {
 	return s.srv.Run(ctx, &mcpsdk.StdioTransport{})
 }
 
+// HTTPHandler returns the streamable-HTTP handler for this server, for
+// callers that mount MCP on an existing listener instead of a dedicated one:
+// the desktop shell mounts it on the embedded web server's loopback listener
+// (SPEC-0010's bind-surface requirement allows no listener beyond the
+// embedded server). RunHTTP remains the standalone-transport path used by
+// `msgbrowse mcp --http`.
+func (s *Server) HTTPHandler() http.Handler {
+	return mcpsdk.NewStreamableHTTPHandler(
+		func(*http.Request) *mcpsdk.Server { return s.srv }, nil)
+}
+
 // RunHTTP serves the MCP protocol over streamable HTTP on addr until ctx is
 // cancelled. It binds loopback by default (the caller chooses addr).
 func (s *Server) RunHTTP(ctx context.Context, addr string) error {
-	handler := mcpsdk.NewStreamableHTTPHandler(
-		func(*http.Request) *mcpsdk.Server { return s.srv }, nil)
-	httpSrv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	httpSrv := &http.Server{Addr: addr, Handler: s.HTTPHandler(), ReadHeaderTimeout: 10 * time.Second}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpSrv.ListenAndServe() }()

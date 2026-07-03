@@ -206,8 +206,18 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 // SIGINT/SIGTERM) and the desktop shell (whose context is cancelled when the
 // window closes) — SPEC-0010 "Graceful shutdown". Serve closes ln on return.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
+	return s.ServeHandler(ctx, ln, s.mux)
+}
+
+// ServeHandler is Serve with root handler h in place of the server's own mux.
+// The desktop shell uses it to mount the MCP streamable-HTTP handler beside
+// the web app on the one embedded loopback listener — SPEC-0010's bind
+// surface allows no listener beyond the embedded server — while every web
+// route still flows through s.Handler() unchanged. Timeouts and the graceful
+// shutdown path are identical to Serve's.
+func (s *Server) ServeHandler(ctx context.Context, ln net.Listener, h http.Handler) error {
 	srv := &http.Server{
-		Handler:           s.mux,
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
