@@ -50,6 +50,11 @@ func requireIMessageArchive(cfg *config.Config) error {
 	return requireDir("imessage_archive_root", "MSGBROWSE_IMESSAGE_ARCHIVE_ROOT", cfg.IMessageArchiveRoot)
 }
 
+// requireWhatsAppArchive verifies the WhatsApp archive root is configured and present.
+func requireWhatsAppArchive(cfg *config.Config) error {
+	return requireDir("whatsapp_archive_root", "MSGBROWSE_WHATSAPP_ARCHIVE_ROOT", cfg.WhatsAppArchiveRoot)
+}
+
 func requireDir(key, env, path string) error {
 	if path == "" {
 		return fmt.Errorf("%s is not set (use --%s, config, or %s)", key, strings.ReplaceAll(key, "_", "-"), env)

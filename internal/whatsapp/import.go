@@ -56,12 +56,12 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	run := store.IngestRun{Source: source.WhatsApp, StartedAt: start}
 	log.Info("importing whatsapp archive", "archive", opts.ArchiveRoot, "full", opts.Full)
 
-	path := filepath.Join(opts.ArchiveRoot, resultFile)
+	path := filepath.Join(opts.ArchiveRoot, ResultFile)
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return run, fmt.Errorf("%w: no %s at %s (run whatsapp-chat-exporter with --json)",
-				ErrArchiveNotFound, resultFile, opts.ArchiveRoot)
+				ErrArchiveNotFound, ResultFile, opts.ArchiveRoot)
 		}
 		return run, fmt.Errorf("open whatsapp export: %w", err)
 	}
@@ -142,7 +142,7 @@ func importConversation(
 	}
 	if err = st.SetIngestState(ctx, store.IngestState{
 		ConversationID: convID,
-		RelPath:        resultFile + "#" + conv.JID,
+		RelPath:        ResultFile + "#" + conv.JID,
 		MTimeUnix:      mtime,
 		SizeBytes:      size,
 		ContentHash:    contentHash,

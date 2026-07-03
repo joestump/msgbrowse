@@ -27,6 +27,12 @@ type Config struct {
 	// like ArchiveRoot. Empty when iMessage import is not used.
 	IMessageArchiveRoot string `mapstructure:"imessage_archive_root"`
 
+	// WhatsAppArchiveRoot is the path to the WhatsApp-Chat-Exporter output
+	// directory (result.json plus the media folders the tool copied). Read-only,
+	// like the other roots. Empty when WhatsApp import is not used (SPEC-0009
+	// REQ-0009-001).
+	WhatsAppArchiveRoot string `mapstructure:"whatsapp_archive_root"`
+
 	// DataDir is a writable directory (outside the archive) for the SQLite
 	// database, vector index, and caches.
 	DataDir string `mapstructure:"data_dir"`
@@ -136,15 +142,19 @@ const DefaultDigestPrompt = "You are summarizing one day of a personal Signal me
 func SetDefaults(v *viper.Viper) {
 	v.SetDefault("archive_root", "")
 	v.SetDefault("imessage_archive_root", "")
+	v.SetDefault("whatsapp_archive_root", "")
 	v.SetDefault("data_dir", "./data")
 
 	// Optional overrides for the upstream exporters `msgbrowse export` invokes.
-	// Empty means "look up the default name on PATH" (sigexport / imessage-exporter);
-	// set a path here (or via --signal-export-bin / --imessage-exporter-bin, or
-	// MSGBROWSE_SIGNAL_EXPORT_BIN / MSGBROWSE_IMESSAGE_EXPORTER_BIN) to use a
-	// specific binary (e.g. one in a pipx venv not on PATH).
+	// Empty means "look up the default name on PATH" (sigexport /
+	// imessage-exporter / wtsexporter); set a path here (or via
+	// --signal-export-bin / --imessage-exporter-bin / --whatsapp-exporter-bin,
+	// or MSGBROWSE_SIGNAL_EXPORT_BIN / MSGBROWSE_IMESSAGE_EXPORTER_BIN /
+	// MSGBROWSE_WHATSAPP_EXPORTER_BIN) to use a specific binary (e.g. one in a
+	// pipx venv not on PATH).
 	v.SetDefault("signal_export_bin", "")
 	v.SetDefault("imessage_exporter_bin", "")
+	v.SetDefault("whatsapp_exporter_bin", "")
 	v.SetDefault("listen_addr", "127.0.0.1:8787")
 
 	v.SetDefault("llm.base_url", "http://127.0.0.1:4000/v1")

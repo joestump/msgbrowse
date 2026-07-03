@@ -12,16 +12,19 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/whatsapp"
 	"github.com/spf13/cobra"
 )
 
-// export orchestrates the two upstream exporters msgbrowse reads from:
-// carderne/signal-export (console command `sigexport`) and
-// ReagentX/imessage-exporter. msgbrowse never auto-installs them and never
+// export orchestrates the three upstream exporters msgbrowse reads from:
+// carderne/signal-export (console command `sigexport`),
+// ReagentX/imessage-exporter, and KnugiHK/WhatsApp-Chat-Exporter (console
+// command `wtsexporter`). msgbrowse never auto-installs them and never
 // touches the sensitive sources itself — it only spawns the user's own,
 // already-installed tools, at the user's explicit request, streaming their
 // stdout/stderr through. It stores no secrets and reads no Keychain (the
-// invoked tools do, with the OS's consent). See ADR-0015 / REQ-0007-002.
+// invoked tools do, with the OS's consent). See ADR-0015 / REQ-0007-002 and
+// SPEC-0009 REQ-0009-002.
 //
 // Layout contract:
 //   - Signal:  `sigexport <archive_root>/export` so each chat lands at
@@ -31,19 +34,28 @@ import (
 //     so attachments are *copied* into the archive (clone), never referenced by
 //     absolute ~/Library path. Copy mode is the whole point: it eliminates the
 //     non-copy-mode trap doctor diagnoses.
+//   - WhatsApp: `wtsexporter -o <whatsapp_archive_root>
+//     -j <whatsapp_archive_root>/result.json` so the JSON export and the media
+//     the tool copies both land under the root internal/whatsapp scans. The
+//     platform/input flags (`-i`/`-a`, `-b`/`-d`/`-k`, `-m`) are the user's to
+//     supply via --whatsapp-exporter-args or the trailing `--` passthrough.
 
 // Default binary names looked up on PATH when no override is given. Note the
 // Signal binary is `sigexport` (the console script), NOT `signal-export` (the
 // pip *package* name) — a common confusion the install hint also clarifies.
+// The WhatsApp binary is likewise `wtsexporter`, not the pip package name
+// `whatsapp-chat-exporter`.
 const (
 	defaultSignalExportBin     = "sigexport"
 	defaultIMessageExporterBin = "imessage-exporter"
+	defaultWhatsAppExporterBin = "wtsexporter"
 )
 
 // Install hints surfaced when a required exporter is absent.
 const (
 	signalExportInstallHint     = "install it with `pipx install signal-export` (the console command is `sigexport`)"
 	imessageExporterInstallHint = "install it with `brew install imessage-exporter`"
+	whatsappExporterInstallHint = "install it with `pipx install whatsapp-chat-exporter` (the console command is `wtsexporter`)"
 )
 
 // runner is the seam that makes export unit-testable without the real tools.
@@ -65,27 +77,35 @@ func execRunner(ctx context.Context, name string, args ...string) error {
 func newExportCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export [-- extra exporter args]",
-		Short: "Run the upstream exporters (sigexport, imessage-exporter) into the configured archive roots",
-		Long: "export orchestrates the two upstream tools msgbrowse reads from, so a fresh\n" +
+		Short: "Run the upstream exporters (sigexport, imessage-exporter, wtsexporter) into the configured archive roots",
+		Long: "export orchestrates the three upstream tools msgbrowse reads from, so a fresh\n" +
 			"install can populate its archives in one step. It runs `sigexport` for Signal\n" +
-			"(into <archive_root>/export/<conversation>/chat.md + media) and\n" +
-			"`imessage-exporter -f txt -c clone -o <imessage_archive_root>` for iMessage.\n" +
+			"(into <archive_root>/export/<conversation>/chat.md + media),\n" +
+			"`imessage-exporter -f txt -c clone -o <imessage_archive_root>` for iMessage,\n" +
+			"and `wtsexporter -o <whatsapp_archive_root> -j …/result.json` for WhatsApp.\n" +
 			"\n" +
 			"iMessage ALWAYS runs in copy mode (-c clone) so attachments are bundled into\n" +
 			"the archive instead of left as absolute ~/Library references — the non-copy\n" +
 			"trap `msgbrowse doctor` warns about.\n" +
 			"\n" +
+			"WhatsApp needs its platform/input flags supplied by you (they point at your\n" +
+			"backup): e.g. `--whatsapp-exporter-args=-i` plus `-b <backup>` for an iOS\n" +
+			"Finder/iTunes backup, or `-a` with `-b <backup> -k <key>` for Android. See\n" +
+			"`wtsexporter --help`.\n" +
+			"\n" +
 			"A source whose root is unset is skipped. The tools must be on PATH (or set\n" +
-			"--signal-export-bin / --imessage-exporter-bin, or the matching config keys);\n" +
-			"msgbrowse never auto-installs them. A required-but-missing tool is an error\n" +
-			"naming it and how to install it — unless --skip-on-error, which logs a warning\n" +
-			"and continues with the other source.\n" +
+			"--signal-export-bin / --imessage-exporter-bin / --whatsapp-exporter-bin, or\n" +
+			"the matching config keys); msgbrowse never auto-installs them. A\n" +
+			"required-but-missing tool is an error naming it and how to install it —\n" +
+			"unless --skip-on-error, which logs a warning and continues with the other\n" +
+			"sources.\n" +
 			"\n" +
 			"Extra args reach the underlying tools two ways: --signal-export-args /\n" +
-			"--imessage-exporter-args (repeatable) for flags meant for ONE tool only, and\n" +
-			"trailing `-- <args>` for shared flags, which are appended to BOTH tools'\n" +
-			"command lines. msgbrowse stores no secrets and reads no Keychain; the invoked\n" +
-			"tools do, with your consent. Their output streams to you.",
+			"--imessage-exporter-args / --whatsapp-exporter-args (repeatable) for flags\n" +
+			"meant for ONE tool only, and trailing `-- <args>` for shared flags, which are\n" +
+			"appended to EVERY tool's command line. msgbrowse stores no secrets and reads\n" +
+			"no Keychain; the invoked tools do, with your consent. Their output streams to\n" +
+			"you.",
 		RunE: func(cmd *cobra.Command, passthrough []string) error {
 			cfg, err := resolveConfig()
 			if err != nil {
@@ -100,8 +120,10 @@ func newExportCommand() *cobra.Command {
 	}
 	cmd.Flags().String("signal-export-bin", "", "path to the Signal exporter (default: `sigexport` on PATH; or set signal_export_bin)")
 	cmd.Flags().String("imessage-exporter-bin", "", "path to imessage-exporter (default: on PATH; or set imessage_exporter_bin)")
-	cmd.Flags().StringArray("signal-export-args", nil, "sigexport-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to both tools)")
-	cmd.Flags().StringArray("imessage-exporter-args", nil, "imessage-exporter-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to both tools)")
+	cmd.Flags().String("whatsapp-exporter-bin", "", "path to the WhatsApp exporter (default: `wtsexporter` on PATH; or set whatsapp_exporter_bin)")
+	cmd.Flags().StringArray("signal-export-args", nil, "sigexport-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to every tool)")
+	cmd.Flags().StringArray("imessage-exporter-args", nil, "imessage-exporter-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to every tool)")
+	cmd.Flags().StringArray("whatsapp-exporter-args", nil, "wtsexporter-only extra arg, repeatable (e.g. -i, -b <backup>; for shared flags use trailing `-- <args>`, appended to every tool)")
 	cmd.Flags().Bool("skip-on-error", false, "log and skip a failing/missing source instead of aborting the run")
 	return cmd
 }
@@ -111,13 +133,15 @@ func newExportCommand() *cobra.Command {
 type exportOptions struct {
 	signalBin    string   // override for the Signal exporter; "" = look up default on PATH
 	imessageBin  string   // override for imessage-exporter; "" = look up default on PATH
+	whatsappBin  string   // override for wtsexporter; "" = look up default on PATH
 	signalArgs   []string // extra args appended to the sigexport invocation
 	imessageArgs []string // extra args appended to the imessage-exporter invocation
+	whatsappArgs []string // extra args appended to the wtsexporter invocation
 	skipOnError  bool
 }
 
 // exportOptsFromFlags resolves bin overrides (flag, then config key) and merges
-// per-tool extra args with trailing passthrough args (which apply to both).
+// per-tool extra args with trailing passthrough args (which apply to every tool).
 func exportOptsFromFlags(cmd *cobra.Command, passthrough []string) (exportOptions, error) {
 	var o exportOptions
 	var err error
@@ -127,19 +151,26 @@ func exportOptsFromFlags(cmd *cobra.Command, passthrough []string) (exportOption
 	if o.imessageBin, err = resolveBin(cmd, "imessage-exporter-bin", "imessage_exporter_bin"); err != nil {
 		return o, err
 	}
+	if o.whatsappBin, err = resolveBin(cmd, "whatsapp-exporter-bin", "whatsapp_exporter_bin"); err != nil {
+		return o, err
+	}
 	if o.signalArgs, err = cmd.Flags().GetStringArray("signal-export-args"); err != nil {
 		return o, err
 	}
 	if o.imessageArgs, err = cmd.Flags().GetStringArray("imessage-exporter-args"); err != nil {
 		return o, err
 	}
+	if o.whatsappArgs, err = cmd.Flags().GetStringArray("whatsapp-exporter-args"); err != nil {
+		return o, err
+	}
 	if o.skipOnError, err = cmd.Flags().GetBool("skip-on-error"); err != nil {
 		return o, err
 	}
-	// Trailing `-- <args>` go to BOTH tools (a convenience for shared flags like
+	// Trailing `-- <args>` go to EVERY tool (a convenience for shared flags like
 	// verbosity); per-tool flags above target one tool only.
 	o.signalArgs = append(o.signalArgs, passthrough...)
 	o.imessageArgs = append(o.imessageArgs, passthrough...)
+	o.whatsappArgs = append(o.whatsappArgs, passthrough...)
 	return o, nil
 }
 
@@ -156,7 +187,7 @@ func resolveBin(cmd *cobra.Command, flagName, cfgKey string) (string, error) {
 	return "", nil
 }
 
-// runExport drives both sources through the injected runner. It is the unit-
+// runExport drives every source through the injected runner. It is the unit-
 // tested core: no cobra, no real exec.
 //
 // Per source: an unset root is skipped with an info log (never an error). A
@@ -185,6 +216,10 @@ func runExport(ctx context.Context, out io.Writer, run runner, cfg *config.Confi
 			name: "iMessage", root: cfg.IMessageArchiveRoot, dest: cfg.IMessageArchiveRoot,
 			fn: exportIMessage, line: "imessage: exported to %s (copy mode: clone)\n",
 		},
+		{
+			name: "WhatsApp", root: cfg.WhatsAppArchiveRoot, dest: cfg.WhatsAppArchiveRoot,
+			fn: exportWhatsApp, line: "whatsapp: exported to %s (JSON + media)\n",
+		},
 	}
 
 	configured := 0
@@ -209,7 +244,7 @@ func runExport(ctx context.Context, out io.Writer, run runner, cfg *config.Confi
 	}
 
 	if configured == 0 {
-		return fmt.Errorf("nothing to export: set archive_root and/or imessage_archive_root (flags, config, or MSGBROWSE_* env)")
+		return fmt.Errorf("nothing to export: set archive_root, imessage_archive_root, and/or whatsapp_archive_root (flags, config, or MSGBROWSE_* env)")
 	}
 	if failed > 0 {
 		// Reached only under --skip-on-error: each failure was already warned
@@ -247,6 +282,22 @@ func exportIMessage(ctx context.Context, run runner, cfg *config.Config, opts ex
 	}
 	args := append([]string{"-f", "txt", "-c", "clone", "-o", cfg.IMessageArchiveRoot}, opts.imessageArgs...)
 	slog.Info("running iMessage export", "tool", bin, "dest", cfg.IMessageArchiveRoot, "copy-method", "clone")
+	return run(ctx, bin, args...)
+}
+
+// exportWhatsApp runs wtsexporter with the configured root as both its output
+// directory (-o, where the tool copies media) and the destination of its JSON
+// export (-j <root>/result.json) — the layout internal/whatsapp scans. The
+// device/platform and input flags (-i/-a, -b/-d/-k, -m …) vary per user and
+// come from --whatsapp-exporter-args or the trailing `--` passthrough.
+func exportWhatsApp(ctx context.Context, run runner, cfg *config.Config, opts exportOptions) error {
+	bin, err := resolveTool(opts.whatsappBin, defaultWhatsAppExporterBin, whatsappExporterInstallHint)
+	if err != nil {
+		return err
+	}
+	root := cfg.WhatsAppArchiveRoot
+	args := append([]string{"-o", root, "-j", filepath.Join(root, whatsapp.ResultFile)}, opts.whatsappArgs...)
+	slog.Info("running WhatsApp export", "tool", bin, "dest", root)
 	return run(ctx, bin, args...)
 }
 

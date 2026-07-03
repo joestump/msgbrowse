@@ -26,12 +26,15 @@ func TestClassifyAttachment(t *testing.T) {
 	const (
 		archiveRoot  = "/archive"
 		imessageRoot = "/imsg"
+		whatsappRoot = "/wapp"
 		conv         = "Alice"
 	)
 	// A copy-mode iMessage rel resolves under imessageRoot.
 	imsgAbs := filepath.Join(imessageRoot, "attachments", "AB", "IMG.HEIC")
 	// A signal rel resolves under <archiveRoot>/export/<conv>/.
 	sigAbs := filepath.Join(archiveRoot, "export", conv, "media", "pic.jpg")
+	// A whatsapp rel resolves flat under whatsappRoot.
+	wappAbs := filepath.Join(whatsappRoot, "WhatsApp", "Media", "photo.jpg")
 
 	cases := []struct {
 		name     string
@@ -80,10 +83,30 @@ func TestClassifyAttachment(t *testing.T) {
 			rel:  "/var/data/leaked.jpg",
 			want: attachAbsolute,
 		},
+		{
+			name:     "whatsapp present",
+			src:      source.WhatsApp,
+			rel:      "WhatsApp/Media/photo.jpg",
+			existing: map[string]bool{wappAbs: true},
+			want:     attachPresent,
+		},
+		{
+			name:     "whatsapp missing",
+			src:      source.WhatsApp,
+			rel:      "WhatsApp/Media/gone.jpg",
+			existing: nil,
+			want:     attachMissing,
+		},
+		{
+			name: "whatsapp absolute path",
+			src:  source.WhatsApp,
+			rel:  "/tank/raw/Message/Media/photo.jpg",
+			want: attachAbsolute,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := classifyAttachment(c.src, archiveRoot, imessageRoot, conv, c.rel, statFn(c.existing))
+			got := classifyAttachment(c.src, archiveRoot, imessageRoot, whatsappRoot, conv, c.rel, statFn(c.existing))
 			if got != c.want {
 				t.Errorf("classifyAttachment = %v, want %v", got, c.want)
 			}
@@ -94,9 +117,13 @@ func TestClassifyAttachment(t *testing.T) {
 func TestClassifyAttachmentUnsetRootIsMissing(t *testing.T) {
 	// Non-absolute rel but the relevant archive root is empty → unresolvable →
 	// counted as missing (so it still degrades the health score).
-	got := classifyAttachment(source.Signal, "", "", "Alice", "media/pic.jpg", statFn(nil))
+	got := classifyAttachment(source.Signal, "", "", "", "Alice", "media/pic.jpg", statFn(nil))
 	if got != attachMissing {
 		t.Errorf("classifyAttachment with unset root = %v, want attachMissing", got)
+	}
+	got = classifyAttachment(source.WhatsApp, "", "", "", "Alice", "media/pic.jpg", statFn(nil))
+	if got != attachMissing {
+		t.Errorf("whatsapp classifyAttachment with unset root = %v, want attachMissing", got)
 	}
 }
 

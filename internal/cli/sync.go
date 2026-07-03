@@ -14,6 +14,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/whatsapp"
 	"github.com/spf13/cobra"
 )
 
@@ -37,12 +38,13 @@ type stageFunc func(ctx context.Context) (summary string, err error)
 // A nil stage func means "this stage was skipped" (a --no-* flag, or an unset
 // source root for the import stages) and runSync skips it silently in order.
 type syncDeps struct {
-	export       stageFunc // run the upstream exporters (Signal + iMessage)
-	importSignal stageFunc // ingest.Run for the Signal archive
-	importIMsg   stageFunc // imessage.Run for the iMessage archive
-	media        stageFunc // imageconv.Run (HEIC/TIFF → JPEG)
-	embed        stageFunc // embed.Run (LLM endpoint)
-	facts        stageFunc // facts.Run (LLM endpoint)
+	export         stageFunc // run the upstream exporters (Signal + iMessage + WhatsApp)
+	importSignal   stageFunc // ingest.Run for the Signal archive
+	importIMsg     stageFunc // imessage.Run for the iMessage archive
+	importWhatsApp stageFunc // whatsapp.Run for the WhatsApp archive
+	media          stageFunc // imageconv.Run (HEIC/TIFF → JPEG)
+	embed          stageFunc // embed.Run (LLM endpoint)
+	facts          stageFunc // facts.Run (LLM endpoint)
 }
 
 // syncOptions is the resolved, cobra-free input to runSync.
@@ -69,9 +71,10 @@ type stage struct {
 // runSync executes the pipeline in order. It is the unit-tested core: no cobra,
 // no real exec, no store.
 //
-// Order is fixed: export → import (Signal, then iMessage) → media → embed →
-// facts. A nil stage func is a skip (a --no-* flag or an unset source root) and
-// is passed over silently, preserving order for the stages that do run.
+// Order is fixed: export → import (Signal, then iMessage, then WhatsApp) →
+// media → embed → facts. A nil stage func is a skip (a --no-* flag or an unset
+// source root) and is passed over silently, preserving order for the stages
+// that do run.
 //
 // Error policy (REQ-0007-003):
 //   - Hard stages (export/import/media): a failure ABORTS the pipeline and is
@@ -87,6 +90,7 @@ func runSync(ctx context.Context, out io.Writer, deps syncDeps, opts syncOptions
 		{name: "export", fn: deps.export},
 		{name: "import (signal)", fn: deps.importSignal},
 		{name: "import (imessage)", fn: deps.importIMsg},
+		{name: "import (whatsapp)", fn: deps.importWhatsApp},
 		{name: "media", fn: deps.media},
 		{name: "embed", fn: deps.embed, llmDependent: true},
 		{name: "facts", fn: deps.facts, llmDependent: true},
@@ -133,14 +137,14 @@ func newSyncCommand() *cobra.Command {
 			"install into a populated, browsable archive, reusing the existing commands\n" +
 			"end to end:\n" +
 			"\n" +
-			"  1. export  run the upstream exporters (Signal + iMessage)   [--no-export]\n" +
-			"  2. import  ingest both configured archives into the database\n" +
+			"  1. export  run the upstream exporters (Signal + iMessage + WhatsApp)  [--no-export]\n" +
+			"  2. import  ingest every configured archive into the database\n" +
 			"  3. media   transcode HEIC/TIFF attachments to web JPEGs      [--no-media]\n" +
 			"  4. embed   compute embeddings for semantic search            [--no-embed]\n" +
 			"  5. facts   extract AI facts about each contact               [--no-facts]\n" +
 			"\n" +
 			"The database is opened once and shared by every stage. A source whose archive\n" +
-			"root is unset is skipped (so a Signal-only or iMessage-only setup just works).\n" +
+			"root is unset is skipped (so a single-source setup just works).\n" +
 			"\n" +
 			"export/import/media failures abort the run unless --skip-on-error, which logs a\n" +
 			"warning and continues (the run still exits non-zero). embed and facts need the\n" +
@@ -148,7 +152,7 @@ func newSyncCommand() *cobra.Command {
 			"--skip-on-error, so a fully-local run with no reachable LLM still completes\n" +
 			"export/import/media and exits success.\n" +
 			"\n" +
-			"Trailing `-- <args>` are passed through to BOTH upstream exporters (see\n" +
+			"Trailing `-- <args>` are passed through to EVERY upstream exporter (see\n" +
 			"`msgbrowse export --help` for the per-tool flags).",
 		RunE: func(cmd *cobra.Command, passthrough []string) error {
 			cfg, err := resolveConfig()
@@ -210,8 +214,10 @@ func newSyncCommand() *cobra.Command {
 	// same way `export` can.
 	cmd.Flags().String("signal-export-bin", "", "path to the Signal exporter (default: `sigexport` on PATH; or set signal_export_bin)")
 	cmd.Flags().String("imessage-exporter-bin", "", "path to imessage-exporter (default: on PATH; or set imessage_exporter_bin)")
-	cmd.Flags().StringArray("signal-export-args", nil, "sigexport-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to both tools)")
-	cmd.Flags().StringArray("imessage-exporter-args", nil, "imessage-exporter-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to both tools)")
+	cmd.Flags().String("whatsapp-exporter-bin", "", "path to the WhatsApp exporter (default: `wtsexporter` on PATH; or set whatsapp_exporter_bin)")
+	cmd.Flags().StringArray("signal-export-args", nil, "sigexport-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to every tool)")
+	cmd.Flags().StringArray("imessage-exporter-args", nil, "imessage-exporter-only extra arg, repeatable (for shared flags use trailing `-- <args>`, appended to every tool)")
+	cmd.Flags().StringArray("whatsapp-exporter-args", nil, "wtsexporter-only extra arg, repeatable (e.g. -i, -b <backup>; for shared flags use trailing `-- <args>`, appended to every tool)")
 	return cmd
 }
 
@@ -269,6 +275,19 @@ func syncDepsFromConfig(st *store.Store, cfg *config.Config, out io.Writer, w sy
 				return "", err
 			}
 			return fmt.Sprintf("imessage: %d/%d conversations changed, %d messages total (%d added) in %dms",
+				run.ConversationsChanged, run.ConversationsScanned, run.MessagesTotal, run.MessagesAdded, run.DurationMS), nil
+		}
+	}
+	if cfg.WhatsAppArchiveRoot != "" {
+		deps.importWhatsApp = func(ctx context.Context) (string, error) {
+			if err := requireWhatsAppArchive(cfg); err != nil {
+				return "", err
+			}
+			run, err := whatsapp.Run(ctx, st, whatsapp.Options{ArchiveRoot: cfg.WhatsAppArchiveRoot})
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("whatsapp: %d/%d conversations changed, %d messages total (%d added) in %dms",
 				run.ConversationsChanged, run.ConversationsScanned, run.MessagesTotal, run.MessagesAdded, run.DurationMS), nil
 		}
 	}

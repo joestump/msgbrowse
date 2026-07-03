@@ -14,6 +14,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/whatsapp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -36,7 +37,8 @@ func NewRootCommand() *cobra.Command {
 			"keeps all data on the machine; the only network egress is the configured\n" +
 			"OpenAI-compatible LLM endpoint.\n" +
 			"\n" +
-			"Sources: signal-export (signal-import) and imessage-exporter (imessage-import).",
+			"Sources: signal-export (signal-import), imessage-exporter (imessage-import),\n" +
+			"and WhatsApp-Chat-Exporter (whatsapp-import).",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// PersistentPreRunE loads config and binds flags once, before any
@@ -51,6 +53,7 @@ func NewRootCommand() *cobra.Command {
 	pf.StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml or $HOME/.config/msgbrowse/config.yaml)")
 	pf.String("archive-root", "", "path to the signal-export archive (read-only)")
 	pf.String("imessage-archive-root", "", "path to the imessage-exporter archive (read-only)")
+	pf.String("whatsapp-archive-root", "", "path to the WhatsApp-Chat-Exporter output directory (read-only)")
 	pf.String("data-dir", "", "writable directory for the database and caches")
 	pf.String("log-level", "", "log level: debug, info, warn, error")
 
@@ -59,6 +62,7 @@ func NewRootCommand() *cobra.Command {
 		newSignalImportCommand(),
 		newIngestAliasCommand(),
 		newIMessageImportCommand(),
+		newWhatsAppImportCommand(),
 		newDoctorCommand(),
 		newExportCommand(),
 		newSyncCommand(),
@@ -115,6 +119,9 @@ func errorHint(err error) string {
 	case errors.Is(err, imessage.ErrArchiveNotFound):
 		return "imessage_archive_root must point at the imessage-exporter output directory " +
 			"(the folder of <ChatName>.txt files). Set --imessage-archive-root or MSGBROWSE_IMESSAGE_ARCHIVE_ROOT."
+	case errors.Is(err, whatsapp.ErrArchiveNotFound):
+		return "whatsapp_archive_root must point at the WhatsApp-Chat-Exporter output directory " +
+			"(the folder containing result.json). Set --whatsapp-archive-root or MSGBROWSE_WHATSAPP_ARCHIVE_ROOT."
 	}
 	return ""
 }
@@ -133,6 +140,9 @@ func initConfig(cmd *cobra.Command) error {
 		return err
 	}
 	if err := v.BindPFlag("imessage_archive_root", pf.Lookup("imessage-archive-root")); err != nil {
+		return err
+	}
+	if err := v.BindPFlag("whatsapp_archive_root", pf.Lookup("whatsapp-archive-root")); err != nil {
 		return err
 	}
 	if err := v.BindPFlag("data_dir", pf.Lookup("data-dir")); err != nil {
