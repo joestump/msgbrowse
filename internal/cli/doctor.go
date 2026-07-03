@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/archivepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/whatsapp"
 	"github.com/spf13/cobra"
 )
 
@@ -154,6 +156,7 @@ func runDoctor(ctx context.Context, w io.Writer, cfg *config.Config, checkLLM bo
 	}
 	checkSignalArchive(r, cfg)
 	checkIMessageArchive(r, cfg)
+	checkWhatsAppArchive(r, cfg)
 	checkAttachments(ctx, r, cfg, st)
 	checkConverter(ctx, r, cfg, st)
 	checkEmbeddings(ctx, r, cfg, st)
@@ -293,6 +296,70 @@ func checkIMessageArchive(r *report, cfg *config.Config) {
 	r.add(statusPass, fmt.Sprintf("imessage_archive_root %q has %d *.txt file(s)", cfg.IMessageArchiveRoot, n), "")
 }
 
+// checkWhatsAppArchive validates the whatsapp_archive_root per SPEC-0009
+// REQ-0009-009: the directory must exist and contain the exporter's
+// result.json, no chat may reference media through an absolute media_base
+// outside the root, and a sample of media references must resolve to files
+// inside the root. Remediation hints are platform-aware (the export records
+// the device type): iOS needs a local Finder/iTunes backup, Android the
+// backup plus its 64-digit key.
+func checkWhatsAppArchive(r *report, cfg *config.Config) {
+	root := cfg.WhatsAppArchiveRoot
+	if root == "" {
+		r.add(statusWarn, "whatsapp_archive_root is not set",
+			"set it to the WhatsApp-Chat-Exporter output directory (the folder containing result.json) if you want to import WhatsApp; ignore otherwise")
+		return
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		r.add(statusFail, fmt.Sprintf("whatsapp_archive_root %q: %v", root, err),
+			"check the path; it must be the wtsexporter output directory (the folder containing result.json)")
+		return
+	}
+	if !info.IsDir() {
+		r.add(statusFail, fmt.Sprintf("whatsapp_archive_root %q is not a directory", root), "")
+		return
+	}
+
+	path := filepath.Join(root, whatsapp.ResultFile)
+	f, err := os.Open(path)
+	if err != nil {
+		r.add(statusWarn, fmt.Sprintf("whatsapp_archive_root %q has no %s", root, whatsapp.ResultFile),
+			fmt.Sprintf("run `msgbrowse export` (wtsexporter with --json) into this directory; %s", whatsappBackupHint("")))
+		return
+	}
+	defer f.Close()
+	sum, err := whatsapp.ScanExport(f, whatsappMediaSampleLimit)
+	if err != nil {
+		r.add(statusFail, fmt.Sprintf("could not parse %s: %v", path, err),
+			fmt.Sprintf("this should be the wtsexporter JSON export; re-run `msgbrowse export`; %s", whatsappBackupHint(sum.Device)))
+		return
+	}
+	r.add(statusPass, fmt.Sprintf("whatsapp_archive_root %q has %s (%d chats, %d messages)",
+		root, whatsapp.ResultFile, sum.Chats, sum.Messages), "")
+
+	// Headline WhatsApp check: a chat-level media_base that is absolute and
+	// points outside the root means the exporter referenced the media folder
+	// in place instead of copying it under the root — none of that media is
+	// browsable from the archive.
+	if n, example := absMediaBasesOutside(root, sum.MediaBaseChats); n > 0 {
+		r.add(statusFail, fmt.Sprintf("%d WhatsApp chat(s) reference media through an absolute media_base outside the archive (e.g. %q)", n, example),
+			fmt.Sprintf("media was not copied into the export; re-run the exporter so the media folder lands under whatsapp_archive_root (wtsexporter copies -m into -o by default), then `msgbrowse import --full`; %s", whatsappBackupHint(sum.Device)))
+	}
+
+	if len(sum.MediaRefs) == 0 {
+		r.add(statusPass, "no WhatsApp media references to check", "")
+		return
+	}
+	var s whatsappMediaStats
+	for _, ref := range sum.MediaRefs {
+		s.add(classifyWhatsAppMedia(root, ref, os.Stat))
+	}
+	status, hint := whatsappMediaVerdict(sum.Device, &s)
+	r.add(status, fmt.Sprintf("WhatsApp media references: %d ok, %d outside the root, %d missing (of %d sampled)",
+		s.present, s.outside, s.missing, s.total()), hint)
+}
+
 // checkAttachments is the headline check: sample image attachments and classify
 // each by how its stored rel_path resolves on disk. A large absolute-path or
 // missing-file share for iMessage means the export was not copy-mode.
@@ -322,7 +389,7 @@ func checkAttachments(ctx context.Context, r *report, cfg *config.Config, st *st
 			s = &attachmentStats{}
 			bySource[it.Source] = s
 		}
-		s.add(classifyAttachment(it.Source, cfg.ArchiveRoot, cfg.IMessageArchiveRoot, it.ConversationName, it.RelPath, os.Stat))
+		s.add(classifyAttachment(it.Source, cfg.ArchiveRoot, cfg.IMessageArchiveRoot, cfg.WhatsAppArchiveRoot, it.ConversationName, it.RelPath, os.Stat))
 	}
 
 	for _, src := range sortedSources(bySource) {
@@ -410,6 +477,9 @@ func checkExporters(r *report) {
 		// is signal-export); `msgbrowse export` looks up this same binary.
 		{"sigexport", "needed only if you want msgbrowse to run Signal exports; install via pipx: `pipx install signal-export` (the command is `sigexport`)"},
 		{"imessage-exporter", "needed only if you want msgbrowse to run iMessage exports; install via Homebrew: `brew install imessage-exporter`"},
+		// Same pip-package-vs-command confusion as sigexport: the package is
+		// whatsapp-chat-exporter, the console command `wtsexporter`.
+		{"wtsexporter", "needed only if you want msgbrowse to run WhatsApp exports; install via pipx: `pipx install whatsapp-chat-exporter` (the command is `wtsexporter`); " + whatsappBackupHint("")},
 	} {
 		if _, err := exec.LookPath(e.bin); err == nil {
 			r.add(statusPass, fmt.Sprintf("exporter %q found on PATH", e.bin), "")
@@ -474,11 +544,21 @@ const (
 // leading "/" and folds it UNDER the archive root, which would mis-classify it as
 // present/missing rather than flagging the real problem. So the explicit IsAbs
 // check must come first.
-func classifyAttachment(src, archiveRoot, imessageRoot, convName, rel string, statFn func(string) (os.FileInfo, error)) attachmentClass {
+//
+// WhatsApp rows resolve flat under whatsappRoot here (the same containment
+// archivepath.Contain provides); their media-resolution branch in
+// archivepath.Resolve is the surface story's scope (REQ-0009-006).
+func classifyAttachment(src, archiveRoot, imessageRoot, whatsappRoot, convName, rel string, statFn func(string) (os.FileInfo, error)) attachmentClass {
 	if filepath.IsAbs(rel) {
 		return attachAbsolute
 	}
-	abs, ok := archivepath.Resolve(src, archiveRoot, imessageRoot, convName, rel)
+	var abs string
+	var ok bool
+	if src == source.WhatsApp {
+		abs, ok = archivepath.Contain(whatsappRoot, rel)
+	} else {
+		abs, ok = archivepath.Resolve(src, archiveRoot, imessageRoot, convName, rel)
+	}
 	if !ok {
 		// Unresolvable for a non-absolute path means the relevant archive root is
 		// unset/misconfigured; treat as missing so it still counts against health.
@@ -564,6 +644,137 @@ func fraction(part, total int) float64 {
 		return 0
 	}
 	return float64(part) / float64(total)
+}
+
+// --- WhatsApp export health (SPEC-0009 REQ-0009-009) -------------------------
+
+// whatsappMediaSampleLimit caps how many media references checkWhatsAppArchive
+// samples from result.json, mirroring attachmentSampleLimit's rationale.
+const whatsappMediaSampleLimit = 300
+
+// whatsappMediaClass is how one raw media reference (media_base + data)
+// resolves against the WhatsApp archive root.
+type whatsappMediaClass int
+
+const (
+	// whatsappMediaPresent: the reference resolves inside the root and the
+	// file exists.
+	whatsappMediaPresent whatsappMediaClass = iota
+	// whatsappMediaOutside: the reference is an absolute path outside the
+	// root — media was referenced in place, not copied into the export.
+	whatsappMediaOutside
+	// whatsappMediaMissing: the reference resolves inside the root but the
+	// file is not there (e.g. the media directory was not copied).
+	whatsappMediaMissing
+)
+
+// classifyWhatsAppMedia decides how one media reference resolves. The full
+// path is media_base + data (the exporter's own <base href> semantics); an
+// absolute full path under the root is relativized (the parser stores it that
+// way), an absolute path elsewhere is the reference-only signature. statFn is
+// injected so tests don't touch the filesystem (pass os.Stat in production).
+func classifyWhatsAppMedia(root string, ref whatsapp.MediaRef, statFn func(string) (os.FileInfo, error)) whatsappMediaClass {
+	full := ref.MediaBase + ref.Data
+	if filepath.IsAbs(full) {
+		rel, err := filepath.Rel(root, full)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return whatsappMediaOutside
+		}
+		full = rel
+	}
+	abs, ok := archivepath.Contain(root, full)
+	if !ok {
+		return whatsappMediaMissing
+	}
+	if _, err := statFn(abs); err != nil {
+		return whatsappMediaMissing
+	}
+	return whatsappMediaPresent
+}
+
+// whatsappMediaStats tallies media-reference classifications.
+type whatsappMediaStats struct {
+	present int
+	outside int
+	missing int
+}
+
+func (s *whatsappMediaStats) add(c whatsappMediaClass) {
+	switch c {
+	case whatsappMediaOutside:
+		s.outside++
+	case whatsappMediaMissing:
+		s.missing++
+	default:
+		s.present++
+	}
+}
+
+func (s *whatsappMediaStats) total() int { return s.present + s.outside + s.missing }
+
+// whatsappMediaVerdict turns the sampled stats into a status + remediation.
+// Majority-outside and majority-missing are both the fail-level "the export
+// has no usable media" diagnosis (REQ-0009-009's missing-media scenario);
+// smaller shares warn. The hint is platform-aware via device.
+func whatsappMediaVerdict(device string, s *whatsappMediaStats) (checkStatus, string) {
+	total := s.total()
+	if total == 0 {
+		return statusPass, ""
+	}
+	rerun := fmt.Sprintf("re-run the exporter with the media folder present so it is copied under whatsapp_archive_root, then `msgbrowse import --full`; %s", whatsappBackupHint(device))
+	if s.outside > 0 && fraction(s.outside, total) >= attachAbsoluteFailFraction {
+		return statusFail, fmt.Sprintf("%d media reference(s) point outside the archive root (absolute media_base) — media was not copied into the export; %s", s.outside, rerun)
+	}
+	if s.missing > 0 && fraction(s.missing, total) >= attachAbsoluteFailFraction {
+		return statusFail, fmt.Sprintf("%d of %d sampled media reference(s) are not present under the root — the media directory was not copied; %s", s.missing, total, rerun)
+	}
+	if s.outside > 0 {
+		return statusWarn, fmt.Sprintf("%d media reference(s) point outside the archive root; %s", s.outside, rerun)
+	}
+	if s.missing > 0 {
+		return statusWarn, fmt.Sprintf("%d of %d sampled media reference file(s) are missing under the root; the export may be partial. %s", s.missing, total, rerun)
+	}
+	return statusPass, ""
+}
+
+// absMediaBasesOutside counts chats whose media_base is an absolute prefix
+// outside root, returning the count and one example value for the report.
+func absMediaBasesOutside(root string, mediaBaseChats map[string]int) (int, string) {
+	bases := make([]string, 0, len(mediaBaseChats))
+	for b := range mediaBaseChats {
+		bases = append(bases, b)
+	}
+	sort.Strings(bases)
+	var n int
+	var example string
+	for _, base := range bases {
+		if !filepath.IsAbs(base) {
+			continue
+		}
+		rel, err := filepath.Rel(root, base)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue // absolute but under the root: the parser relativizes it
+		}
+		n += mediaBaseChats[base]
+		if example == "" {
+			example = base
+		}
+	}
+	return n, example
+}
+
+// whatsappBackupHint is the platform-aware backup prerequisite for producing
+// a WhatsApp export (SPEC-0009: the platform changes the prerequisite, not
+// the parsing). An unknown/empty device prints both paths.
+func whatsappBackupHint(device string) string {
+	switch device {
+	case whatsapp.DeviceIOS:
+		return "iOS exports need a local Finder/iTunes backup of the device (not iCloud)"
+	case whatsapp.DeviceAndroid:
+		return "Android exports need the WhatsApp backup file plus its 64-digit end-to-end encryption key"
+	default:
+		return "iOS needs a local Finder/iTunes backup; Android needs the WhatsApp backup plus its 64-digit key"
+	}
 }
 
 // archiveRootKind classifies a signal archive_root path.

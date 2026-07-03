@@ -14,11 +14,18 @@ archive_root: "~/Managed Files/Signal-Archive"
 # you don't import iMessage. Targets imessage-exporter 4.2.0 txt output.
 imessage_archive_root: "~/Managed Files/iMessage-Archive"
 
+# Path to the read-only WhatsApp-Chat-Exporter output directory (used by
+# `whatsapp-import`) — the folder containing result.json plus the media folders
+# the tool copied. Leave empty if you don't import WhatsApp.
+# whatsapp_archive_root: "~/Managed Files/WhatsApp-Archive"
+
 # Optional: paths to the upstream exporters that `msgbrowse export` invokes.
-# Leave empty to look up the default name on PATH (sigexport / imessage-exporter).
-# Set a path (e.g. a pipx venv binary not on PATH) to pin a specific binary.
+# Leave empty to look up the default name on PATH (sigexport /
+# imessage-exporter / wtsexporter). Set a path (e.g. a pipx venv binary not on
+# PATH) to pin a specific binary.
 # signal_export_bin: "~/.local/bin/sigexport"
 # imessage_exporter_bin: "/opt/homebrew/bin/imessage-exporter"
+# whatsapp_exporter_bin: "~/.local/bin/wtsexporter"
 
 # Writable directory for the SQLite database and embeddings. MUST be outside the
 # archive.

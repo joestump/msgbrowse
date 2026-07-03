@@ -17,6 +17,11 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ListenAddr != "127.0.0.1:8787" {
 		t.Errorf("ListenAddr = %q, want loopback default", cfg.ListenAddr)
 	}
+	// Every source root defaults to unset ("source skipped").
+	if cfg.ArchiveRoot != "" || cfg.IMessageArchiveRoot != "" || cfg.WhatsAppArchiveRoot != "" {
+		t.Errorf("archive roots should default empty, got %q/%q/%q",
+			cfg.ArchiveRoot, cfg.IMessageArchiveRoot, cfg.WhatsAppArchiveRoot)
+	}
 	if cfg.VectorBackend != "sqlite-vec" {
 		t.Errorf("VectorBackend = %q, want sqlite-vec", cfg.VectorBackend)
 	}
@@ -41,6 +46,7 @@ func TestEnvOverride(t *testing.T) {
 	t.Setenv("MSGBROWSE_LISTEN_ADDR", "127.0.0.1:9999")
 	t.Setenv("MSGBROWSE_LLM_API_KEY", "secret-from-env")
 	t.Setenv("MSGBROWSE_LOG_LEVEL", "debug")
+	t.Setenv("MSGBROWSE_WHATSAPP_ARCHIVE_ROOT", "/wapp-from-env")
 
 	v, err := Load("")
 	if err != nil {
@@ -58,6 +64,10 @@ func TestEnvOverride(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want debug", cfg.LogLevel)
+	}
+	// REQ-0009-001: the WhatsApp root has the same env mapping as the others.
+	if cfg.WhatsAppArchiveRoot != "/wapp-from-env" {
+		t.Errorf("WhatsAppArchiveRoot = %q, want env value", cfg.WhatsAppArchiveRoot)
 	}
 }
 

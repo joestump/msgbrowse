@@ -7,18 +7,20 @@ import (
 	"github.com/joestump/msgbrowse/internal/imageconv"
 	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/whatsapp"
 	"github.com/spf13/cobra"
 )
 
 func newImportCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Import every configured archive (Signal + iMessage)",
-		Long: "import is the all-in-one importer: it runs signal-import and imessage-import\n" +
-			"for whichever archive roots are configured (archive_root and/or\n" +
-			"imessage_archive_root), into one database. A source whose root is unset is\n" +
-			"skipped; a source whose root is set but missing is an error. It does NOT\n" +
-			"embed (run `msgbrowse embed` separately — that step needs an LLM endpoint).",
+		Short: "Import every configured archive (Signal + iMessage + WhatsApp)",
+		Long: "import is the all-in-one importer: it runs signal-import, imessage-import,\n" +
+			"and whatsapp-import for whichever archive roots are configured (archive_root,\n" +
+			"imessage_archive_root, and/or whatsapp_archive_root), into one database. A\n" +
+			"source whose root is unset is skipped; a source whose root is set but missing\n" +
+			"is an error. It does NOT embed (run `msgbrowse embed` separately — that step\n" +
+			"needs an LLM endpoint).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := resolveConfig()
 			if err != nil {
@@ -68,8 +70,23 @@ func newImportCommand() *cobra.Command {
 				slog.Info("skipping iMessage: imessage_archive_root not set")
 			}
 
+			if cfg.WhatsAppArchiveRoot != "" {
+				if err := requireWhatsAppArchive(cfg); err != nil {
+					return err
+				}
+				run, err := whatsapp.Run(cmd.Context(), st, whatsapp.Options{ArchiveRoot: cfg.WhatsAppArchiveRoot, Full: full})
+				if err != nil {
+					return fmt.Errorf("whatsapp import: %w", err)
+				}
+				ran++
+				fmt.Fprintf(out, "whatsapp: %d/%d conversations changed, %d messages total (%d added), %d skipped entries in %dms\n",
+					run.ConversationsChanged, run.ConversationsScanned, run.MessagesTotal, run.MessagesAdded, run.SkippedLines, run.DurationMS)
+			} else {
+				slog.Info("skipping WhatsApp: whatsapp_archive_root not set")
+			}
+
 			if ran == 0 {
-				return fmt.Errorf("nothing to import: set archive_root and/or imessage_archive_root (flags, config, or MSGBROWSE_* env)")
+				return fmt.Errorf("nothing to import: set archive_root, imessage_archive_root, and/or whatsapp_archive_root (flags, config, or MSGBROWSE_* env)")
 			}
 
 			// Best-effort: transcode non-web images (HEIC/TIFF) so the gallery can

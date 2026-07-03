@@ -11,6 +11,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/whatsapp"
 )
 
 // recordedCall captures one runner invocation so tests can assert on the exact
@@ -123,6 +124,75 @@ func TestRunExportBothSources(t *testing.T) {
 	}
 }
 
+// TestRunExportWhatsAppInvocation pins the wtsexporter contract (SPEC-0009
+// REQ-0009-002): output directory AND JSON destination both point into the
+// configured root, so result.json + copied media land where import scans.
+func TestRunExportWhatsAppInvocation(t *testing.T) {
+	fr := &fakeRunner{}
+	cfg := &config.Config{WhatsAppArchiveRoot: "/wapp"}
+	opts := exportOptions{whatsappBin: "/venv/bin/wtsexporter"}
+	out := &bytes.Buffer{}
+
+	if err := runExport(context.Background(), out, fr.run, cfg, opts); err != nil {
+		t.Fatalf("runExport: %v", err)
+	}
+	call, ok := fr.callFor("wtsexporter")
+	if !ok {
+		t.Fatalf("wtsexporter was not invoked; calls=%+v", fr.calls)
+	}
+	want := []string{"-o", "/wapp", "-j", filepath.Join("/wapp", whatsapp.ResultFile)}
+	if !argsEqual(call.args, want) {
+		t.Errorf("whatsapp args = %v, want %v", call.args, want)
+	}
+	// The other sources must NOT run when their roots are unset.
+	if len(fr.calls) != 1 {
+		t.Errorf("expected only the WhatsApp call, got %+v", fr.calls)
+	}
+	if !strings.Contains(out.String(), "whatsapp:") {
+		t.Errorf("output %q missing the whatsapp success line", out.String())
+	}
+}
+
+func TestRunExportAllThreeSources(t *testing.T) {
+	fr := &fakeRunner{}
+	cfg := &config.Config{ArchiveRoot: "/arch", IMessageArchiveRoot: "/imsg", WhatsAppArchiveRoot: "/wapp"}
+	opts := exportOptions{signalBin: "sig", imessageBin: "imsg", whatsappBin: "wts"}
+	out := &bytes.Buffer{}
+
+	if err := runExport(context.Background(), out, fr.run, cfg, opts); err != nil {
+		t.Fatalf("runExport: %v", err)
+	}
+	if len(fr.calls) != 3 {
+		t.Fatalf("expected 3 calls (all sources), got %d: %+v", len(fr.calls), fr.calls)
+	}
+	for _, want := range []string{"signal:", "imessage:", "whatsapp:"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output %q missing %q", out.String(), want)
+		}
+	}
+}
+
+func TestRunExportMissingWhatsAppToolIsClearError(t *testing.T) {
+	fr := &fakeRunner{}
+	cfg := &config.Config{WhatsAppArchiveRoot: "/wapp"}
+	t.Setenv("PATH", "") // force LookPath("wtsexporter") to fail
+
+	err := runExport(context.Background(), &bytes.Buffer{}, fr.run, cfg, exportOptions{})
+	if err == nil {
+		t.Fatalf("expected an error for missing wtsexporter, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "wtsexporter") {
+		t.Errorf("error %q should name the missing tool", msg)
+	}
+	if !strings.Contains(msg, "pipx install whatsapp-chat-exporter") {
+		t.Errorf("error %q should include the pipx install hint", msg)
+	}
+	if len(fr.calls) != 0 {
+		t.Errorf("runner should not be called when the tool is missing; calls=%+v", fr.calls)
+	}
+}
+
 func TestRunExportMissingRequiredToolIsClearError(t *testing.T) {
 	fr := &fakeRunner{}
 	cfg := &config.Config{IMessageArchiveRoot: "/imsg"}
@@ -229,12 +299,14 @@ func TestRunExportNothingConfigured(t *testing.T) {
 
 func TestRunExportPassesThroughExtraArgs(t *testing.T) {
 	fr := &fakeRunner{}
-	cfg := &config.Config{ArchiveRoot: "/arch", IMessageArchiveRoot: "/imsg"}
+	cfg := &config.Config{ArchiveRoot: "/arch", IMessageArchiveRoot: "/imsg", WhatsAppArchiveRoot: "/wapp"}
 	opts := exportOptions{
 		signalBin:    "sig",
 		imessageBin:  "imsg",
+		whatsappBin:  "wts",
 		signalArgs:   []string{"--no-html", "--no-json"},
 		imessageArgs: []string{"--no-progress"},
+		whatsappArgs: []string{"-i", "-b", "/backups/ios"},
 	}
 	if err := runExport(context.Background(), &bytes.Buffer{}, fr.run, cfg, opts); err != nil {
 		t.Fatalf("runExport: %v", err)
@@ -249,17 +321,25 @@ func TestRunExportPassesThroughExtraArgs(t *testing.T) {
 	if !argsEqual(imsg.args, wantImsg) {
 		t.Errorf("imessage args = %v, want %v", imsg.args, wantImsg)
 	}
+	wts, _ := fr.callFor("wts")
+	wantWts := []string{"-o", "/wapp", "-j", filepath.Join("/wapp", whatsapp.ResultFile), "-i", "-b", "/backups/ios"}
+	if !argsEqual(wts.args, wantWts) {
+		t.Errorf("whatsapp args = %v, want %v", wts.args, wantWts)
+	}
 }
 
 func TestExportOptsFromFlags(t *testing.T) {
 	cmd := newExportCommand()
 	// Simulate: msgbrowse export --signal-export-bin /x/sig \
 	//   --signal-export-args --no-html --imessage-exporter-args --no-progress \
+	//   --whatsapp-exporter-bin /x/wts --whatsapp-exporter-args -i \
 	//   -- --verbose
 	if err := cmd.Flags().Parse([]string{
 		"--signal-export-bin", "/x/sig",
 		"--signal-export-args", "--no-html",
 		"--imessage-exporter-args", "--no-progress",
+		"--whatsapp-exporter-bin", "/x/wts",
+		"--whatsapp-exporter-args", "-i",
 	}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
@@ -272,12 +352,19 @@ func TestExportOptsFromFlags(t *testing.T) {
 	if opts.signalBin != "/x/sig" {
 		t.Errorf("signalBin = %q, want /x/sig", opts.signalBin)
 	}
-	// Per-tool args, then the shared trailing passthrough, in order.
+	if opts.whatsappBin != "/x/wts" {
+		t.Errorf("whatsappBin = %q, want /x/wts", opts.whatsappBin)
+	}
+	// Per-tool args, then the shared trailing passthrough, in order — the same
+	// parity for every tool.
 	if !argsEqual(opts.signalArgs, []string{"--no-html", "--verbose"}) {
 		t.Errorf("signalArgs = %v", opts.signalArgs)
 	}
 	if !argsEqual(opts.imessageArgs, []string{"--no-progress", "--verbose"}) {
 		t.Errorf("imessageArgs = %v", opts.imessageArgs)
+	}
+	if !argsEqual(opts.whatsappArgs, []string{"-i", "--verbose"}) {
+		t.Errorf("whatsappArgs = %v", opts.whatsappArgs)
 	}
 }
 

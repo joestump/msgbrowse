@@ -23,12 +23,13 @@ func recordingStage(order *[]string, name, summary string, err error) stageFunc 
 // which stages ran. Pass nil for stages a test wants skipped.
 func allStagesDeps(order *[]string) syncDeps {
 	return syncDeps{
-		export:       recordingStage(order, "export", "export:   done", nil),
-		importSignal: recordingStage(order, "import-signal", "signal:   ok", nil),
-		importIMsg:   recordingStage(order, "import-imessage", "imessage: ok", nil),
-		media:        recordingStage(order, "media", "media:    ok", nil),
-		embed:        recordingStage(order, "embed", "embed:    ok", nil),
-		facts:        recordingStage(order, "facts", "facts:    ok", nil),
+		export:         recordingStage(order, "export", "export:   done", nil),
+		importSignal:   recordingStage(order, "import-signal", "signal:   ok", nil),
+		importIMsg:     recordingStage(order, "import-imessage", "imessage: ok", nil),
+		importWhatsApp: recordingStage(order, "import-whatsapp", "whatsapp: ok", nil),
+		media:          recordingStage(order, "media", "media:    ok", nil),
+		embed:          recordingStage(order, "embed", "embed:    ok", nil),
+		facts:          recordingStage(order, "facts", "facts:    ok", nil),
 	}
 }
 
@@ -39,12 +40,12 @@ func TestRunSyncStageOrder(t *testing.T) {
 	if err := runSync(context.Background(), out, allStagesDeps(&order), syncOptions{}); err != nil {
 		t.Fatalf("runSync: %v", err)
 	}
-	want := []string{"export", "import-signal", "import-imessage", "media", "embed", "facts"}
+	want := []string{"export", "import-signal", "import-imessage", "import-whatsapp", "media", "embed", "facts"}
 	if strings.Join(order, ",") != strings.Join(want, ",") {
 		t.Errorf("stage order = %v, want %v", order, want)
 	}
 	// Every stage's summary line is printed.
-	for _, line := range []string{"export:   done", "signal:   ok", "imessage: ok", "media:    ok", "embed:    ok", "facts:    ok"} {
+	for _, line := range []string{"export:   done", "signal:   ok", "imessage: ok", "whatsapp: ok", "media:    ok", "embed:    ok", "facts:    ok"} {
 		if !strings.Contains(out.String(), line) {
 			t.Errorf("output %q missing %q", out.String(), line)
 		}
@@ -192,17 +193,21 @@ func TestSyncDepsFromConfigSkipsDisabledStages(t *testing.T) {
 	if deps.importIMsg != nil {
 		t.Error("import-imessage should be nil when imessage_archive_root is unset")
 	}
+	if deps.importWhatsApp != nil {
+		t.Error("import-whatsapp should be nil when whatsapp_archive_root is unset")
+	}
 }
 
 func TestSyncDepsFromConfigWiresEnabledStages(t *testing.T) {
-	// With no skip flags and both roots set, every stage is wired.
-	cfg := &config.Config{ArchiveRoot: "/arch", IMessageArchiveRoot: "/imsg"}
+	// With no skip flags and every root set, every stage is wired.
+	cfg := &config.Config{ArchiveRoot: "/arch", IMessageArchiveRoot: "/imsg", WhatsAppArchiveRoot: "/wapp"}
 	deps := syncDepsFromConfig(nil, cfg, &bytes.Buffer{}, syncWiring{})
 
 	for name, fn := range map[string]stageFunc{
 		"export":          deps.export,
 		"import-signal":   deps.importSignal,
 		"import-imessage": deps.importIMsg,
+		"import-whatsapp": deps.importWhatsApp,
 		"media":           deps.media,
 		"embed":           deps.embed,
 		"facts":           deps.facts,

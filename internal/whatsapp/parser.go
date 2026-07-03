@@ -54,8 +54,10 @@ import (
 	"github.com/joestump/msgbrowse/internal/signal"
 )
 
-// resultFile is the exporter's JSON output filename inside the archive root.
-const resultFile = "result.json"
+// ResultFile is the exporter's JSON output filename inside the archive root.
+// The CLI export wrapper directs `wtsexporter --json` at this name and doctor
+// checks for its presence (SPEC-0009 REQ-0009-002/009).
+const ResultFile = "result.json"
 
 // groupSuffix marks a group chat JID. 1:1 chats end in "@s.whatsapp.net" (or
 // "@lid" for linked-device identities); the chat "type" field is the device
@@ -211,7 +213,16 @@ func Parse(r io.Reader, opts ParseOptions, emit func(Conversation) error, onSkip
 			name = jidLocal(jid)
 		}
 		if taken[name] {
-			name = fmt.Sprintf("%s (%s)", name, jidLocal(jid))
+			// Re-check the suffixed candidate too: two JIDs can share both a
+			// display name and a local part (e.g. "…@s.whatsapp.net" vs
+			// "…@lid"), and a three-way collision must never merge two chats'
+			// conversations. A numeric suffix keeps later ones distinct while
+			// staying deterministic (sorted-JID order).
+			base := fmt.Sprintf("%s (%s)", name, jidLocal(jid))
+			name = base
+			for n := 2; taken[name]; n++ {
+				name = fmt.Sprintf("%s #%d", base, n)
+			}
 		}
 		taken[name] = true
 		names[jid] = name
@@ -224,6 +235,12 @@ func Parse(r io.Reader, opts ParseOptions, emit func(Conversation) error, onSkip
 		}
 		conv := Conversation{JID: jid, Name: names[jid], IsGroup: strings.HasSuffix(jid, groupSuffix)}
 		conv.Messages = parseChatMessages(jid, conv.Name, conv.IsGroup, c, opts.ArchiveRoot, loc, skip)
+		if len(conv.Messages) == 0 {
+			// A chat whose messages all failed to parse (each already
+			// skip-logged) or that carries none at all would persist an empty
+			// conversation row; skip it instead.
+			continue
+		}
 		if err := emit(conv); err != nil {
 			return err
 		}
