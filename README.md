@@ -165,10 +165,12 @@ universal arm64+Intel `.app`). Because the app is unsigned, Gatekeeper blocks a
 plain double-click on first launch: **right-click (or Ctrl-click) the app →
 Open → Open** once; afterwards it opens normally.
 
-**Linux** — download `msgbrowse-desktop_linux_amd64`. The binary links the
-system webview, so the WebKit2GTK runtime must be installed (Ubuntu 24.04+ /
-Debian 13: `sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0`; most GNOME
-desktops already have it). Building from source instead needs the dev headers:
+**Linux** — download `msgbrowse-desktop_linux_amd64` and
+`chmod +x msgbrowse-desktop` (artifact zips don't preserve the execute bit).
+The binary links the system webview, so the WebKit2GTK runtime must be
+installed (Ubuntu 24.04+ / Debian 13:
+`sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0`; most GNOME desktops
+already have it). Building from source instead needs the dev headers:
 `sudo apt-get install libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config`, then
 `make desktop-linux` (on distros still shipping webkit2gtk-4.0:
 `make desktop-linux DESKTOP_TAGS=desktop,production`). No WebKit2GTK? Use
