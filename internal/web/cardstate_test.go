@@ -58,13 +58,17 @@ func TestCardReadsEnabledFromStorePresence(t *testing.T) {
 	}
 }
 
-// TestEnableDoneOOBSwapsCardAndNavbar proves the Enable Done fragment flips the
-// card to Enabled out-of-band and refreshes the navbar counts (issue #149), so
-// the stale "Needs permission" badge and "0 conversations" counter can't linger
-// after a successful import. It drives the status endpoint with a Done job whose
-// store already has conversations (the fixture), so the OOB card renders Enabled
-// and the OOB navbar carries the real totals.
-func TestEnableDoneOOBSwapsCardAndNavbar(t *testing.T) {
+// TestEnableDoneOOBSwapsCard proves the Enable Done fragment flips the source's
+// card to Enabled out-of-band (issue #149), so the stale "Needs permission" badge
+// can't linger after a successful import. It drives the status endpoint with a
+// Done job whose store already has conversations (the fixture), so the OOB card
+// renders Enabled.
+//
+// (The former navbar-counts OOB swap is gone: #152 Option A dropped the global
+// counts from the toolbar, so there is no counts element to refresh — the sidebar
+// OOB swap, covered in sidebar_refresh_test.go, is the post-import payoff that
+// remains.)
+func TestEnableDoneOOBSwapsCard(t *testing.T) {
 	srv, _, _ := newTestServer(t) // fixture store has Signal conversations
 	fe := &fakeEnabler{progress: onboard.Progress{
 		Phase:   onboard.PhaseDone,
@@ -87,12 +91,9 @@ func TestEnableDoneOOBSwapsCardAndNavbar(t *testing.T) {
 	if !strings.Contains(body, `aria-label="Signal: Enabled"`) {
 		t.Error("Done fragment OOB card is not in the Enabled state")
 	}
-	// The OOB navbar-counts swap carries the real totals (non-zero) so the stale
-	// "0 conversations · 0 messages" is replaced.
-	if !strings.Contains(body, `id="navbar-counts"`) {
-		t.Error("Done fragment missing the out-of-band navbar-counts swap")
-	}
-	if strings.Contains(body, "0 conversations · 0 messages") {
-		t.Error("Done fragment navbar-counts still shows the stale zero totals")
+	// The toolbar no longer carries global counts (Option A), so the Done fragment
+	// must not emit the removed navbar-counts swap.
+	if strings.Contains(body, `id="navbar-counts"`) {
+		t.Error("Done fragment should no longer emit the removed navbar-counts swap")
 	}
 }

@@ -10,33 +10,99 @@ import (
 	"github.com/joestump/msgbrowse/internal/source"
 )
 
-// TestNavbarGlobalCounts verifies the navbar renders the live global counts
-// (REQ-0006-002): "<N> conversations · <M> messages" in the dim mono span.
-func TestNavbarGlobalCounts(t *testing.T) {
+// TestToolbarContextualTitle verifies the unified toolbar's contextual title
+// (#152 Option A): "msgbrowse" on home, the active conversation's display name on
+// a transcript page, and that the title links home. It also asserts Option A
+// dropped the old global counts from the toolbar (they moved to Status under
+// Settings → Diagnostics).
+func TestToolbarContextualTitle(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 	ctx := context.Background()
 
-	convs, err := st.ListConversations(ctx)
-	if err != nil {
-		t.Fatalf("list conversations: %v", err)
+	// Home: the toolbar shows the "msgbrowse" wordmark in the contextual title.
+	home := get(t, srv, "/").Body.String()
+	if !contains(home, "app-toolbar") {
+		t.Error("home missing the unified toolbar")
 	}
-	total, err := st.CountMessages(ctx)
-	if err != nil {
-		t.Fatalf("count messages: %v", err)
+	if !contains(home, `class="toolbar-title" aria-label="msgbrowse home"`) {
+		t.Error("home toolbar title should be the msgbrowse-home link")
+	}
+	if !contains(home, ">msgbrowse</a>") {
+		t.Error("home toolbar title should read 'msgbrowse'")
+	}
+	// Option A removed the global counts from the toolbar entirely.
+	if contains(home, "navbar-counts") || contains(home, " conversations · ") {
+		t.Error("Option A should have removed the global counts from the toolbar")
 	}
 
+	// Transcript: the toolbar title becomes the conversation's display name.
+	conv, err := st.GetConversation(ctx, "Harper")
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	convPage := get(t, srv, "/c/"+itoa(conv.ID)).Body.String()
+	if !contains(convPage, ">"+humanName(conv.Name)+"</a>") {
+		t.Errorf("transcript toolbar title should read the conversation name %q", humanName(conv.Name))
+	}
+	// It is still the home link (clickable back to home), not a plain heading.
+	if !contains(convPage, `class="toolbar-title" aria-label="msgbrowse home"`) {
+		t.Error("transcript toolbar title should still link home")
+	}
+}
+
+// TestToolbarSearchForm verifies the toolbar's search pill is a boosted GET form
+// targeting /search with a labelled input (#152), so Enter runs a search on the
+// existing /search page.
+func TestToolbarSearchForm(t *testing.T) {
+	srv, _, _ := newTestServer(t)
 	body := get(t, srv, "/").Body.String()
 
-	// The counts live in the navbar-counts span in tabular mono.
-	if !contains(body, "navbar-counts") {
-		t.Error("navbar missing the global-counts span")
+	if !contains(body, `<form action="/search" method="get" role="search"`) {
+		t.Error("toolbar search form should be a GET to /search with role=search")
 	}
-	want := itoa(int64(len(convs))) + " conversations · " + itoa(int64(total)) + " messages"
-	if !contains(body, want) {
-		t.Errorf("navbar missing global counts %q", want)
+	if !contains(body, "toolbar-search") {
+		t.Error("toolbar missing the search pill")
 	}
-	if total <= 0 || len(convs) == 0 {
-		t.Fatalf("fixture should have conversations+messages (got %d convs / %d msgs)", len(convs), total)
+	// Boosted so Enter swaps the /search page into #main-content (boosted-nav).
+	if !contains(body, `class="toolbar-search hidden sm:flex"`) ||
+		!contains(body, `hx-boost="true"`) {
+		t.Error("toolbar search form should be boosted (hx-boost)")
+	}
+	// The input is named q, labelled, and carries the placeholder.
+	if !contains(body, `name="q"`) ||
+		!contains(body, `aria-label="Search messages"`) ||
+		!contains(body, `placeholder="Search messages"`) {
+		t.Error("toolbar search input should be named q, labelled, and placeheld 'Search messages'")
+	}
+}
+
+// TestToolbarIconButtonsLabelled verifies every icon-only toolbar control carries
+// an aria-label and the header stays role=banner (#152 accessibility).
+func TestToolbarIconButtonsLabelled(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/").Body.String()
+
+	for _, want := range []string{
+		`aria-label="Toggle sidebar"`, // mobile drawer toggle
+		`aria-label="Toggle theme"`,   // theme toggle
+		`aria-label="Settings"`,       // settings gear → /settings
+	} {
+		if !contains(body, want) {
+			t.Errorf("toolbar icon button missing aria-label %q", want)
+		}
+	}
+	// The theme toggle is still the existing data-theme-toggle control.
+	if !contains(body, "data-theme-toggle") {
+		t.Error("toolbar missing the data-theme-toggle control")
+	}
+	// The settings gear links to /settings.
+	if !contains(body, `href="/settings"`) {
+		t.Error("toolbar settings gear should link to /settings")
+	}
+	// The header keeps banner semantics (daisyUI dropped, but role=banner is the
+	// implicit role of <header> not nested in a section/article — which holds here).
+	if !contains(body, "<header ") {
+		t.Error("toolbar should be a <header> (role=banner)")
 	}
 }
 
@@ -118,9 +184,10 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 	}
 	out := string(css)
 	for _, want := range []string{
-		".app-navbar",                // navbar height
-		".navbar-counts",             // global counts
-		".navbar-toggle",             // circular theme toggle
+		".app-toolbar",               // unified toolbar (#152 Option A)
+		".toolbar-title",             // contextual title
+		".toolbar-icon-btn",          // icon buttons (drawer/theme/settings)
+		".toolbar-search",            // toolbar search pill
 		".sidebar-filter",            // filter input
 		".avatar-mono",               // monogram avatar
 		".presence-dot.src-signal",   // Signal presence dot

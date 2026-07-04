@@ -50,7 +50,8 @@ func TestBuiltCSSReducedMotionGate(t *testing.T) {
 
 	const gate = "@media (prefers-reduced-motion:no-preference)"
 	for _, sel := range []string{
-		".navbar-toggle",
+		".toolbar-icon-btn",
+		".toolbar-title",
 		".sidebar-link",
 		".conv-row",
 		".pin-btn",

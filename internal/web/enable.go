@@ -174,11 +174,9 @@ type progressData struct {
 	// stale "Needs permission" badge cannot linger beside "✓ Enabled" (issue #149).
 	// Empty for every non-Done render.
 	CardOOB template.HTML
-	// NavbarOOB is the pre-rendered out-of-band swap of the top-right global
-	// counts, appended to a Done fragment so "N conversations · N messages"
-	// reflects the just-imported totals without a manual nav (issue #149). Empty
-	// for every non-Done render.
-	NavbarOOB template.HTML
+	// (The former NavbarOOB counts swap was removed with the toolbar's global
+	// counts — #152 Option A dropped them from the toolbar. The sidebar OOB swap
+	// above is the post-import payoff that remains.)
 }
 
 // setupImportedTrigger is the HX-Trigger event name emitted on a successful
@@ -235,11 +233,6 @@ func (s *Server) renderProgress(w http.ResponseWriter, r *http.Request, src stri
 			} else {
 				s.log.Warn("setup: could not render sidebar refresh after import", "error", err)
 			}
-			if oob, err := s.renderOOB("navbar_counts_oob", base); err == nil {
-				data.NavbarOOB = oob
-			} else {
-				s.log.Warn("setup: could not render navbar counts after import", "error", err)
-			}
 		}
 		// Flip the source's Setup card to Enabled out-of-band (#149). Mint a fresh
 		// token for the swapped-in card's own controls (Refresh), per the
@@ -262,10 +255,10 @@ func (s *Server) renderProgress(w http.ResponseWriter, r *http.Request, src stri
 
 // renderOOB executes one out-of-band swap template into pre-rendered, already-
 // escaped HTML for interpolation into the Done fragment (#142/#149). It backs the
-// sidebar-list, navbar-counts, and Setup-card OOB swaps: each define emits an
-// element carrying its stable id + hx-swap-oob="true", so htmx replaces the live
-// element in place. Every value is server-composed from trusted partials (message
-// bodies are never in the sidebar/navbar/card), so it is safe to mark as HTML.
+// sidebar-list and Setup-card OOB swaps: each define emits an element carrying
+// its stable id + hx-swap-oob="true", so htmx replaces the live element in place.
+// Every value is server-composed from trusted partials (message bodies are never
+// in the sidebar/card), so it is safe to mark as HTML.
 func (s *Server) renderOOB(name string, data any) (template.HTML, error) {
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {

@@ -176,6 +176,8 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Toolbar contextual title is the conversation name on a transcript (#152).
+	base.NavTitle = humanName(active.Name)
 	s.render(w, r, "conversation", conversationData{
 		baseData: base,
 		Active:   active,

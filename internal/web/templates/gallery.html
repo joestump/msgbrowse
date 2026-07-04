@@ -96,7 +96,7 @@
   {{/* CSS :target lightbox — no JavaScript, CSP-safe. Only for images that
        actually render; placeholders link straight to the file. */}}
   <div class="lightbox" id="lb-{{.ID}}">
-    <a class="navbar-toggle lightbox-close absolute top-4 right-4" href="#" title="close">✕</a>
+    <a class="toolbar-icon-btn lightbox-close absolute top-4 right-4" href="#" title="close">✕</a>
     <img loading="lazy" src="{{mediaURL .ConversationID .RelPath}}" alt="{{.OriginalName}}">
     <div class="text-sm lightbox-caption">
       <a class="link-card-title" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{humanName .ConversationName}}</a>

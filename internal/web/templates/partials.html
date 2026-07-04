@@ -21,18 +21,39 @@
 <div class="drawer lg:drawer-open">
   <input id="nav-drawer" type="checkbox" class="drawer-toggle">
   <div class="drawer-content flex flex-col min-h-screen">
-    {{/* Navbar (REQ-0006-002): 54px. Accent home glyph + wordmark on the left;
-         right-aligned global counts in dim mono; circular theme toggle. */}}
-    <header class="navbar app-navbar sticky top-0 z-30 bg-base-300/95 backdrop-blur border-b border-neutral px-3 lg:px-4">
-      <label for="nav-drawer" class="btn btn-ghost btn-square btn-sm lg:hidden" aria-label="Open menu">{{template "icon-menu" .}}</label>
-      <a href="/" class="flex items-center gap-2 px-1" aria-label="msgbrowse home"
-         hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-        <span class="text-primary inline-flex">{{template "icon-home" .}}</span>
-        <span class="navbar-wordmark">msgbrowse</span>
-      </a>
+    {{/* Unified toolbar (SPEC-0006 REQ-0006-002; #152 Option A, macOS
+         Preview/Finder "unified toolbar" aesthetic). GOVERNED navbar region
+         (SPEC-0006): one ~52px frosted row, skipped by boosted partial renders
+         (it lives only in this page_start shell, never in a *_content define —
+         SPEC-0008 REQ-0008-006), so it never leaks into an #main-content swap.
+         LEFT: the mobile drawer toggle (still the #nav-drawer label) + a
+         contextual title (.NavTitle — "msgbrowse" on home, the active
+         conversation name on a transcript) that links home (boosted, matching
+         the app's boosted-nav pattern). RIGHT: a real toolbar search pill (a
+         plain boosted GET form to /search — CSP-safe, needs no inline JS), the
+         existing theme toggle, and a settings gear → /settings. Global counts
+         moved off the toolbar to keep it clean; they live on Status (under
+         Settings → Diagnostics). Icon-only controls carry aria-labels; the
+         search input is labelled; the header stays role=banner (the daisyUI
+         .navbar semantics) and is fully keyboard operable. */}}
+    <header class="app-toolbar sticky top-0 z-30 px-3 lg:px-4">
+      <label for="nav-drawer" class="toolbar-icon-btn lg:hidden" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
+      <a href="/" class="toolbar-title" aria-label="msgbrowse home"
+         hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{if .NavTitle}}{{.NavTitle}}{{else}}msgbrowse{{end}}</a>
       <div class="flex-1"></div>
-      <span id="navbar-counts" class="navbar-counts font-mono hidden sm:inline" title="Global archive totals">{{len .Conversations}} conversations · {{.TotalMessages}} messages</span>
-      <button type="button" data-theme-toggle class="navbar-toggle ml-3" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
+      {{/* Toolbar search: a small boosted GET form to /search. Enter submits and
+           htmx swaps the /search page into #main-content (hx-boost on the form),
+           matching the app's boosted-nav contract; degrades to a plain GET
+           without JS. No inline JS (CSP-safe). */}}
+      <form action="/search" method="get" role="search"
+            class="toolbar-search hidden sm:flex"
+            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+        <span class="toolbar-search-glyph" aria-hidden="true">{{template "icon-search" .}}</span>
+        <input type="search" name="q" class="toolbar-search-input" placeholder="Search messages" aria-label="Search messages" autocomplete="off">
+      </form>
+      <button type="button" data-theme-toggle class="toolbar-icon-btn" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
+      <a href="/settings" class="toolbar-icon-btn" aria-label="Settings"
+         hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{template "icon-settings" .}}</a>
     </header>
 {{/* <main id="main-content"> is owned by each page's *_content define (not by
      this shell), so HTMX partial renders can emit just <title> + <main> without
@@ -125,14 +146,12 @@
 </ul>
 {{end}}
 
-{{/* navbar_counts_oob updates the top-right global counts out-of-band after a
-     Setup import (issue #149). The shell navbar is not re-rendered on an htmx
-     fragment swap, so without this the counts stay "0 conversations · 0 messages"
-     even though the sidebar now has conversations. It carries the same #navbar-
-     counts id + hx-swap-oob so htmx replaces the live span in place. Values are
-     server-computed integers — html/template escaping is the only encoding
-     needed. */}}
-{{define "navbar_counts_oob"}}<span id="navbar-counts" class="navbar-counts font-mono hidden sm:inline" title="Global archive totals" hx-swap-oob="true">{{len .Conversations}} conversations · {{.TotalMessages}} messages</span>{{end}}
+{{/* The old navbar_counts_oob define is gone with the toolbar counts (#152
+     Option A dropped the global counts from the toolbar to keep it clean — they
+     live on Status under Settings → Diagnostics). The post-import payoff now
+     rides on sidebar_lists_oob alone: the freshly imported conversations appear
+     in the sidebar without a manual nav, which is the swap that actually
+     matters. */}}
 
 {{/* conv_row renders a single sidebar conversation row (REQ-0006-003/004). It is
      shared verbatim by the PINNED and CONVERSATIONS sections so the two lists are

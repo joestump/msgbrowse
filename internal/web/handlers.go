@@ -11,14 +11,22 @@ import (
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
-// baseData is embedded in every full-page view; it drives the chrome (navbar +
-// sidebar). It carries the global counts the navbar shows (REQ-0006-002) and the
-// full conversation list the sidebar renders (REQ-0006-003).
+// baseData is embedded in every full-page view; it drives the chrome (the
+// unified toolbar + sidebar). It carries the full conversation list the sidebar
+// renders (REQ-0006-003) and the contextual toolbar title (#152, issue #129).
+//
+// NavTitle is the text the unified toolbar shows on the left, distinct from the
+// document <title> in Title: "msgbrowse" on home/global surfaces, the active
+// conversation's display name on a transcript page. It is display-only and never
+// used in URLs. TotalMessages remains for surfaces that show global counts in
+// their body (Home stat strip, Status) — Option A (#152) removed the counts from
+// the toolbar itself, so the toolbar no longer reads this field.
 type baseData struct {
 	Title         string
+	NavTitle      string
 	Conversations []store.ConversationSummary
 	ActiveID      int64
-	TotalMessages int // global message count for the navbar
+	TotalMessages int // global message count (Home/Status body, not the toolbar)
 }
 
 // PinnedConversations are the conversations the sidebar renders in its PINNED
@@ -67,17 +75,24 @@ func (s *Server) baseData(ctx context.Context, title string, activeID int64) (ba
 	}
 	return baseData{
 		Title:         title,
+		NavTitle:      defaultNavTitle,
 		Conversations: convs,
 		ActiveID:      activeID,
 		TotalMessages: total,
 	}, nil
 }
 
+// defaultNavTitle is the unified toolbar's contextual title on home and every
+// global surface (Search, Media, Settings, …); a transcript page overrides it
+// with the conversation's display name (#152). The wordmark links home from the
+// toolbar, so this doubles as the wordmark text.
+const defaultNavTitle = "msgbrowse"
+
 // partialBase is the shell-free baseData for HTMX partial renders: title and
 // active id only, zero store work. The *_content defines never touch
 // .Conversations, so the sidebar listing is skipped entirely (REQ-0008-006).
 func partialBase(title string, activeID int64) baseData {
-	return baseData{Title: title, ActiveID: activeID}
+	return baseData{Title: title, NavTitle: defaultNavTitle, ActiveID: activeID}
 }
 
 // isPartialRequest reports whether the request is an HTMX boosted navigation
@@ -227,6 +242,9 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The unified toolbar shows the active conversation's display name as its
+	// contextual title on a transcript page (#152), not the "msgbrowse" wordmark.
+	base.NavTitle = humanName(active.Name)
 	sort := parseSort(r)
 	page, err := s.store.GetMessages(ctx, id, 0, 0, pageSize, sort == sortDesc)
 	if err != nil {
