@@ -48,6 +48,25 @@
     // Mirrors the Wails runtime's dragTest: primary button, single click, and
     // the computed --wails-draggable on the event target must be exactly
     // "drag" (interactive toolbar children set no-drag in input.css).
+    //
+    // Like the runtime's default (deferDragToMouseMove: true), the "drag"
+    // message posts on the FIRST mousemove with the button held — not on
+    // mousedown — so a plain click on empty toolbar space focuses the window
+    // instead of entering a native drag session (adversarial-review fix).
+    var armed = false;
+    var disarm = function () {
+      armed = false;
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("mouseup", disarm, true);
+    };
+    var onMove = function (e) {
+      if (!armed || e.buttons !== 1) {
+        disarm();
+        return;
+      }
+      disarm();
+      post("drag");
+    };
     window.addEventListener("mousedown", function (e) {
       if (e.buttons !== 1 || e.detail !== 1) {
         return;
@@ -61,8 +80,9 @@
       if (!val || val.trim() !== "drag") {
         return;
       }
-      e.preventDefault();
-      post("drag");
+      armed = true;
+      window.addEventListener("mousemove", onMove, true);
+      window.addEventListener("mouseup", disarm, true);
     });
   };
 
