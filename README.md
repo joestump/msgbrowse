@@ -161,9 +161,14 @@ Browser mode (`msgbrowse serve`) remains the universal fallback on every
 platform.
 
 **macOS** — download and unzip `msgbrowse-desktop_darwin_universal` (a
-universal arm64+Intel `.app`). Because the app is unsigned, Gatekeeper blocks a
-plain double-click on first launch: **right-click (or Ctrl-click) the app →
-Open → Open** once; afterwards it opens normally.
+universal arm64+Intel `.app`). Because the app is unsigned, Gatekeeper blocks
+the first launch. On macOS 15 (Sequoia) and later the old right-click → Open
+trick no longer works — instead either:
+
+- **Terminal (fastest):** `xattr -dr com.apple.quarantine msgbrowse-desktop.app`, then open it normally; or
+- **GUI:** double-click (it gets blocked), then System Settings → **Privacy & Security** → scroll to Security → **Open Anyway** next to the msgbrowse-desktop notice → authenticate.
+
+Either grant is one-time; afterward it launches with a normal double-click.
 
 **Linux** — download `msgbrowse-desktop_linux_amd64` and
 `chmod +x msgbrowse-desktop` (artifact zips don't preserve the execute bit).
