@@ -5,8 +5,11 @@
 
 # Desktop shell: Wails CLI build output and generated scaffolding — the shell
 # has no JS frontend (wails.json is the only tracked Wails file); the CLI
-# regenerates these on every `wails build`
-/cmd/msgbrowse-desktop/build/
+# regenerates these on every `wails build`. Ignore the build/ contents (not the
+# dir itself, or the negation below can't apply) but keep appicon.png tracked —
+# Wails reads it to generate the app .icns.
+/cmd/msgbrowse-desktop/build/*
+!/cmd/msgbrowse-desktop/build/appicon.png
 /cmd/msgbrowse-desktop/frontend/
 
 # Local app data (SQLite DB, vector index, caches) — never commit
