@@ -58,14 +58,23 @@ func Build(cfg *config.Config, st *store.Store, resolver onboard.ToolResolver, l
 	})
 }
 
-// ExecRunner spawns an exporter subprocess with an explicit argv and streams its
-// stdout/stderr to the process's stdio (these exporters print useful progress).
-// The context is honored so a Cancel or app shutdown terminates the child. name
-// is a resolved absolute tool path and args are app-owned constants plus the
-// app-computed staging dir — never client input (SPEC-0013 §Security "Subprocess
-// argument safety").
-func ExecRunner(ctx context.Context, name string, args ...string) error {
+// ExecRunner spawns an exporter subprocess with an explicit argv and process
+// environment, streaming its stdout/stderr to the process's stdio (these
+// exporters print useful progress). The context is honored so a Cancel or app
+// shutdown terminates the child. name is a resolved absolute tool path and args
+// are app-owned constants plus the app-computed staging dir — never client input
+// (SPEC-0013 §Security "Subprocess argument safety").
+//
+// env is the subprocess environment: nil means "inherit the parent process
+// environment" (exec.Cmd.Env semantics) — the case for a native exporter or a
+// $PATH/BYO tool — while a bundled Python exporter is handed the
+// relocation-corrected PYTHONHOME/PYTHONPATH env so the bundled interpreter finds
+// its stdlib after the .app has moved (issue #147). Leaving cmd.Env nil rather
+// than assigning os.Environ() preserves the exact "inherit" behavior serve has
+// always had for BYO exporters.
+func ExecRunner(ctx context.Context, name string, env []string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = env // nil => inherit; non-nil => the corrected bundled-Python env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

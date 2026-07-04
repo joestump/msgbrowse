@@ -313,7 +313,9 @@ func (r *Runner) execute(jobCtx context.Context, src string, mode jobMode) {
 	}
 
 	// 1. Resolve the exporter tool. A missing tool is a clear terminal state, not
-	//    a silent no-op or a $PATH fallback in the bundled build.
+	//    a silent no-op or a $PATH fallback in the bundled build. This resolves
+	//    ONLY this source's own exporter (issue #147: iMessage depends solely on
+	//    imessage-exporter — a Signal/Python failure never blocks it).
 	tool, err := r.resolveTool(jobCtx, src)
 	if err != nil {
 		if errors.Is(err, ErrToolMissing) {
@@ -321,6 +323,17 @@ func (r *Runner) execute(jobCtx context.Context, src string, mode jobMode) {
 		} else {
 			r.fail(src, wrapSentinel(err, ErrToolMissing), fmt.Sprintf("could not resolve %s exporter: %v", source.Label(src), err))
 		}
+		return
+	}
+	// Resolve the subprocess environment for this tool. For a bundled Python
+	// exporter this is the relocation-corrected PYTHONHOME/PYTHONPATH env (issue
+	// #147); for a native exporter (imessage-exporter) or a $PATH/BYO tool it is
+	// nil (inherit the process environment). A failure computing the env is a
+	// resolution failure — surfaced like a missing tool rather than silently
+	// running under a broken environment.
+	env, err := r.resolveEnv(jobCtx, src, tool)
+	if err != nil {
+		r.fail(src, wrapSentinel(err, ErrToolMissing), fmt.Sprintf("could not resolve %s exporter environment: %v", source.Label(src), err))
 		return
 	}
 	if r.cancelled(jobCtx) {
@@ -353,7 +366,7 @@ func (r *Runner) execute(jobCtx context.Context, src string, mode jobMode) {
 		r.fail(src, ErrUnknownSource, fmt.Sprintf("cannot build export command: %v", err))
 		return
 	}
-	if err := r.runExec(jobCtx, tool, args...); err != nil {
+	if err := r.runExec(jobCtx, tool, env, args...); err != nil {
 		_ = discardStaging(staging)
 		if r.cancelled(jobCtx) {
 			r.cancel(src)
@@ -430,6 +443,20 @@ func (r *Runner) resolveTool(ctx context.Context, src string) (string, error) {
 		return "", ErrToolMissing
 	}
 	return tool, nil
+}
+
+// resolveEnv computes the subprocess environment for a resolved exporter. When
+// the resolver also implements EnvResolver (the desktop bundled resolver does),
+// it returns that env — the corrected PYTHONHOME/PYTHONPATH for a bundled Python
+// exporter, nil for the native imessage-exporter (issue #147). When the resolver
+// does not implement it (the $PATH/BYO resolver), env is nil so the subprocess
+// inherits the process environment, which is correct for a tool found on $PATH.
+func (r *Runner) resolveEnv(ctx context.Context, src, toolPath string) ([]string, error) {
+	er, ok := r.resolver.(EnvResolver)
+	if !ok {
+		return nil, nil
+	}
+	return er.EnvForTool(ctx, src, toolPath)
 }
 
 // fail records a terminal PhaseFailed with a sentinel-wrapped error and logs it

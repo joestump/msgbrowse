@@ -29,7 +29,7 @@ type growingSignalExporter struct {
 	runs int
 }
 
-func (g *growingSignalExporter) run(_ context.Context, _ string, args ...string) error {
+func (g *growingSignalExporter) run(_ context.Context, _ string, _ []string, args ...string) error {
 	g.mu.Lock()
 	g.runs++
 	runs := g.runs

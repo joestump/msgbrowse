@@ -15,6 +15,18 @@
 # (cmd/msgbrowse-desktop/internal/toolchain) reads these bundled paths at runtime,
 # never $PATH.
 #
+# RELOCATION REGRESSION GUARD (issue #147): verifying the tools IN PLACE on the
+# runner is NOT enough — python-build-standalone bakes a compile-time `/install`
+# base prefix, so after the .app moves to /Applications the bundled interpreter
+# looked for its stdlib at /install/lib/python3.12 and died with
+# "ModuleNotFoundError: No module named 'encodings'". The fix sets PYTHONHOME (the
+# bundled python home) + PYTHONPATH (the venv site-packages) at RUNTIME from the
+# resolved bundle location. The "Relocation regression" step below MOVES the built
+# .app to a different absolute path and re-probes every bundled tool via the SAME
+# Go resolver env logic (a tiny `internal/toolchain/probe` helper that calls the
+# production VerifyTool), so this bug can never regress: it FAILS on the old
+# behavior and PASSES with the fix.
+#
 # SIGNING/NOTARIZATION is OWNER-GATED. There is no Apple Developer ID yet, so:
 #   * The embedded binaries and the .app are AD-HOC signed (`codesign -s -`) so
 #     they run locally after a user strips the quarantine attribute
@@ -226,7 +238,12 @@ jobs:
       # In-CI proof the bundled tools actually run on the runner (SPEC-0013 REQ
       # "Bundled tool integrity and version check"). This is the check the story
       # gates on: the versions printed here are reported in the PR body.
-      - name: Verify bundled tools respond on the runner
+      #
+      # NOTE: this step probes IN PLACE (the build path). It is necessary but NOT
+      # sufficient — it cannot catch relocation breakage (issue #147), which is
+      # exactly why the shipped .app broke after moving to /Applications. The
+      # "Relocation regression" step below is the guard that reproduces the move.
+      - name: Verify bundled tools respond on the runner (in place)
         run: |
           set -euo pipefail
           TOOLS="build/bin/msgbrowse.app/Contents/Resources/tools"
@@ -241,6 +258,57 @@ jobs:
           "$TOOLS/venv/bin/wtsexporter" --help | head -n1
           echo "== imessage-exporter =="
           "$TOOLS/imessage-exporter" --version
+
+      # --- RELOCATION REGRESSION GUARD (issue #147) ----------------------------
+      # Reproduce the /Applications move: copy the built .app to a DIFFERENT
+      # absolute path, then re-probe every bundled tool THROUGH the shipped Go
+      # resolver's env logic. The `internal/toolchain/probe` helper calls the
+      # production VerifyTool (nil runner), which sets PYTHONHOME=<bundled python
+      # home> + PYTHONPATH=<venv site-packages> for the Python tools and inherits
+      # the environment for the native imessage-exporter — so this test and the
+      # runtime app cannot drift. On the pre-fix build (no runtime PYTHONHOME) the
+      # relocated bundled python fails with the encodings error and this step is
+      # RED; with the fix it is GREEN. Kept fast: a single `go run` that probes
+      # four tools with a 60s cap.
+      #
+      # It runs BEFORE code-signing so it isolates the Python relocation behavior
+      # (path-based, independent of the ad-hoc signature, which embeds no absolute
+      # paths). It ALSO cross-checks with a raw shell probe that mirrors the exact
+      # env the Go resolver sets, so a failure is legible even without Go output.
+      - name: Relocation regression — bundled tools from a moved .app (#147)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/relocated
+          rm -rf /tmp/relocated/msgbrowse.app
+          # ditto preserves the bundle's exec bits + Mach-O structure across the copy.
+          ditto build/bin/msgbrowse.app /tmp/relocated/msgbrowse.app
+          RELOC="/tmp/relocated/msgbrowse.app"
+          TOOLS="$RELOC/Contents/Resources/tools"
+
+          # 1) Raw shell probe mirroring the Go resolver's env, so the encodings
+          #    bug shows plainly. PYTHONPATH globs the single venv python3.* dir.
+          export PYTHONHOME="$TOOLS/python"
+          SITE="$(echo "$TOOLS"/venv/lib/python3.*/site-packages)"
+          export PYTHONPATH="$SITE"
+          echo "PYTHONHOME=$PYTHONHOME"
+          echo "PYTHONPATH=$PYTHONPATH"
+          echo "== relocated bundled python (-V) =="
+          "$TOOLS/python/bin/python3" -V
+          echo "== relocated sigexport --version =="
+          "$TOOLS/venv/bin/sigexport" --version
+          echo "== relocated wtsexporter --help =="
+          "$TOOLS/venv/bin/wtsexporter" --help | head -n1
+          # imessage-exporter is a Rust binary — it needs NO Python env. Prove it
+          # runs with PYTHONHOME/PYTHONPATH cleared, matching the resolver (which
+          # hands it the inherited environment, not the Python one).
+          echo "== relocated imessage-exporter --version (no python env) =="
+          env -u PYTHONHOME -u PYTHONPATH "$TOOLS/imessage-exporter" --version
+
+          # 2) Authoritative probe THROUGH the shipped Go resolver: this is the
+          #    real regression guard — it uses the exact VerifyTool + env code the
+          #    app runs, so CI and production agree by construction.
+          echo "== Go resolver relocation probe =="
+          go run ./internal/toolchain/probe "$RELOC"
 
       # --- Ad-hoc code signing (owner-gated real signing is below) ------------
       # NOTARIZATION IS OWNER-GATED (no Apple Developer ID yet). Ad-hoc sign

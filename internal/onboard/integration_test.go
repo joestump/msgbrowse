@@ -43,7 +43,7 @@ func TestEnableLandsConversationsInStore(t *testing.T) {
 	})
 
 	var mu sync.Mutex
-	exporter := onboard.ExecRunner(func(ctx context.Context, name string, args ...string) error {
+	exporter := onboard.ExecRunner(func(ctx context.Context, name string, env []string, args ...string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		dest := args[len(args)-1] // <staging>/export

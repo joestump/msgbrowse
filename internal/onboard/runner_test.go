@@ -35,7 +35,7 @@ func waitFor(t *testing.T, r *Runner, src string, pred func(Progress) bool) Prog
 // real import can land conversations in the store. It records the argv it was
 // called with so tests can assert the app-owned command line.
 func fakeSignalExporter(calls *[][]string, mu *sync.Mutex) ExecRunner {
-	return func(ctx context.Context, name string, args ...string) error {
+	return func(ctx context.Context, name string, env []string, args ...string) error {
 		mu.Lock()
 		*calls = append(*calls, append([]string{name}, args...))
 		mu.Unlock()
@@ -67,6 +67,122 @@ func staticResolver(path string) ToolResolver {
 	return ToolResolverFunc(func(ctx context.Context, src string) (string, error) {
 		return path, nil
 	})
+}
+
+// envResolver is a ToolResolver that ALSO implements EnvResolver, returning a
+// fixed tool path and a fixed subprocess env. It stands in for the desktop's
+// bundled resolver so the runner's env-threading (issue #147) is exercised on
+// Linux without a real .app.
+type envResolver struct {
+	path string
+	env  []string
+}
+
+func (e envResolver) ResolveTool(context.Context, string) (string, error) { return e.path, nil }
+func (e envResolver) EnvForTool(context.Context, string, string) ([]string, error) {
+	return e.env, nil
+}
+
+// TestEnableThreadsResolvedEnvToExporter proves the relocation fix reaches the
+// spawn site (issue #147): when the resolver implements EnvResolver, the env it
+// returns for the source is handed to the ExecRunner verbatim — the corrected
+// PYTHONHOME/PYTHONPATH a bundled Python exporter needs after the .app moves.
+func TestEnableThreadsResolvedEnvToExporter(t *testing.T) {
+	dataDir := t.TempDir()
+	wantEnv := []string{"PYTHONHOME=/App/Contents/Resources/tools/python", "PYTHONPATH=/App/.../site-packages"}
+	var (
+		mu      sync.Mutex
+		gotEnv  []string
+		gotName string
+	)
+	r, err := NewRunner(Config{
+		Resolver: envResolver{path: "/App/Contents/Resources/tools/venv/bin/sigexport", env: wantEnv},
+		Exec: func(ctx context.Context, name string, env []string, args ...string) error {
+			mu.Lock()
+			gotName, gotEnv = name, env
+			mu.Unlock()
+			// Write a minimal fixture so the import step succeeds.
+			dest := args[len(args)-1]
+			convDir := filepath.Join(dest, "Alice")
+			if err := os.MkdirAll(convDir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(convDir, "chat.md"),
+				[]byte("[2022-01-01 10:00:00] Alice: hi\n"), 0o644)
+		},
+		Importer: ImporterFunc(func(context.Context, string, string) (ImportResult, error) {
+			return ImportResult{ConversationsChanged: 1, MessagesAdded: 1}, nil
+		}),
+		DataDir: dataDir,
+	})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	defer r.Shutdown()
+
+	if _, err := r.Enable(source.Signal); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	waitFor(t, r, source.Signal, func(p Progress) bool { return p.Phase.Terminal() })
+
+	mu.Lock()
+	defer mu.Unlock()
+	if gotName != "/App/Contents/Resources/tools/venv/bin/sigexport" {
+		t.Errorf("exporter name = %q; want the resolved bundled sigexport path", gotName)
+	}
+	if len(gotEnv) != len(wantEnv) || gotEnv[0] != wantEnv[0] || gotEnv[1] != wantEnv[1] {
+		t.Errorf("exporter env = %v; want the resolver's env %v", gotEnv, wantEnv)
+	}
+}
+
+// TestEnableWithoutEnvResolverInheritsEnv proves the serve/$PATH path is
+// unchanged: a plain ToolResolver (no EnvResolver) yields a nil env, so the
+// exporter inherits the process environment exactly as before.
+func TestEnableWithoutEnvResolverInheritsEnv(t *testing.T) {
+	dataDir := t.TempDir()
+	var (
+		mu     sync.Mutex
+		envSet bool
+		gotNil bool
+	)
+	r, err := NewRunner(Config{
+		Resolver: staticResolver("/usr/bin/sigexport"),
+		Exec: func(ctx context.Context, name string, env []string, args ...string) error {
+			mu.Lock()
+			envSet = true
+			gotNil = env == nil
+			mu.Unlock()
+			dest := args[len(args)-1]
+			convDir := filepath.Join(dest, "Alice")
+			if err := os.MkdirAll(convDir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(convDir, "chat.md"),
+				[]byte("[2022-01-01 10:00:00] Alice: hi\n"), 0o644)
+		},
+		Importer: ImporterFunc(func(context.Context, string, string) (ImportResult, error) {
+			return ImportResult{}, nil
+		}),
+		DataDir: dataDir,
+	})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	defer r.Shutdown()
+
+	if _, err := r.Enable(source.Signal); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	waitFor(t, r, source.Signal, func(p Progress) bool { return p.Phase.Terminal() })
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !envSet {
+		t.Fatal("exporter was never called")
+	}
+	if !gotNil {
+		t.Error("exporter env != nil for a non-EnvResolver resolver; serve/$PATH must inherit the environment")
+	}
 }
 
 // TestEnableEndToEnd drives Enable through the full pipeline with a fake
@@ -143,7 +259,7 @@ func TestCancelMidExportLeavesNoPartialArchive(t *testing.T) {
 		mu       sync.Mutex
 		imported bool
 	)
-	blockingExporter := func(ctx context.Context, name string, args ...string) error {
+	blockingExporter := func(ctx context.Context, name string, env []string, args ...string) error {
 		close(started)
 		<-ctx.Done() // block until cancelled
 		// Write a partial file to prove even a exporter that scribbled output on
@@ -209,7 +325,7 @@ func TestConcurrentEnableRejected(t *testing.T) {
 		mu    sync.Mutex
 		calls int
 	)
-	gatedExporter := func(ctx context.Context, name string, args ...string) error {
+	gatedExporter := func(ctx context.Context, name string, env []string, args ...string) error {
 		mu.Lock()
 		calls++
 		mu.Unlock()
@@ -267,7 +383,7 @@ func TestToolMissingSentinel(t *testing.T) {
 		Resolver: ToolResolverFunc(func(ctx context.Context, src string) (string, error) {
 			return "", ErrToolMissing
 		}),
-		Exec: func(ctx context.Context, name string, args ...string) error {
+		Exec: func(ctx context.Context, name string, env []string, args ...string) error {
 			spawned = true
 			return nil
 		},
@@ -300,7 +416,7 @@ func TestPermissionDeniedSentinel(t *testing.T) {
 	var spawned bool
 	r, err := NewRunner(Config{
 		Resolver: staticResolver("/bundle/imessage-exporter"),
-		Exec: func(ctx context.Context, name string, args ...string) error {
+		Exec: func(ctx context.Context, name string, env []string, args ...string) error {
 			spawned = true
 			return nil
 		},
@@ -334,7 +450,7 @@ func TestExportFailedSentinel(t *testing.T) {
 	wantErr := errors.New("chat.db is locked")
 	r, err := NewRunner(Config{
 		Resolver: staticResolver("/bundle/imessage-exporter"),
-		Exec: func(ctx context.Context, name string, args ...string) error {
+		Exec: func(ctx context.Context, name string, env []string, args ...string) error {
 			return wantErr
 		},
 		Importer: ImporterFunc(func(ctx context.Context, src, root string) (ImportResult, error) {
@@ -449,7 +565,7 @@ func TestAdoptReplacesExistingArchive(t *testing.T) {
 func TestUnknownSourceRejected(t *testing.T) {
 	r, err := NewRunner(Config{
 		Resolver: staticResolver("/bundle/x"),
-		Exec:     func(ctx context.Context, name string, args ...string) error { return nil },
+		Exec:     func(ctx context.Context, name string, env []string, args ...string) error { return nil },
 		Importer: ImporterFunc(func(ctx context.Context, src, root string) (ImportResult, error) { return ImportResult{}, nil }),
 		DataDir:  t.TempDir(),
 	})
@@ -469,7 +585,7 @@ func TestShutdownCancelsRunningJob(t *testing.T) {
 	dataDir := t.TempDir()
 	started := make(chan struct{})
 	exited := make(chan struct{})
-	blockingExporter := func(ctx context.Context, name string, args ...string) error {
+	blockingExporter := func(ctx context.Context, name string, env []string, args ...string) error {
 		close(started)
 		<-ctx.Done()
 		close(exited)
