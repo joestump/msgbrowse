@@ -125,7 +125,6 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"dateLabel":        dateLabel,
 		"sourceSlug":       sourceSlug,
 		"humanSource":      source.Label,
-		"enableButton":     enableButton,
 		"imgRenderable":    s.imgRenderable,
 		"convRowCtx":       convRowCtx,
 	}).ParseFS(templatesFS, "templates/*.html")
@@ -195,6 +194,7 @@ func (s *Server) routes() http.Handler {
 	// handler by the same-origin + per-session-token check before any work.
 	mux.HandleFunc("POST /setup/enable", s.handleSetupEnable)
 	mux.HandleFunc("POST /setup/cancel", s.handleSetupCancel)
+	mux.HandleFunc("POST /setup/recheck", s.handleSetupRecheck)
 	mux.HandleFunc("GET /setup/status/{source}", s.handleSetupStatus)
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("GET /media/{id}/{path...}", s.handleMedia)

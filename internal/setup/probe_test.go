@@ -93,13 +93,32 @@ func TestProbeSignalKeychain(t *testing.T) {
 		}
 	})
 
-	t.Run("unparseable config is ok (nothing to unseal)", func(t *testing.T) {
+	t.Run("unparseable config falls through to the keychain check (#130)", func(t *testing.T) {
+		// A corrupt config may hide a sealed key, so it must NOT short-circuit to OK
+		// — it falls through to the keychain check. With the default (nil) check
+		// off macOS that reads as Needs-permission, so the guidance is shown rather
+		// than silently claiming access.
 		home := t.TempDir()
 		d := Detector{Home: home, Open: openMap(map[string]string{
 			cfgPath(home): `not json`,
 		})}
+		if got := d.ProbeSignalKeychain(); got.State != PermissionNeeded {
+			t.Errorf("state = %v, want PermissionNeeded (unparseable must not claim OK)", got.State)
+		}
+	})
+
+	t.Run("unparseable config with an accessible keychain is ok", func(t *testing.T) {
+		// When the injected keychain check reports access (the real macOS check on
+		// the desktop), even a corrupt config resolves to OK — the fall-through
+		// defers the decision to the OS, it does not force a permanent prompt.
+		home := t.TempDir()
+		d := Detector{
+			Home:               home,
+			Open:               openMap(map[string]string{cfgPath(home): `not json`}),
+			KeychainAccessible: func(string) bool { return true },
+		}
 		if got := d.ProbeSignalKeychain(); got.State != PermissionOK {
-			t.Errorf("state = %v, want PermissionOK", got.State)
+			t.Errorf("state = %v, want PermissionOK (accessible keychain overrides)", got.State)
 		}
 	})
 

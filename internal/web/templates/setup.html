@@ -6,15 +6,19 @@
 
      Setup (SPEC-0013): one card per source (Signal / iMessage / WhatsApp) with a
      computed state — Enabled / Ready / Needs permission / Not detected — read
-     from the shared internal/setup detection + permission probes. This story
-     (#133) makes the Enable action LIVE: a Ready card's Enable button POSTs
-     /setup/enable (same-origin + per-session token, htmx) to start a cancellable
-     background export→import job, and a per-card aria-live region polls
-     /setup/status/<source> every second and swaps itself with the job's
-     structured state until a terminal phase (SPEC-0013 REQ "One-click enable and
-     import per source", REQ "Concurrency Safety", REQ "Error Handling
-     Standards"). When no Enabler is wired (browser mode with no resolvable
-     tools) the button is disabled with a clear affordance.
+     from the shared internal/setup detection + permission probes. The Enable
+     action is LIVE (#133): a Ready card's Enable button POSTs /setup/enable
+     (same-origin + per-session token, htmx) to start a cancellable background
+     export→import job; a per-card aria-live region polls /setup/status/<source>
+     and swaps itself with the job's state until a terminal phase.
+
+     Permission guidance (#134, REQ "Permission detection and guidance"): a
+     Needs-permission card carries step-by-step guidance for the exact grant it
+     needs — Full Disk Access (iMessage chat.db) or the Signal Keychain "Always
+     Allow" prompt — in a modal dialog with a deep link to the exact macOS System
+     Settings pane and a Recheck action. Recheck POSTs /setup/recheck (same gate)
+     and swaps the card out of Needs-permission when the grant is present. This is
+     DETECT-AND-GUIDE ONLY (ADR-0020): nothing here bypasses OS consent.
 
      Security (SPEC-0013 §Security): the privileged POSTs carry the per-session
      Token (hidden field + the X-Setup-Token header htmx sends via hx-headers);
@@ -26,7 +30,9 @@
      card's source glyph is decorative (aria-hidden) and the card carries an
      explicit aria-label naming the source and its state; the state is conveyed as
      text (the badge + detail line), never by color alone; progress lands in an
-     aria-live="polite" region so job status is announced, not spinner-only. */}}
+     aria-live="polite" region so job status is announced; the guidance modal
+     traps focus, restores it to the trigger on close, and closes on Escape
+     (setup.js), with an aria-live recheck-result region. */}}
 {{define "setup_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1">
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
@@ -35,10 +41,27 @@
       detected source to import its history — everything stays on this machine.</p>
 
     {{/* One card per source (SPEC-0013 "one card per source"), as a labelled list
-         so assistive tech enumerates the sources. */}}
+         so assistive tech enumerates the sources. Each card renders via the shared
+         setup_card define so /setup/recheck can re-render a single card fragment. */}}
     <ul class="setup-cards" aria-label="Message sources">
       {{- range .Cards}}
-      <li class="setup-card setup-card-{{.State}}"
+      {{- template "setup_card" .}}
+      {{- end}}
+    </ul>
+
+    <p class="setup-footnote">
+      {{- if .AnyActionable}}Detected sources can be enabled from here — enabling runs the bundled exporter and imports the result. Setup stays reachable from the sidebar at any time.
+      {{- else}}No sources are ready to enable on this machine yet. Setup stays reachable from the sidebar at any time.{{end}}
+    </p>
+  </div>
+    </main>
+{{end}}
+
+{{/* setup_card is one source's card, rendered both inside the page range and as
+     the standalone fragment /setup/recheck swaps back (hx-swap="outerHTML" on the
+     <li>). It carries its own EnableAvailable + Token so it stands alone. */}}
+{{define "setup_card"}}
+      <li id="setup-card-{{.Source}}" class="setup-card setup-card-{{.State}}"
           aria-label="{{.Label}}: {{.StateLabel}}">
         <span class="setup-card-icon {{sourceSlug .Source}}" aria-hidden="true">
           {{- if eq .Source "signal"}}{{template "icon-chat-bubble" $}}
@@ -56,18 +79,24 @@
             {{- if eq .State "enabled"}}
             <span class="setup-note setup-note-ok">{{template "icon-check" $}} Imported</span>
             {{- else if eq .State "needs-permission"}}
-            {{/* Detect-and-guide only (ADR-0020): the System Settings deep link +
-                 Recheck live in the follow-on flow (#135); here the blocker is
-                 surfaced as text. Enable is still offered — the export re-probes the
-                 grant and surfaces a permission error if it is still missing. */}}
-            <span class="setup-note setup-note-warn">{{template "icon-lock" $}} Grant access in System Settings, then Enable</span>
-            {{template "setup-enable-button" (enableButton $.EnableAvailable $.Token .Source)}}
+            {{/* Detect-and-guide only (ADR-0020): the guidance modal names the exact
+                 grant, deep-links the exact System Settings pane, and offers Recheck.
+                 Enable is still offered — the export re-probes the grant. */}}
+            <button type="button" class="setup-btn setup-btn-ghost"
+                    aria-haspopup="dialog"
+                    aria-controls="setup-guide-{{.Source}}"
+                    data-setup-guide-open="setup-guide-{{.Source}}">
+              {{template "icon-lock" $}} How to grant access</button>
+            {{template "setup-enable-button" .}}
             {{- else if eq .State "ready"}}
-            {{template "setup-enable-button" (enableButton $.EnableAvailable $.Token .Source)}}
+            {{template "setup-enable-button" .}}
             {{- else}}
             <span class="setup-note">Install {{.Label}} and reopen Setup to detect it.</span>
             {{- end}}
           </div>
+          {{- if eq .State "needs-permission"}}
+          {{template "setup_guide_modal" .}}
+          {{- end}}
           {{- if or (eq .State "ready") (eq .State "needs-permission")}}
           {{/* Per-source live progress region: the Enable POST targets it, and the
                returned fragment self-polls until a terminal phase (SPEC-0013
@@ -76,23 +105,67 @@
           {{- end}}
         </div>
       </li>
-      {{- end}}
-    </ul>
-
-    <p class="setup-footnote">
-      {{- if .AnyActionable}}Detected sources can be enabled from here — enabling runs the bundled exporter and imports the result. Setup stays reachable from the sidebar at any time.
-      {{- else}}No sources are ready to enable on this machine yet. Setup stays reachable from the sidebar at any time.{{end}}
-    </p>
-  </div>
-    </main>
 {{end}}
 
-{{/* enableButton pairs the render's EnableAvailable + Token with a card's source
-     so the shared button define can decide live-vs-disabled and carry the token
-     (html/template has no struct literals in-template — this adapter is provided
-     by the handler via a FuncMap). */}}
+{{/* setup_guide_modal is the permission-guidance dialog for a Needs-permission
+     card (SPEC-0013 REQ "Permission detection and guidance", §Accessibility
+     "Focus management for guidance modals"). It is a hidden <div role="dialog">
+     that setup.js reveals (adding .open), traps focus within, closes on Escape or
+     the backdrop/Close control, and restores focus to the trigger on close — all
+     CSP-safe (external setup.js, no inline handlers). Inside: the grant title, a
+     summary, numbered steps, the exact System Settings deep link (when the grant
+     has a pane), a keyboard-operable Recheck that POSTs /setup/recheck, and an
+     aria-live region announcing the recheck result. */}}
+{{define "setup_guide_modal"}}
+          <div id="setup-guide-{{.Source}}" class="setup-guide" role="dialog"
+               aria-modal="true" aria-labelledby="setup-guide-title-{{.Source}}"
+               data-setup-guide hidden>
+            <div class="setup-guide-backdrop" data-setup-guide-close aria-hidden="true"></div>
+            <div class="setup-guide-panel" role="document">
+              <div class="setup-guide-head">
+                <h2 id="setup-guide-title-{{.Source}}" class="setup-guide-title">{{.Guidance.Title}}</h2>
+                <button type="button" class="setup-guide-close" data-setup-guide-close
+                        aria-label="Close guidance">{{template "icon-x" $}}</button>
+              </div>
+              <p class="setup-guide-summary">{{.Guidance.Summary}}</p>
+              <ol class="setup-guide-steps">
+                {{- range .Guidance.Steps}}
+                <li>{{.}}</li>
+                {{- end}}
+              </ol>
+              <div class="setup-guide-actions">
+                {{- if .HasSettingsLink}}
+                {{/* The exact macOS System Settings deep link (x-apple.systempreferences:).
+                     A plain anchor so it is keyboard-operable and the OS handles the URL;
+                     rel guards it as an external, non-referrer link. */}}
+                <a class="setup-btn setup-guide-settings" href="{{.SettingsURL}}"
+                   rel="noopener noreferrer">{{template "icon-settings" $}} {{.Guidance.SettingsLabel}}</a>
+                {{- end}}
+                {{/* Recheck re-runs the OS-consent probe (same-origin + token gated)
+                     and swaps this card out of Needs-permission if the grant is now
+                     present. hx-target is the card <li>; the response is a fresh
+                     setup_card fragment. */}}
+                <button type="button" class="setup-btn setup-guide-recheck"
+                        hx-post="/setup/recheck"
+                        hx-vals='{"source": "{{.Source}}"}'
+                        hx-headers='{"X-Setup-Token": "{{.Token}}"}'
+                        hx-target="#setup-card-{{.Source}}"
+                        hx-swap="outerHTML"
+                        hx-disabled-elt="this">Recheck</button>
+              </div>
+              {{/* Recheck-result live region (SPEC-0013 §Accessibility "aria-live on
+                   the recheck result"): setup.js writes the outcome here after the
+                   swap so screen readers hear whether the state changed. */}}
+              <p class="setup-guide-result" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+{{end}}
+
+{{/* setup-enable-button takes the whole card (it carries EnableAvailable +
+     Token + Source): live Enable button when an Enabler is wired, a disabled
+     placeholder + explanatory note otherwise. */}}
 {{define "setup-enable-button"}}
-  {{- if .Available}}
+  {{- if .EnableAvailable}}
   <button type="button" class="setup-btn"
           hx-post="/setup/enable"
           hx-vals='{"source": "{{.Source}}"}'
@@ -111,8 +184,10 @@
      the job is Active it self-schedules the next poll of /setup/status/<source>
      (hx-trigger="every 1s") and swaps itself, so the aria-live region announces
      each phase; at a terminal phase it stops polling and shows the outcome. On a
-     successful Done it refreshes the sidebar so the new conversations appear.
-     All CSP-safe: htmx attributes only, no inline scripts/styles. */}}
+     successful Done it carries the out-of-band sidebar-list swap (.SidebarOOB) so
+     the newly-imported conversations appear immediately, and the response's
+     HX-Trigger nudges setup.js to refresh (#142). All CSP-safe: htmx attributes
+     only, no inline scripts/styles. */}}
 {{define "setup_progress"}}
   {{- if .Unavailable}}
   <p class="setup-progress-line setup-progress-unavailable">{{.Message}}</p>
@@ -138,5 +213,6 @@
     <p class="setup-progress-line">{{.Message}}</p>
     {{- end}}
   </div>
+  {{- if .Done}}{{.SidebarOOB}}{{end}}
   {{- end}}
 {{end}}

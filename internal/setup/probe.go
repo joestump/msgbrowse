@@ -119,6 +119,10 @@ const signalConfigRel = "config.json"
 //     installed / nothing to grant; also the non-macOS answer)
 //   - config.json present but no encryptedKey      → OK (an unencrypted/legacy
 //     key needs no keychain grant)
+//   - config.json present but UNPARSEABLE           → the config is corrupt and
+//     may well hide a sealed key; treating it as OK would suppress the guidance,
+//     so this falls through to the keychain check exactly as a sealed key does
+//     (#130 review: a corrupt config must not silently claim access)
 //   - config.json with an encryptedKey             → the key is sealed; whether
 //     the OS will release it is decided by KeychainAccessible (injected), which
 //     defaults to "cannot verify off macOS" → Needed on this Linux box, and is
@@ -145,14 +149,19 @@ func (d Detector) ProbeSignalKeychain() PermissionProbe {
 	}
 	defer f.Close()
 	var cfg signalConfig
-	if err := json.NewDecoder(f).Decode(&cfg); err != nil || cfg.EncryptedKey == "" {
-		// Unparseable or no encrypted key: no keychain grant is required.
+	err = json.NewDecoder(f).Decode(&cfg)
+	if err == nil && cfg.EncryptedKey == "" {
+		// Parsed cleanly with no encrypted key: an unencrypted/legacy config needs
+		// no keychain grant.
 		probe.State = PermissionOK
 		return probe
 	}
-	// The key is sealed. Whether the OS keychain will release it is the injected
-	// check; off macOS it cannot be verified, so the default reports Needed and
-	// the UI guides the user (rather than silently claiming access).
+	// Either the key is sealed (encryptedKey present) OR the config is unparseable
+	// and might hide a sealed key (#130): in both cases whether the OS keychain
+	// will release the key is the injected check. Off macOS it cannot be verified,
+	// so the default reports Needed and the UI guides the user (rather than
+	// silently claiming access). An unparseable config has no key value to hand the
+	// check — it still resolves to Needed by default, which is the safe answer.
 	if d.keychainAccessible()(cfg.EncryptedKey) {
 		probe.State = PermissionOK
 	} else {

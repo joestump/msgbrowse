@@ -8,11 +8,13 @@
   {{/* theme.js runs before paint to apply the saved theme (no FOUC); all are
        self-hosted so they load under script-src 'self'. sidebar.js powers the
        live "Filter conversations" box; copy.js powers the Settings page's copy
-       buttons via document-level delegation (both CSP-safe, deferred, no
-       inline handlers). */}}
+       buttons; setup.js powers the Setup permission-guidance modals (focus trap,
+       Escape, restore focus, recheck aria-live) — all via document-level
+       delegation (CSP-safe, deferred, no inline handlers). */}}
   <script src="/static/theme.js"></script>
   <script src="/static/sidebar.js" defer></script>
   <script src="/static/copy.js" defer></script>
+  <script src="/static/setup.js" defer></script>
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body class="bg-base-100 text-base-content">
@@ -100,6 +102,27 @@
 </div>
 </body>
 </html>{{end}}
+
+{{/* sidebar_lists_oob is the out-of-band sidebar refresh appended to a Setup
+     Done fragment (#142, SPEC-0013 REQ "the source appears in the transcript
+     sidebar"). It re-renders the PINNED + CONVERSATIONS lists with hx-swap-oob
+     so htmx swaps them into the live sidebar in place, making the freshly
+     imported conversations appear without a manual nav. It reuses the exact
+     conv_row partial the shell renders, so the swapped rows are identical. Only
+     the two <ul>s are OOB-swapped; the section-count spans update on the next
+     full load (the important payoff — the rows themselves — is immediate). */}}
+{{define "sidebar_lists_oob"}}
+<ul id="sidebar-pinned" class="flex flex-col gap-0.5 px-2 pb-1" hx-swap-oob="true">
+  {{- range .PinnedConversations}}
+  {{- template "conv_row" (convRowCtx . $.ActiveID)}}
+  {{- end}}
+</ul>
+<ul id="sidebar-conversations" class="flex flex-col gap-0.5 px-2 pb-3 overflow-y-auto flex-1" hx-swap-oob="true">
+  {{- range .UnpinnedConversations}}
+  {{- template "conv_row" (convRowCtx . $.ActiveID)}}
+  {{- end}}
+</ul>
+{{end}}
 
 {{/* conv_row renders a single sidebar conversation row (REQ-0006-003/004). It is
      shared verbatim by the PINNED and CONVERSATIONS sections so the two lists are
