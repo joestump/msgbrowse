@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
+)
 
 func TestResolveListenAddr(t *testing.T) {
 	const configured = "127.0.0.1:8787"
@@ -40,5 +44,39 @@ func TestResolveListenAddr(t *testing.T) {
 				t.Errorf("resolveListenAddr = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// TestStartDeviceSyncDrainsOnCancel is the regression guard for the serve-hang
+// fix: when the shared context is cancelled (as serve now does the moment the
+// web server's Run returns — including an early bind error), the device-sync
+// worker MUST drain promptly rather than block Wait() forever. SPEC-0011
+// "Concurrency Safety".
+func TestStartDeviceSyncDrainsOnCancel(t *testing.T) {
+	cfg := testDeviceCfg(t, "drain-test")
+	st, err := openStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	w, err := startDeviceSync(ctx, cfg, st)
+	if err != nil {
+		t.Fatalf("startDeviceSync: %v", err)
+	}
+	if w == nil {
+		t.Fatal("startDeviceSync returned nil with device sync enabled")
+	}
+
+	cancel() // stand in for serve's stop() after Run returns
+
+	done := make(chan error, 1)
+	go func() { done <- w.Wait() }()
+	select {
+	case <-done:
+		// drained — good
+	case <-time.After(5 * time.Second):
+		t.Fatal("device-sync worker did not drain within 5s of context cancel (serve would hang)")
 	}
 }

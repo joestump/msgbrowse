@@ -12,7 +12,11 @@
      button's copy→check icon swap. Every value is also selectable text, so
      nothing depends on the clipboard or the QR image alone. */}}
 {{define "settings_content"}}<title>{{.Title}}</title>
-    <main id="main-content" class="flex-1">
+    {{/* hx-history="false": the pairing QR/manual code carries a single-use,
+         time-limited pairing secret. Without this, a boosted navigation away
+         snapshots this page (secret included) into htmx's localStorage history
+         cache, where it would outlive the pairing window. */}}
+    <main id="main-content" class="flex-1" hx-history="false">
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
     <h1 class="screen-h1">Settings</h1>
     <p class="screen-sub">Connect an MCP client to this archive, or pair another device.</p>

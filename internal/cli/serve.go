@@ -73,6 +73,13 @@ func newServeCommand() *cobra.Command {
 			}
 			err = srv.Run(ctx, cfg.ListenAddr)
 
+			// The web UI has stopped (clean shutdown, or Run failed at bind
+			// before any signal arrived). Cancel the shared context so the
+			// device-sync worker drains too — otherwise Wait() blocks forever
+			// on a still-serving listener when Run returns an early bind error.
+			// stop() cancels the NotifyContext; the deferred stop() is a no-op.
+			stop()
+
 			// Wait for the sync listener's graceful drain (SPEC-0011
 			// "Concurrency Safety": no leaked workers on shutdown).
 			if devSync != nil {
