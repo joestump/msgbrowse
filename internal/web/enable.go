@@ -24,7 +24,9 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"html/template"
 	"net/http"
 
 	"github.com/joestump/msgbrowse/internal/onboard"
@@ -158,9 +160,25 @@ type progressData struct {
 	Token     string
 	// Unavailable marks the "no Enabler / no tools" affordance state.
 	Unavailable bool
+	// SidebarOOB is the pre-rendered out-of-band sidebar-list swap appended to a
+	// Done fragment so the newly-imported conversations appear immediately (#142).
+	// Empty for every non-Done render.
+	SidebarOOB template.HTML
 }
 
-// renderProgress renders the setup_progress fragment for a job snapshot.
+// setupImportedTrigger is the HX-Trigger event name emitted on a successful
+// Enable→import (SPEC-0013 REQ "One-click enable and import per source": "the
+// source appears in the transcript sidebar"). setup.js listens for it and
+// refreshes the sidebar so newly-imported conversations appear without a manual
+// nav — the payoff of the whole flow (#142 fold-in). It is a plain event name
+// (no request-derived data), safe in the HX-Trigger header.
+const setupImportedTrigger = "msgbrowse:imported"
+
+// renderProgress renders the setup_progress fragment for a job snapshot. On a
+// terminal Done phase it also (a) emits the HX-Trigger so the client refreshes
+// the sidebar, and (b) piggybacks an out-of-band swap of the sidebar
+// conversation list in the same response, so the newly-imported conversations
+// appear immediately even before/without the trigger-driven refetch (#142).
 func (s *Server) renderProgress(w http.ResponseWriter, r *http.Request, src string, prog onboard.Progress) {
 	tok, err := s.setupTokens.mint()
 	if err != nil {
@@ -182,7 +200,42 @@ func (s *Server) renderProgress(w http.ResponseWriter, r *http.Request, src stri
 	if data.Message == "" && !data.Active {
 		data.Message = "Ready to enable."
 	}
+
+	if data.Done {
+		// Payoff moment (#142): the import just landed, so tell the client to
+		// refresh the sidebar (HX-Trigger) AND swap the fresh conversation list in
+		// out-of-band, so the new conversations show up without a manual nav. A
+		// listing failure is not fatal to reporting Done — fall back to the trigger
+		// alone rather than turning a successful import into an error.
+		w.Header().Set("HX-Trigger", setupImportedTrigger)
+		if oob, err := s.sidebarOOB(r.Context()); err == nil {
+			data.SidebarOOB = oob
+		} else {
+			s.log.Warn("setup: could not render sidebar refresh after import", "error", err)
+		}
+	}
 	s.renderFragment(w, "setup_progress", data)
+}
+
+// sidebarOOB renders the current conversation list as the out-of-band sidebar
+// swap appended to the Done fragment (#142). It returns the pre-rendered,
+// already-escaped HTML for the #sidebar-conversations and #sidebar-pinned lists
+// carrying hx-swap-oob so htmx replaces the live sidebar in place. It runs the
+// same ListConversations the full-page shell uses, so the swapped rows are
+// pixel-identical to a fresh load.
+func (s *Server) sidebarOOB(ctx context.Context) (template.HTML, error) {
+	base, err := s.baseData(ctx, "", 0)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, "sidebar_lists_oob", base); err != nil {
+		return "", err
+	}
+	// The template output is server-composed from the trusted conv_row partial
+	// (message bodies are never in the sidebar), so it is safe to mark as HTML for
+	// interpolation into the fragment.
+	return template.HTML(buf.String()), nil //nolint:gosec // server-rendered sidebar markup, no user HTML
 }
 
 // renderProgressError renders a failed progress fragment for a start-time error

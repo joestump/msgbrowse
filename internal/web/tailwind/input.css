@@ -1754,8 +1754,12 @@ html {
     transform: rotate(360deg);
   }
 }
-/* Ghost variant of the Enable button, used for the in-progress Cancel control. */
+/* Ghost variant of the Enable button, used for the in-progress Cancel control
+   and the "How to grant access" guidance trigger. */
 .setup-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   background: transparent;
   color: var(--color-base-content);
   border-color: var(--color-neutral);
@@ -1763,6 +1767,124 @@ html {
 .setup-btn-ghost:hover:not(:disabled) {
   filter: none;
   background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+
+/* Permission-guidance modal (SPEC-0013 REQ "Permission detection and guidance",
+   §Accessibility "Focus management for guidance modals"). Hidden until setup.js
+   adds .open; the [hidden] attribute keeps it out of the a11y tree and tab order
+   while closed (no inline styles — CSP style-src 'self'). A fixed overlay centers
+   the panel; the backdrop dims the page and is a click-to-close target. */
+.setup-guide {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+.setup-guide[hidden] {
+  display: none;
+}
+.setup-guide-backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--color-base-300) 78%, black);
+  opacity: 0.7;
+}
+.setup-guide-panel {
+  position: relative;
+  width: min(30rem, 100%);
+  max-height: calc(100vh - 2.5rem);
+  overflow-y: auto;
+  padding: 1.15rem 1.25rem 1.25rem;
+  border: 1px solid var(--color-neutral);
+  border-radius: 0.9rem;
+  background: var(--color-base-200);
+  box-shadow: 0 18px 48px -12px color-mix(in oklab, black 55%, transparent);
+}
+.setup-guide-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.setup-guide-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-base-content);
+  margin: 0;
+}
+.setup-guide-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  cursor: pointer;
+}
+.setup-guide-close:hover {
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  color: var(--color-base-content);
+}
+.setup-guide-close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.setup-guide-summary {
+  margin-top: 0.5rem;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: color-mix(in oklab, var(--color-base-content) 68%, transparent);
+}
+.setup-guide-steps {
+  margin: 0.85rem 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  list-style: decimal;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-base-content);
+}
+.setup-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+  margin-top: 1.1rem;
+}
+.setup-guide-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  text-decoration: none;
+}
+.setup-guide-recheck {
+  background: transparent;
+  color: var(--color-base-content);
+  border-color: var(--color-neutral);
+}
+.setup-guide-recheck:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+/* Recheck-result live region: hidden when empty, so it does not reserve space
+   until setup.js writes an outcome into it. */
+.setup-guide-result {
+  margin: 0.7rem 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-warning);
+}
+.setup-guide-result:empty {
+  display: none;
 }
 
 /* Boosted navigation swaps #main-content and htmx scrolls its top into view;

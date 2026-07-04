@@ -302,6 +302,14 @@ func TestBuiltCSSCarriesSetupComponents(t *testing.T) {
 		".setup-badge-needs-permission",
 		".setup-badge-not-detected",
 		".setup-btn:focus-visible", // visible keyboard focus (WCAG 2.1 AA)
+		// Permission-guidance modal (#134): the drift guard must carry the new
+		// dialog classes so a stale app.css cannot ship the modal unstyled.
+		".setup-guide",
+		".setup-guide-panel",
+		".setup-guide-backdrop",
+		".setup-guide-steps",
+		".setup-guide-result",
+		".setup-guide-close:focus-visible", // keyboard focus on the close control
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("built app.css missing %q (rebuild: rm -rf .tools && make css)", want)

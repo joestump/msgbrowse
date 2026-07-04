@@ -121,6 +121,14 @@
   // since the input's typed value is not serialized into the snapshot).
   document.addEventListener("htmx:historyRestore", init);
 
+  // A successful Setup Enable→import emits HX-Trigger: msgbrowse:imported and
+  // out-of-band-swaps fresh conversation rows into the sidebar lists (#142). The
+  // OOB swap replaces the row DOM, staling the captured filter row list and its
+  // element-bound listener — re-init so the newly-imported conversations are
+  // filterable and the active-row highlight is correct, making the payoff appear
+  // without a manual navigation.
+  document.body.addEventListener("msgbrowse:imported", init);
+
   // A failed boosted request swaps nothing (htmx's default for 4xx/5xx), which
   // would turn an error page into a dead click — fall back to full navigation
   // so the error stays visible.

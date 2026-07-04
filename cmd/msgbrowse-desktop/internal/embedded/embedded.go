@@ -134,6 +134,14 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger) (*Server, 
 		return nil, err
 	}
 
+	// Inject the desktop source detector with the GENUINE macOS Keychain check
+	// (SPEC-0013 REQ "Permission detection and guidance", #134): the pure-Go core
+	// defaults a sealed Signal key to Needs-permission ("cannot verify off
+	// macOS"); the shipped .app must probe the real Keychain so a granted "Always
+	// Allow" flips the Signal card to Ready. The check shells out to macOS
+	// `security` (no cgo) and is inert off macOS, so the core stays Linux-testable.
+	srv.SetDetector(newDesktopDetector())
+
 	// Wire the Setup Enable flow (SPEC-0013) with the BUNDLED exporter toolchain,
 	// so a click on Enable resolves the exporter from Contents/Resources and never
 	// $PATH (making internal/toolchain.ResolveExporters live at the export site).
