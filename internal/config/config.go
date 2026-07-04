@@ -39,6 +39,15 @@ type Config struct {
 	// database, vector index, and caches.
 	DataDir string `mapstructure:"data_dir"`
 
+	// SignalExportBin / IMessageExporterBin / WhatsAppExporterBin are optional
+	// explicit paths to the upstream exporters, mirroring the `msgbrowse export`
+	// --*-bin flags. Empty (the default) means "look the default console name up
+	// on $PATH". They back the Setup Enable flow's PATH resolver (SPEC-0013) and
+	// `export`'s bin overrides from one config source.
+	SignalExportBin     string `mapstructure:"signal_export_bin"`
+	IMessageExporterBin string `mapstructure:"imessage_exporter_bin"`
+	WhatsAppExporterBin string `mapstructure:"whatsapp_exporter_bin"`
+
 	// ListenAddr is the web UI bind address. It defaults to loopback; binding to
 	// a non-loopback interface is an explicit, deliberate choice.
 	ListenAddr string `mapstructure:"listen_addr"`

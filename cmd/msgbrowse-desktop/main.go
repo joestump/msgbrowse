@@ -78,14 +78,17 @@ func run() error {
 		return err
 	}
 
-	// Resolve + integrity-check the bundled exporter toolchain once at startup
-	// (SPEC-0013 REQ "Bundled tool integrity and version check": versions
-	// recorded for the About view; a broken bundle is a clear state, not a
-	// crash). In the non-bundled dev/Linux build this is a no-op (Bundled=false,
-	// no error). A corrupt .app is logged and startup CONTINUES — Setup surfaces
-	// the per-source error when the user tries to enable that source, so a
-	// single broken tool never strands the whole window.
-	logBundledToolchain(ctx, slog.Default())
+	// Resolve + integrity-check the bundled exporter toolchain (SPEC-0013 REQ
+	// "Bundled tool integrity and version check": versions recorded for the About
+	// view; a broken bundle is a clear state, not a crash). This runs OFF the
+	// launch path in its own goroutine so the window opens immediately: the probe
+	// spawns up to four synchronous subprocess version checks (incl. a 1–2s cold
+	// wtsexporter --help import) that would otherwise delay wails.Run below. Its
+	// result only feeds logs and the About view — nothing on the launch path
+	// waits on it, and a corrupt .app surfaces per-source when the user clicks
+	// Enable, so deferring it never strands the window. In the non-bundled
+	// dev/Linux build it is a quick no-op (Bundled=false, no error).
+	go logBundledToolchain(ctx, slog.Default())
 
 	sh := newShell(es.URL)
 
