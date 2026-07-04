@@ -215,31 +215,62 @@ html {
  * slate-light variant restyles automatically. No web fonts; CSP-safe.
  * ========================================================================= */
 
-/* --- Navbar (54px) ------------------------------------------------------- */
-.app-navbar {
-  min-height: 54px;
-  height: 54px;
+/* --- Unified toolbar (~52px) --------------------------------------------- */
+/* #152 Option A: a native macOS Preview/Finder "unified toolbar" — one frosted
+   translucent row replacing the old navbar. LEFT: drawer toggle + contextual
+   title; RIGHT: a search pill, the theme toggle, a settings gear. The frosted
+   material is a semi-transparent base-300 surface + backdrop-blur with a subtle
+   bottom hairline; both slate and slate-light stay readable because the surface
+   and hairline ride the theme variables. Web-layer only, so it renders the same
+   in the browser and the desktop shell. */
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 52px;
+  height: 52px;
+  /* Frosted unified-toolbar material: a translucent slice of the sidebar/navbar
+     surface so content faintly shows through, blurred behind. */
+  background: color-mix(in oklab, var(--color-base-300) 80%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  /* Subtle bottom hairline (the toolbar's only edge; no shadow — borders-not-
+     shadows, depth 0). */
+  border-bottom: 1px solid color-mix(in oklab, var(--color-neutral) 85%, transparent);
 }
-.navbar-wordmark {
-  font-size: 16px;
+/* Contextual title: "msgbrowse" on home / global surfaces, the active
+   conversation name on a transcript. Links home; truncates rather than pushing
+   the right-side controls off-screen. */
+.toolbar-title {
+  min-width: 0;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 0.25rem;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--color-base-content);
+  @media (prefers-reduced-motion: no-preference) {
+    transition: color 0.12s ease;
+  }
 }
-/* Right-aligned global counts: dim, mono, tabular. */
-.navbar-counts {
-  font-size: 12px;
-  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+.toolbar-title:hover {
+  color: var(--color-primary);
 }
-/* ~34px circular theme toggle, outlined in the slate border color. */
-.navbar-toggle {
+/* ~34px square icon button, shared by the drawer toggle, theme toggle, and
+   settings gear. Ghost by default; the slate hairline + faint accent wash on
+   hover. */
+.toolbar-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 34px;
   height: 34px;
-  border-radius: 9999px;
-  border: 1px solid var(--color-neutral);
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
   color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
   background: transparent;
   cursor: pointer;
@@ -247,10 +278,49 @@ html {
     transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
 }
-.navbar-toggle:hover {
+.toolbar-icon-btn:hover {
   color: var(--color-base-content);
   background: color-mix(in oklab, var(--color-primary) 8%, transparent);
-  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--color-neutral));
+  border-color: color-mix(in oklab, var(--color-primary) 40%, var(--color-neutral));
+}
+.toolbar-icon-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Toolbar search pill: a compact 34px field with a leading glyph, sitting in the
+   toolbar's right cluster. Fills with the app background so it reads as an inset
+   field against the frosted surface. */
+.toolbar-search {
+  align-items: center;
+  gap: 0.4rem;
+  height: 34px;
+  padding: 0 0.6rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-neutral);
+  background: color-mix(in oklab, var(--color-base-100) 70%, transparent);
+  color: var(--color-base-content);
+}
+.toolbar-search:focus-within {
+  border-color: color-mix(in oklab, var(--color-primary) 55%, var(--color-neutral));
+  background: var(--color-base-100);
+}
+.toolbar-search-glyph {
+  flex-shrink: 0;
+  display: inline-flex;
+  font-size: 15px;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.toolbar-search-input {
+  width: 12rem;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 13px;
+  color: var(--color-base-content);
+}
+.toolbar-search-input::placeholder {
+  color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
 }
 
 /* --- Sidebar (320px) ----------------------------------------------------- */

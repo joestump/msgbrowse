@@ -79,7 +79,7 @@ func detectorFor(home string, imessageReadable bool) setup.Detector {
 // TestSetupFullPageRendersCards asserts the full /setup document renders one card
 // per source with the expected states for the "Signal + iMessage, no WhatsApp"
 // machine: Signal Needs-permission (sealed key), iMessage Needs-permission (no
-// FDA), WhatsApp Not-detected. The shell (sidebar/navbar) is present on the full
+// FDA), WhatsApp Not-detected. The shell (sidebar/toolbar) is present on the full
 // document.
 func TestSetupFullPageRendersCards(t *testing.T) {
 	srv := newEmptyStoreServer(t)
@@ -92,7 +92,7 @@ func TestSetupFullPageRendersCards(t *testing.T) {
 	body := rec.Body.String()
 
 	// Full document carries the shell.
-	for _, want := range []string{"<!doctype html>", "app-sidebar", "app-navbar", `id="main-content"`} {
+	for _, want := range []string{"<!doctype html>", "app-sidebar", "app-toolbar", `id="main-content"`} {
 		if !contains(body, want) {
 			t.Errorf("full /setup missing %q", want)
 		}
@@ -165,7 +165,7 @@ func TestSetupNeedsPermissionBadgeRenders(t *testing.T) {
 
 // TestSetupPartialHasNoShell is the SPEC-0008 *_content contract for /setup: a
 // boosted (HX-Request) response is <title> + #main-content only — the cards but
-// no sidebar/navbar/document shell.
+// no sidebar/toolbar/document shell.
 func TestSetupPartialHasNoShell(t *testing.T) {
 	srv := newEmptyStoreServer(t)
 	srv.SetDetector(detectorFor(signalPlusIMessageHome(t), false))
@@ -182,7 +182,7 @@ func TestSetupPartialHasNoShell(t *testing.T) {
 	if !contains(body, "setup-card") {
 		t.Error("/setup partial missing source cards")
 	}
-	for _, forbidden := range []string{"<!doctype", "<html", "app-sidebar", "app-navbar", "drawer-side"} {
+	for _, forbidden := range []string{"<!doctype", "<html", "app-sidebar", "app-toolbar", "drawer-side"} {
 		if contains(strings.ToLower(body), strings.ToLower(forbidden)) {
 			t.Errorf("/setup partial leaked shell marker %q", forbidden)
 		}

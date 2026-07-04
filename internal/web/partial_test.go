@@ -99,8 +99,8 @@ func TestPartialVsFullPerRoute(t *testing.T) {
 			if n := strings.Count(pbody, `id="main-content"`); n != 1 {
 				t.Errorf("partial has %d main-content ids, want exactly 1", n)
 			}
-			// No shell: no document skeleton, no navbar, no sidebar markup.
-			for _, forbidden := range []string{"<!doctype", "<html", "app-sidebar", "app-navbar", "navbar-wordmark", "drawer-side", "sidebar-filter"} {
+			// No shell: no document skeleton, no toolbar, no sidebar markup.
+			for _, forbidden := range []string{"<!doctype", "<html", "app-sidebar", "app-toolbar", "toolbar-title", "drawer-side", "sidebar-filter"} {
 				if contains(strings.ToLower(pbody), strings.ToLower(forbidden)) {
 					t.Errorf("partial leaked shell marker %q", forbidden)
 				}
@@ -111,7 +111,7 @@ func TestPartialVsFullPerRoute(t *testing.T) {
 				t.Fatalf("full status = %d", full.Code)
 			}
 			fbody := full.Body.String()
-			for _, want := range []string{"<!doctype html>", "app-sidebar", "app-navbar", `id="main-content"`, "<title>"} {
+			for _, want := range []string{"<!doctype html>", "app-sidebar", "app-toolbar", `id="main-content"`, "<title>"} {
 				if !contains(fbody, want) {
 					t.Errorf("full document missing %q", want)
 				}
