@@ -174,6 +174,15 @@ func Name(t Tool) string {
 // at the venv's python; because the bundled venv is relocatable, invoking the
 // script by absolute path runs it under the bundled interpreter with no PATH
 // lookup. imessage-exporter and python itself are native and not in this set.
+//
+// NOTE: "relocatable" is only true once the corrected PYTHONHOME/PYTHONPATH env
+// is applied (see PythonEnv / EnvForTool). python-build-standalone's base python
+// bakes a compile-time `/install` prefix into pyvenv.cfg's `home=` and its own
+// sys._base_executable, so after the .app moves out of the CI build path it
+// looks for its stdlib at `/install/lib/python3.12` and dies with
+// "ModuleNotFoundError: No module named 'encodings'" (issue #147). Setting
+// PYTHONHOME to the bundled python home at RUNTIME overrides that baked prefix so
+// the interpreter finds its stdlib wherever the .app now lives.
 var pythonScripts = map[Tool]bool{Signal: true, WhatsApp: true}
 
 // SignalPath returns the bundled sigexport path, or ErrNotBundled-style errors
@@ -186,16 +195,24 @@ func (r *Resolver) WhatsAppPath() (string, error) { return r.Path(WhatsApp) }
 // Runner runs a tool binary with args and returns combined stdout+stderr. It is
 // the seam that makes VerifyTool testable without the real macOS binaries: tests
 // inject a fake that scripts version output or an error; production passes nil
-// (VerifyTool/Verify default to execRunner). It carries a context so a wedged
-// tool cannot hang startup.
+// (VerifyTool/Verify default to the real env-aware process runner). It carries a
+// context so a wedged tool cannot hang startup.
 type Runner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// execRunner runs name+args and captures their combined output. The version
-// probe is a trusted, argument-fixed invocation (no user input on the command
-// line): name is a bundled absolute path and args are constants from specs.
-func execRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
+// execRunnerWithEnv runs name+args with the given process environment and
+// captures combined output. env nil means "inherit the process environment"
+// (exec.Cmd.Env semantics) — used for native tools; for Python tools the caller
+// passes the relocation-corrected PYTHONHOME/PYTHONPATH env so the version probe
+// runs under the SAME environment the real export spawn uses (issue #147: the
+// integrity check and the actual run must agree, or the probe passes in-place
+// but the export fails after relocation — the exact bug that shipped). The
+// version probe is a trusted, argument-fixed invocation (no user input on the
+// command line): name is a bundled absolute path and args are constants from
+// specs.
+func execRunnerWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 	var buf bytes.Buffer
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = env // nil => inherit; non-nil => the corrected Python env
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	err := cmd.Run()
@@ -237,10 +254,20 @@ type ToolInfo struct {
 // clear per-source error rather than silently falling back to PATH. On success
 // it returns the tool's path and reported version.
 //
-// The nil runner defaults to execRunner; tests pass a fake to stay offline.
+// The nil runner defaults to the real env-aware process runner, which applies
+// the relocation-corrected PYTHONHOME/PYTHONPATH env for Python tools (Python,
+// sigexport, wtsexporter) and inherits the environment unchanged for the native
+// imessage-exporter (issue #147). Tests pass a fake to stay offline; a fake
+// ignores env, which is fine — the env logic itself is unit-tested via
+// EnvForTool/PythonEnv against a faked bundle layout.
 func (r *Resolver) VerifyTool(ctx context.Context, t Tool, run Runner) (ToolInfo, error) {
 	if run == nil {
-		run = execRunner
+		// Bind the corrected env for THIS tool into the default runner, so the
+		// probe runs under the same environment the export spawn will use.
+		env := r.EnvForTool(t)
+		run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return execRunnerWithEnv(ctx, env, name, args...)
+		}
 	}
 	s, ok := specs[t]
 	if !ok {
@@ -316,11 +343,130 @@ func firstLine(b []byte) string {
 }
 
 // IsPythonScript reports whether a tool is a venv console script (Signal,
-// WhatsApp) rather than a native binary (Python, IMessage). The desktop export
-// path uses this only for documentation/diagnostics: because the bundled venv
-// is relocatable, every tool — script or native — is invoked by its absolute
-// bundled path with no PATH lookup, so no interpreter prefix is needed.
+// WhatsApp) rather than a native binary (Python, IMessage). Only these tools
+// need the corrected PYTHONHOME/PYTHONPATH env when spawned or version-probed —
+// the native Python interpreter itself is probed with PYTHONHOME too (its base
+// prefix is what's broken), while imessage-exporter is a Rust binary that must
+// get NO Python env (issue #147: iMessage is decoupled from the Python
+// toolchain).
 func IsPythonScript(t Tool) bool { return pythonScripts[t] }
+
+// needsPythonEnv reports whether a tool runs under the bundled Python and so
+// needs the corrected PYTHONHOME/PYTHONPATH env after relocation. That is the
+// two venv console scripts AND the bundled interpreter itself (Python) — its
+// baked `/install` base prefix is exactly what breaks, so its own version probe
+// must run with PYTHONHOME set or it fails with the encodings error. The Rust
+// imessage-exporter is deliberately excluded: setting a Python env for it would
+// be meaningless at best and is explicitly NOT done (iMessage is decoupled from
+// Python — issue #147).
+func needsPythonEnv(t Tool) bool { return t == Python || pythonScripts[t] }
+
+// pythonHomeDir returns the bundled python home — Contents/Resources/tools/python
+// — the dir python-build-standalone extracts, containing bin/python3 and
+// lib/python3.X/. This is what PYTHONHOME must point at so the relocated
+// interpreter finds its stdlib (fixing sys.base_prefix='/install').
+func (r *Resolver) pythonHomeDir() string {
+	return filepath.Join(r.toolsDir, "python")
+}
+
+// sitePackagesDir returns the venv's site-packages directory
+// (Contents/Resources/tools/venv/lib/python3.X/site-packages) by globbing for
+// the single python3.* dir the venv creates. It is what PYTHONPATH must include
+// so the bundled interpreter — pointed at the base python's stdlib via
+// PYTHONHOME — still imports signal-export / whatsapp-chat-exporter and their
+// deps from the venv. Returns "" if the dir cannot be resolved (a broken bundle),
+// which the caller treats as "no venv path to add".
+func (r *Resolver) sitePackagesDir() string {
+	// venv/lib/python3.*/site-packages — exactly one python3.* dir exists.
+	matches, err := filepath.Glob(filepath.Join(r.toolsDir, "venv", "lib", "python3.*", "site-packages"))
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	return matches[0]
+}
+
+// PythonEnv returns the process environment for running a bundled Python-based
+// exporter after the .app has been relocated. It is the RELOCATION FIX for issue
+// #147: it starts from the current process environment and overlays
+//
+//	PYTHONHOME = Contents/Resources/tools/python           (the bundled stdlib)
+//	PYTHONPATH = Contents/Resources/tools/venv/.../site-packages
+//
+// both derived from the runtime-resolved bundle location (r.toolsDir, itself
+// computed from os.Executable()), so NO build-time path is trusted. PYTHONHOME
+// overrides python-build-standalone's baked `/install` base prefix; PYTHONPATH
+// re-adds the venv's packages that the base-prefix stdlib does not include.
+// Callers apply this env ONLY for Python tools (needsPythonEnv) — the Rust
+// imessage-exporter gets the untouched environment.
+func (r *Resolver) PythonEnv() []string {
+	env := os.Environ()
+	overlay := map[string]string{
+		"PYTHONHOME": r.pythonHomeDir(),
+	}
+	if sp := r.sitePackagesDir(); sp != "" {
+		overlay["PYTHONPATH"] = sp
+	}
+	return mergeEnv(env, overlay)
+}
+
+// mergeEnv overlays the given KEY=VALUE assignments onto a base environment,
+// replacing any existing assignment for a key (case-sensitive, KEY= prefix
+// match) and appending keys not already present. It never appends a duplicate
+// for a key, so PYTHONHOME/PYTHONPATH set here win over any inherited value.
+func mergeEnv(base []string, overlay map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overlay))
+	seen := make(map[string]bool, len(overlay))
+	for _, kv := range base {
+		key := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			key = kv[:i]
+		}
+		if v, ok := overlay[key]; ok {
+			out = append(out, key+"="+v)
+			seen[key] = true
+			continue
+		}
+		out = append(out, kv)
+	}
+	for k, v := range overlay {
+		if !seen[k] {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
+}
+
+// EnvForTool returns the environment a given tool's subprocess must run with, or
+// nil to inherit the process environment unchanged. It is the single decision
+// point the export-spawn path and the version-probe path share so the integrity
+// check and the real run agree (issue #147): a Python tool (needsPythonEnv) gets
+// the relocation-corrected PythonEnv; the native imessage-exporter (and any
+// non-Python tool) gets nil (inherit). Returning nil rather than os.Environ()
+// lets callers pass it straight to exec.Cmd.Env, where nil means "inherit".
+func (r *Resolver) EnvForTool(t Tool) []string {
+	if !needsPythonEnv(t) {
+		return nil
+	}
+	return r.PythonEnv()
+}
+
+// EnvForToolPath is the by-path variant EnvForTool the export-spawn seam uses: it
+// maps a resolved absolute tool path back to its Tool by matching the bundle's
+// known relative paths, then delegates to EnvForTool. A path that is not one of
+// this bundle's tools (or an empty/non-bundled path) returns nil (inherit), so a
+// $PATH-resolved BYO exporter in the non-bundled build is never handed a bundled
+// Python env. This is the seam onboard uses without importing the Tool enum.
+func (r *Resolver) EnvForToolPath(toolPath string) []string {
+	if toolPath == "" {
+		return nil
+	}
+	for t, s := range specs {
+		if filepath.Join(r.toolsDir, s.relPath) == toolPath {
+			return r.EnvForTool(t)
+		}
+	}
+	return nil
+}
 
 // --- desktop export-path wiring ---------------------------------------------
 
@@ -390,4 +536,72 @@ func ResolveExporters(ctx context.Context, execPath string, run Runner) (Exporte
 		return ExporterPaths{}, err
 	}
 	return ExporterPaths{Bundled: true, Signal: sig, IMessage: im, WhatsApp: wa}, nil
+}
+
+// sourceTools maps a source id (internal/source constants, kept as literals here
+// to avoid importing internal/source into this cmd-scoped package) to the ONE
+// bundled tool that source depends on. This is the decoupling contract for issue
+// #147: iMessage depends ONLY on imessage-exporter (Rust), so a Python/sigexport
+// failure can never block an iMessage enable, and vice-versa. Each source
+// resolves and integrity-checks its own tool and nothing else.
+var sourceTools = map[string]Tool{
+	"signal":   Signal,
+	"imessage": IMessage,
+	"whatsapp": WhatsApp,
+}
+
+// ResolvedExporter is a single source's resolved exporter: the absolute tool
+// path plus the process environment its subprocess must run with. Env is nil for
+// a native tool (imessage-exporter) — inherit the process environment — and the
+// relocation-corrected PYTHONHOME/PYTHONPATH set for a Python tool (issue #147).
+// Bundled distinguishes a real .app resolution (Path set) from the non-bundled
+// build (Bundled=false, empty Path → caller falls back to $PATH).
+type ResolvedExporter struct {
+	Bundled bool
+	Path    string   // absolute bundled tool path, or "" when not bundled
+	Env     []string // subprocess env (nil = inherit); the corrected Python env for Python tools
+}
+
+// ResolveExporter resolves ONE source's exporter, verifying ONLY that source's
+// own tool (issue #147 decoupling: no cross-source coupling — an iMessage enable
+// never runs, nor depends on, the sigexport/Python probe). Behavior:
+//
+//   - macOS .app (Locate succeeds): integrity-check just this source's tool
+//     (present, executable, version probes clean UNDER ITS ENV) and return its
+//     bundled absolute path plus the env its subprocess must use. A broken tool
+//     for this source is the typed *ToolError; a broken tool for a DIFFERENT
+//     source is irrelevant and never consulted.
+//   - Not a .app (ErrNotBundled): return ResolvedExporter{Bundled:false} so the
+//     caller falls back to $PATH exactly as the BYO CLI does.
+//
+// execPath is injected (os.Executable() in production) so this is unit-testable
+// on Linux with a faked bundle. run is the version-probe seam: nil in production
+// uses the real env-aware process runner (which applies the corrected env).
+func ResolveExporter(ctx context.Context, execPath, src string, run Runner) (ResolvedExporter, error) {
+	t, ok := sourceTools[src]
+	if !ok {
+		return ResolvedExporter{}, fmt.Errorf("resolve exporter: unknown source %q", src)
+	}
+	r, err := Locate(execPath)
+	if err != nil {
+		if errors.Is(err, ErrNotBundled) {
+			// Non-bundled build: the ONLY branch that permits a later $PATH lookup.
+			return ResolvedExporter{Bundled: false}, nil
+		}
+		return ResolvedExporter{}, err
+	}
+
+	// Verify ONLY this source's tool — its integrity is independent of every
+	// other source's tool (the decoupling that keeps iMessage alive when the
+	// Python venv is broken). VerifyTool applies the tool's corrected env, so a
+	// Python tool is probed under PYTHONHOME/PYTHONPATH and the native
+	// imessage-exporter under the inherited environment.
+	if _, err := r.VerifyTool(ctx, t, run); err != nil {
+		return ResolvedExporter{}, err
+	}
+	path, err := r.Path(t)
+	if err != nil {
+		return ResolvedExporter{}, err
+	}
+	return ResolvedExporter{Bundled: true, Path: path, Env: r.EnvForTool(t)}, nil
 }

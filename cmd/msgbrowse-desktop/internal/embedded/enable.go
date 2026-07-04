@@ -1,18 +1,27 @@
 // Wiring the Setup Enable flow (SPEC-0013) into the desktop embedded server
 // with the BUNDLED exporter toolchain. This is where the .app resolves
 // exporters from Contents/Resources and NEVER from $PATH: the ToolResolver here
-// calls internal/toolchain.ResolveExporters (the #139 resolver) at a LIVE export
-// site, closing the anti-$PATH-fallback guarantee that was latent until an
-// actual Enable resolved through the bundle.
+// calls internal/toolchain.ResolveExporter (per-source) at a LIVE export site,
+// closing the anti-$PATH-fallback guarantee that was latent until an actual
+// Enable resolved through the bundle.
 //
-// In the non-bundled Linux desktop build (ResolveExporters returns
-// Bundled=false with empty paths), the resolver falls back to $PATH exactly as
-// `msgbrowse serve` does — a dev run still works with BYO exporters — while the
-// real signed .app always resolves the verified bundled absolute paths.
+// Per-source resolution is deliberate (issue #147): each source integrity-checks
+// ONLY its own exporter, so a broken bundled Python / sigexport never blocks an
+// iMessage enable (iMessage depends solely on the native imessage-exporter). The
+// resolver also implements onboard.EnvResolver, handing the export-spawn path the
+// relocation-corrected PYTHONHOME/PYTHONPATH env for the bundled Python exporters
+// (and nil — inherit — for the Rust imessage-exporter), so a bundled Python tool
+// runs after the .app is moved to /Applications.
+//
+// In the non-bundled Linux desktop build (ResolveExporter returns Bundled=false
+// with empty paths), the resolver falls back to $PATH exactly as `msgbrowse
+// serve` does — a dev run still works with BYO exporters — while the real signed
+// .app always resolves the verified bundled absolute paths.
 //
 // Governing: ADR-0020 (bundled exporter toolchain — the desktop app resolves
 // bundled paths directly and never reads $PATH), SPEC-0013 REQ "Bundled
-// toolchain resolution", REQ "One-click enable and import per source".
+// toolchain resolution", REQ "One-click enable and import per source", issue #147
+// (relocatable bundled Python + iMessage decoupling).
 package embedded
 
 import (
@@ -45,44 +54,67 @@ func wireEnable(cfg *config.Config, st *store.Store, srv *web.Server, log *slog.
 }
 
 // bundledResolver resolves each source's exporter through the bundled toolchain,
-// making internal/toolchain.ResolveExporters live at the export path. In a macOS
-// .app it returns the verified bundled absolute path per source; in the
+// making internal/toolchain.ResolveExporter live at the export path. In a macOS
+// .app it returns the verified bundled absolute path FOR THAT SOURCE ONLY; in the
 // non-bundled build it returns the empty override so the resolver falls back to
 // $PATH (the same BYO behavior as serve). A corrupt bundle surfaces the toolchain
 // error, which onboard maps to a per-source Enable failure.
+//
+// It resolves ONLY the requested source's own tool (issue #147): an iMessage
+// enable integrity-checks only imessage-exporter (Rust), so a broken bundled
+// Python / sigexport can never block iMessage. It also implements
+// onboard.EnvResolver so the export-spawn path runs a bundled Python exporter
+// under the relocation-corrected PYTHONHOME/PYTHONPATH env — the same env the
+// version probe already ran under, so the integrity check and the real run agree.
 type bundledResolver struct{}
 
-// ResolveTool implements onboard.ToolResolver. It resolves the whole exporter
-// set once (ResolveExporters verifies bundle integrity as a unit) and returns
-// the requested source's path.
+// ResolveTool implements onboard.ToolResolver. It resolves and integrity-checks
+// JUST this source's exporter (toolchain.ResolveExporter), decoupling each
+// source from the others (issue #147).
 func (bundledResolver) ResolveTool(ctx context.Context, src string) (string, error) {
+	if !source.IsKnown(src) {
+		return "", fmt.Errorf("%w: %q", onboard.ErrUnknownSource, src)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("resolve executable for bundled toolchain: %w", err)
 	}
-	// nil runner => real process version probe (production).
-	paths, err := toolchain.ResolveExporters(ctx, exe, nil)
+	// nil runner => real env-aware process version probe (production).
+	res, err := toolchain.ResolveExporter(ctx, exe, src, nil)
 	if err != nil {
-		return "", err // corrupt bundle: surfaced per-source by onboard
+		return "", err // corrupt bundle for THIS source: surfaced per-source by onboard
 	}
-
-	var path string
-	switch src {
-	case source.Signal:
-		path = paths.Signal
-	case source.IMessage:
-		path = paths.IMessage
-	case source.WhatsApp:
-		path = paths.WhatsApp
-	default:
-		return "", fmt.Errorf("%w: %q", onboard.ErrUnknownSource, src)
-	}
-
-	if path == "" {
-		// Non-bundled build (Bundled=false, empty paths): fall back to $PATH
-		// exactly as the bring-your-own CLI does, so a dev/Linux desktop run still
-		// enables sources with tools on PATH.
+	if !res.Bundled || res.Path == "" {
+		// Non-bundled build: fall back to $PATH exactly as the bring-your-own CLI
+		// does, so a dev/Linux desktop run still enables sources with tools on PATH.
 		return onboardsvc.PathToolResolver{}.ResolveTool(ctx, src)
 	}
-	return path, nil
+	return res.Path, nil
+}
+
+// EnvForTool implements onboard.EnvResolver: it returns the subprocess
+// environment for the resolved tool. In a macOS .app this is the corrected
+// PYTHONHOME/PYTHONPATH env for a bundled Python exporter (Signal, WhatsApp) and
+// nil for the native imessage-exporter (issue #147); in the non-bundled build it
+// is nil so the $PATH-resolved BYO tool inherits the environment. toolPath is
+// what ResolveTool returned, used to confirm the resolution is still the bundled
+// path before applying a bundled env.
+func (bundledResolver) EnvForTool(ctx context.Context, src, toolPath string) ([]string, error) {
+	if !source.IsKnown(src) {
+		return nil, fmt.Errorf("%w: %q", onboard.ErrUnknownSource, src)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve executable for bundled toolchain: %w", err)
+	}
+	res, err := toolchain.ResolveExporter(ctx, exe, src, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Non-bundled, or the resolved path is a $PATH fallback (not the bundled
+	// path): inherit the environment — never hand a $PATH tool a bundled env.
+	if !res.Bundled || res.Path == "" || res.Path != toolPath {
+		return nil, nil
+	}
+	return res.Env, nil
 }

@@ -140,18 +140,35 @@ func (f ToolResolverFunc) ResolveTool(ctx context.Context, src string) (string, 
 	return f(ctx, src)
 }
 
-// ExecRunner runs an exporter subprocess with an explicit argv and blocks until
-// it exits. It is the seam that makes the whole pipeline testable without the
-// real macOS exporters: tests inject a fake that writes a fixture archive into
-// the staging dir and returns nil (or a scripted error). Production wires it to
-// a real exec.CommandContext runner (in the CLI/desktop layer, which owns the
-// os/exec dependency).
+// ExecRunner runs an exporter subprocess with an explicit argv and process
+// environment, and blocks until it exits. It is the seam that makes the whole
+// pipeline testable without the real macOS exporters: tests inject a fake that
+// writes a fixture archive into the staging dir and returns nil (or a scripted
+// error). Production wires it to a real exec.CommandContext runner (in the
+// CLI/desktop layer, which owns the os/exec dependency).
 //
 // name is the resolved absolute tool path and args are app-owned constants plus
 // the app-computed staging path — never client input (SPEC-0013 §Security
-// "Subprocess argument safety"). The context MUST be honored so a Cancel kills
+// "Subprocess argument safety"). env is the subprocess environment: nil means
+// "inherit the parent process environment" (exec.Cmd.Env semantics), which is
+// the case for a native exporter; a bundled Python exporter is handed the
+// relocation-corrected PYTHONHOME/PYTHONPATH env so it can find its stdlib after
+// the .app is moved (issue #147). The context MUST be honored so a Cancel kills
 // the subprocess.
-type ExecRunner func(ctx context.Context, name string, args ...string) error
+type ExecRunner func(ctx context.Context, name string, env []string, args ...string) error
+
+// EnvResolver is an OPTIONAL capability a ToolResolver may also implement to
+// supply the process environment a source's exporter subprocess must run with.
+// The desktop's bundled resolver implements it to hand back the corrected
+// PYTHONHOME/PYTHONPATH env for the Python exporters (Signal, WhatsApp) and nil
+// (inherit) for the native imessage-exporter (issue #147). A resolver that does
+// not implement it (e.g. the $PATH/BYO resolver `msgbrowse serve` uses) causes
+// the runner to inherit the environment — the correct behavior for tools on
+// $PATH. toolPath is the path ResolveTool just returned, so the resolver can map
+// it back to the specific tool without re-resolving.
+type EnvResolver interface {
+	EnvForTool(ctx context.Context, src, toolPath string) ([]string, error)
+}
 
 // Importer imports an adopted managed archive root for a source into the store
 // and returns the result. It is injected (rather than importing internal/ingest

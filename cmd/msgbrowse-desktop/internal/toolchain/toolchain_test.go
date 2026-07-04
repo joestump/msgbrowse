@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -426,5 +427,197 @@ func TestNameAndIsPythonScript(t *testing.T) {
 	}
 	if IsPythonScript(IMessage) || IsPythonScript(Python) {
 		t.Error("IMessage and Python are native, not python scripts")
+	}
+}
+
+// --- issue #147: relocation env + per-source decoupling ---------------------
+
+// fakeBundleAppWithVenv extends fakeBundleApp with a venv site-packages dir so
+// the PYTHONPATH glob (venv/lib/python3.*/site-packages) resolves, mirroring
+// what desktop.yml's `python -m venv` creates in the .app.
+func fakeBundleAppWithVenv(t *testing.T) (execPath, toolsDir string) {
+	t.Helper()
+	exe := fakeBundleApp(t)
+	toolsDir = filepath.Join(filepath.Dir(filepath.Dir(exe)), "Resources", "tools")
+	sp := filepath.Join(toolsDir, "venv", "lib", "python3.12", "site-packages")
+	if err := os.MkdirAll(sp, 0o755); err != nil {
+		t.Fatalf("mkdir site-packages: %v", err)
+	}
+	return exe, toolsDir
+}
+
+// envValue returns the value of KEY in a KEY=VALUE env slice, and ok=false if
+// the key is absent — the assertion helper for the PYTHONHOME/PYTHONPATH tests.
+func envValue(env []string, key string) (string, bool) {
+	pre := key + "="
+	for _, kv := range env {
+		if strings.HasPrefix(kv, pre) {
+			return kv[len(pre):], true
+		}
+	}
+	return "", false
+}
+
+// TestEnvForToolSetsRelocatedPythonHomeAndPath is the core relocation-fix unit
+// test (issue #147): a Python tool's env carries PYTHONHOME = the bundled python
+// home and PYTHONPATH = the venv site-packages, BOTH computed relative to the
+// runtime bundle location (toolsDir derived from the fake executable path) — no
+// build-time path baked in. It asserts against a fake .app in a temp dir, so it
+// runs headless on Linux.
+func TestEnvForToolSetsRelocatedPythonHomeAndPath(t *testing.T) {
+	_, toolsDir := fakeBundleAppWithVenv(t)
+	r := NewResolver(toolsDir)
+
+	wantHome := filepath.Join(toolsDir, "python")
+	wantPath := filepath.Join(toolsDir, "venv", "lib", "python3.12", "site-packages")
+
+	for _, tl := range []Tool{Signal, WhatsApp, Python} {
+		env := r.EnvForTool(tl)
+		if env == nil {
+			t.Fatalf("EnvForTool(%s) = nil; python tools must get a corrected env", Name(tl))
+		}
+		if got, ok := envValue(env, "PYTHONHOME"); !ok || got != wantHome {
+			t.Errorf("EnvForTool(%s) PYTHONHOME = %q (ok=%v); want %q", Name(tl), got, ok, wantHome)
+		}
+		if got, ok := envValue(env, "PYTHONPATH"); !ok || got != wantPath {
+			t.Errorf("EnvForTool(%s) PYTHONPATH = %q (ok=%v); want %q", Name(tl), got, ok, wantPath)
+		}
+	}
+}
+
+// TestEnvForToolIMessageGetsNoPythonEnv proves the Rust binary is decoupled from
+// the Python runtime (issue #147): imessage-exporter's env is nil (inherit),
+// with no PYTHONHOME/PYTHONPATH injected — setting those for a Rust binary would
+// be meaningless and is explicitly not done.
+func TestEnvForToolIMessageGetsNoPythonEnv(t *testing.T) {
+	_, toolsDir := fakeBundleAppWithVenv(t)
+	r := NewResolver(toolsDir)
+	if env := r.EnvForTool(IMessage); env != nil {
+		t.Errorf("EnvForTool(IMessage) = %v; want nil (native Rust binary inherits env, no Python vars)", env)
+	}
+}
+
+// TestPythonEnvOverridesInheritedPythonHome guards the merge semantics: an
+// inherited PYTHONHOME from the parent environment MUST be replaced (not
+// duplicated) by the bundled home, or the relocated interpreter would still pick
+// up a stale prefix. It sets a bogus PYTHONHOME in the process env and asserts
+// the returned env has exactly one PYTHONHOME, equal to the bundled home.
+func TestPythonEnvOverridesInheritedPythonHome(t *testing.T) {
+	_, toolsDir := fakeBundleAppWithVenv(t)
+	t.Setenv("PYTHONHOME", "/some/stale/prefix")
+	r := NewResolver(toolsDir)
+	env := r.PythonEnv()
+
+	wantHome := filepath.Join(toolsDir, "python")
+	count := 0
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "PYTHONHOME=") {
+			count++
+			if got := kv[len("PYTHONHOME="):]; got != wantHome {
+				t.Errorf("PYTHONHOME = %q; want the bundled home %q", got, wantHome)
+			}
+		}
+	}
+	if count != 1 {
+		t.Errorf("PYTHONHOME appears %d times; want exactly 1 (inherited value must be replaced, not duplicated)", count)
+	}
+}
+
+// TestEnvForToolPathMapsResolvedPath proves the by-path seam onboard uses: given
+// the resolved absolute path of the Signal tool it returns the Python env, and
+// given the imessage-exporter path it returns nil; an unrelated path returns nil.
+func TestEnvForToolPathMapsResolvedPath(t *testing.T) {
+	_, toolsDir := fakeBundleAppWithVenv(t)
+	r := NewResolver(toolsDir)
+
+	sig, _ := r.SignalPath()
+	if env := r.EnvForToolPath(sig); env == nil {
+		t.Error("EnvForToolPath(sigexport) = nil; want the corrected Python env")
+	}
+	im, _ := r.IMessagePath()
+	if env := r.EnvForToolPath(im); env != nil {
+		t.Error("EnvForToolPath(imessage-exporter) != nil; want nil (Rust binary inherits env)")
+	}
+	if env := r.EnvForToolPath("/not/a/bundled/tool"); env != nil {
+		t.Error("EnvForToolPath(unrelated) != nil; a non-bundle path must inherit env")
+	}
+}
+
+// TestResolveExporterPerSourceOnly proves the decoupling contract (issue #147):
+// ResolveExporter for iMessage integrity-checks ONLY imessage-exporter and
+// succeeds even when the Python sigexport tool is BROKEN (removed) — a Python
+// failure must never block iMessage. Conversely resolving Signal against the
+// same broken bundle surfaces the sigexport ToolError.
+func TestResolveExporterPerSourceOnly(t *testing.T) {
+	exe, toolsDir := fakeBundleAppWithVenv(t)
+	// Break the Python (sigexport) tool: remove its stub so any probe of it fails.
+	if err := os.Remove(filepath.Join(toolsDir, specs[Signal].relPath)); err != nil {
+		t.Fatalf("remove sigexport stub: %v", err)
+	}
+	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		return []byte(filepath.Base(name) + " 1.0.0"), nil
+	}
+
+	// iMessage resolves fine — it depends only on imessage-exporter (Rust).
+	res, err := ResolveExporter(context.Background(), exe, "imessage", run)
+	if err != nil {
+		t.Fatalf("ResolveExporter(imessage) with a broken sigexport: %v — iMessage must NOT depend on Python", err)
+	}
+	if !res.Bundled || res.Path == "" {
+		t.Fatalf("ResolveExporter(imessage) = %+v; want a bundled path", res)
+	}
+	if res.Env != nil {
+		t.Errorf("ResolveExporter(imessage).Env = %v; want nil (native binary)", res.Env)
+	}
+
+	// Signal resolution surfaces the sigexport ToolError (its own tool is broken).
+	if _, err := ResolveExporter(context.Background(), exe, "signal", run); err == nil {
+		t.Fatal("ResolveExporter(signal) with a broken sigexport = nil error; want a ToolError")
+	} else {
+		var te *ToolError
+		if !errors.As(err, &te) || te.Tool != Signal {
+			t.Fatalf("ResolveExporter(signal) error = %v; want a Signal *ToolError", err)
+		}
+	}
+}
+
+// TestResolveExporterBundledSetsEnv proves the happy path: a healthy bundle
+// resolves Signal to its bundled path WITH the corrected Python env, and
+// iMessage to its bundled path with a nil (inherit) env.
+func TestResolveExporterBundledSetsEnv(t *testing.T) {
+	exe, toolsDir := fakeBundleAppWithVenv(t)
+	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		return []byte(filepath.Base(name) + " 1.0.0"), nil
+	}
+
+	sig, err := ResolveExporter(context.Background(), exe, "signal", run)
+	if err != nil {
+		t.Fatalf("ResolveExporter(signal): %v", err)
+	}
+	if !sig.Bundled || sig.Path != filepath.Join(toolsDir, specs[Signal].relPath) {
+		t.Fatalf("ResolveExporter(signal) = %+v; want the bundled sigexport path", sig)
+	}
+	if _, ok := envValue(sig.Env, "PYTHONHOME"); !ok {
+		t.Error("ResolveExporter(signal).Env missing PYTHONHOME; the export spawn would break after relocation")
+	}
+
+	im, err := ResolveExporter(context.Background(), exe, "imessage", run)
+	if err != nil {
+		t.Fatalf("ResolveExporter(imessage): %v", err)
+	}
+	if im.Env != nil {
+		t.Errorf("ResolveExporter(imessage).Env = %v; want nil", im.Env)
+	}
+}
+
+// TestResolveExporterNotBundled proves the fallback: outside a .app,
+// ResolveExporter returns Bundled=false so the caller falls back to $PATH.
+func TestResolveExporterNotBundled(t *testing.T) {
+	res, err := ResolveExporter(context.Background(), filepath.Join("/usr", "local", "bin", "msgbrowse"), "signal", nil)
+	if err != nil {
+		t.Fatalf("ResolveExporter (non-bundled): %v", err)
+	}
+	if res.Bundled || res.Path != "" || res.Env != nil {
+		t.Errorf("non-bundled ResolveExporter = %+v; want Bundled=false, empty path, nil env", res)
 	}
 }
