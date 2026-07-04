@@ -156,20 +156,41 @@ product, native window): a
 same pages, same handlers, zero divergence from `msgbrowse serve`. Webview
 shells can't be cross-compiled, so per-OS artifacts are built by a CI matrix
 ([`desktop.yml`](.github/workflows/desktop.yml)) on `v*` tags and downloadable
-from those workflow runs. **All artifacts are unsigned in v1** (signing and
-notarization are deferred — [ADR-0017](docs/adr/0017-desktop-shell-wails.md)).
-Browser mode (`msgbrowse serve`) remains the universal fallback on every
-platform.
+from those workflow runs. Browser mode (`msgbrowse serve`) remains the
+universal fallback on every platform.
 
-**macOS** — download and unzip `msgbrowse-desktop_darwin_universal` (a
-universal arm64+Intel `.app`). Because the app is unsigned, Gatekeeper blocks
-the first launch. On macOS 15 (Sequoia) and later the old right-click → Open
-trick no longer works — instead either:
+**Bundled exporter toolchain (macOS).** The macOS `.app` embeds the three
+upstream exporters under `Contents/Resources/tools` — a relocatable Python
+runtime (python-build-standalone) plus a venv with
+[`signal-export`](https://github.com/carderne/signal-export) and
+[`whatsapp-chat-exporter`](https://github.com/KnugiHK/WhatsApp-Chat-Exporter),
+and the [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter)
+native binary — so a fresh Mac with no Homebrew and no Python can export and
+import offline, with no manual tool installs. The app resolves those bundled
+paths directly and never consults `$PATH`
+([ADR-0020](docs/adr/0020-bundled-exporters-guided-setup.md),
+[SPEC-0013](docs/openspec/specs/desktop-onboarding/spec.md)). The CLI
+(`msgbrowse export`) keeps its bring-your-own-exporter path — it still resolves
+`sigexport` / `imessage-exporter` / `wtsexporter` from `$PATH` or your
+`--*-bin` overrides — so advanced users lose nothing; only the `.app` bundles.
 
-- **Terminal (fastest):** `xattr -dr com.apple.quarantine msgbrowse.app`, then open it normally; or
-- **GUI:** double-click (it gets blocked), then System Settings → **Privacy & Security** → scroll to Security → **Open Anyway** next to the msgbrowse notice → authenticate.
+**Signing status — ad-hoc today, Developer ID notarization pending.** The
+shipped `.app` and every embedded binary are **ad-hoc code-signed**
+(`codesign -s -`) in CI, not yet notarized with an Apple Developer ID (that is
+an owner-gated follow-up — the real Developer ID signing + notarization steps
+are already wired in `desktop.yml` behind CI secrets and activate the moment
+the identity is provisioned). Until then Gatekeeper blocks the first launch and
+you must strip the quarantine attribute so the app **and its bundled
+exporters** run:
+
+**macOS** — download and unzip `msgbrowse-desktop_darwin_universal`, then:
+
+- **Terminal (required until notarization lands):** `xattr -dr com.apple.quarantine msgbrowse.app`, then open it normally. This strip is what lets the ad-hoc-signed embedded Python and exporter binaries run as subprocesses; without it Gatekeeper kills them. Or
+- **GUI:** double-click (it gets blocked), then System Settings → **Privacy & Security** → scroll to Security → **Open Anyway** next to the msgbrowse notice → authenticate. (The `xattr` strip is still the reliable path for the *embedded* binaries on macOS 15+.)
 
 Either grant is one-time; afterward it launches with a normal double-click.
+Once a Developer ID is provisioned and the release is notarized, no `xattr`
+strip will be needed.
 
 **Linux** — download `msgbrowse-desktop_linux_amd64` and
 `chmod +x msgbrowse` (artifact zips don't preserve the execute bit).

@@ -78,6 +78,15 @@ func run() error {
 		return err
 	}
 
+	// Resolve + integrity-check the bundled exporter toolchain once at startup
+	// (SPEC-0013 REQ "Bundled tool integrity and version check": versions
+	// recorded for the About view; a broken bundle is a clear state, not a
+	// crash). In the non-bundled dev/Linux build this is a no-op (Bundled=false,
+	// no error). A corrupt .app is logged and startup CONTINUES — Setup surfaces
+	// the per-source error when the user tries to enable that source, so a
+	// single broken tool never strands the whole window.
+	logBundledToolchain(ctx, slog.Default())
+
 	sh := newShell(es.URL)
 
 	// Quit when the context is cancelled (signal) or when the embedded server

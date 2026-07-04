@@ -6,9 +6,34 @@
 # every PR. Tag-build artifacts are uploaded so the SPEC-0012 release pipeline
 # can attach or reference them on GitHub Releases.
 #
-# Artifacts are UNSIGNED in v1: macOS code signing and notarization are
-# deferred per ADR-0017 (users right-click → Open on first launch). When a
-# signing identity lands, add codesign + notarytool steps to the darwin job.
+# Bundled toolchain (ADR-0020, SPEC-0013): the darwin job assembles the three
+# upstream exporters into the built .app under Contents/Resources/tools — a
+# relocatable python-build-standalone runtime, a venv with signal-export +
+# whatsapp-chat-exporter, and the imessage-exporter native binary — then verifies
+# in-CI that the bundled python runs and wtsexporter/imessage-exporter respond to
+# their version/help flags on the runner. The Go resolver
+# (cmd/msgbrowse-desktop/internal/toolchain) reads these bundled paths at runtime,
+# never $PATH.
+#
+# SIGNING/NOTARIZATION is OWNER-GATED. There is no Apple Developer ID yet, so:
+#   * The embedded binaries and the .app are AD-HOC signed (`codesign -s -`) so
+#     they run locally after a user strips the quarantine attribute
+#     (`xattr -dr com.apple.quarantine msgbrowse.app`). Ad-hoc signatures are
+#     NOT notarized and NOT trusted by a fresh Gatekeeper download — they only
+#     make the code-signature-present check pass so the embedded subprocesses are
+#     not killed for being unsigned once quarantine is cleared.
+#   * The REAL Developer ID codesign + notarytool steps are structured below,
+#     behind CI secrets that are ABSENT today (MACOS_DEVELOPER_ID_*, AC_*). Each
+#     skips cleanly when its secret is unset, so this workflow is green now and
+#     becomes a signed+notarized release the moment the owner provisions the
+#     Developer ID and adds the secrets. This satisfies ADR-0020's "signing +
+#     notarization required for the shipped release" as a wired-but-gated step,
+#     without pretending to notarize without an identity.
+# OWNER STEP: provision an Apple Developer ID, then add repo secrets
+# MACOS_DEVELOPER_ID_APP (the "Developer ID Application" identity name),
+# MACOS_CERT_P12 + MACOS_CERT_P12_PASSWORD (the exported signing cert), and the
+# notarytool creds AC_API_KEY_ID / AC_API_KEY_ISSUER_ID / AC_API_KEY_P8. The
+# gated steps below activate automatically once those exist.
 #
 # Windows is deliberately skipped in this pass (the spec lists a Windows
 # runner; the .exe is optional per issue #102) — follow-up tracked in #119.
@@ -38,12 +63,41 @@ env:
   # cmd/msgbrowse-desktop/go.mod.
   WAILS_VERSION: "v2.12.0"
 
+  # --- Bundled toolchain pins (ADR-0020 / SPEC-0013) --------------------------
+  # All three exporters are pinned so a build is reproducible and the shipped
+  # versions are knowable (ADR-0020 "reproducible"). Bump deliberately, then
+  # re-verify the in-CI version probe below still passes.
+  #
+  # python-build-standalone (astral-sh): the `install_only` tarball extracts to
+  # a relocatable `python/` dir with bin/python3. macos-latest is Apple Silicon,
+  # so the arm64 build is pinned; a universal (arm64+x86_64) Python bundle for a
+  # truly universal .app is the owner-gated follow-up tracked alongside signing.
+  PBS_RELEASE: "20260623"
+  PBS_PYTHON: "3.12.13"
+  # signal-export console command is `sigexport` (Typer CLI, supports
+  # --version); whatsapp-chat-exporter is `wtsexporter` (argparse, --help only).
+  # Pinned pip specs installed into the bundled venv.
+  SIGNAL_EXPORT_SPEC: "signal-export==3.8.3"
+  WHATSAPP_EXPORT_SPEC: "whatsapp-chat-exporter[all]==0.13.0"
+  # imessage-exporter (ReagentX) native macOS binary release.
+  IMESSAGE_EXPORTER_VERSION: "4.2.0"
+
 jobs:
   darwin:
     name: macOS .app (darwin/universal)
     runs-on: macos-latest
     # macOS runners ship Xcode CLT and WKWebView is a system framework — no
     # package installs here (no apt on darwin; GTK/WebKit2GTK are Linux-only).
+    #
+    # Job-level env mirrors the OWNER-GATED signing secrets so the step-level
+    # `if:` guards can test them with `env.X != ''`. `secrets.*` cannot be read
+    # directly in an `if:` expression, but an env value populated FROM a secret
+    # can — and an unset secret yields an empty string, so every gated step
+    # skips cleanly today (no Developer ID provisioned yet). See the header.
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_DEVELOPER_ID_APP: ${{ secrets.MACOS_DEVELOPER_ID_APP }}
+      AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
     defaults:
       run:
         # The desktop shell is a nested Go module (its own go.mod with
@@ -74,6 +128,207 @@ jobs:
       # -m/-nosyncgomod: never rewrite the module files in CI.
       - name: wails build (darwin/universal)
         run: wails build -platform darwin/universal -m -nosyncgomod -skipbindings -s -clean
+
+      # --- Assemble the bundled exporter toolchain (ADR-0020 / SPEC-0013) ------
+      # Everything lands under Contents/Resources/tools, the exact layout the Go
+      # resolver (internal/toolchain) reads:
+      #   tools/python/bin/python3      relocatable python-build-standalone
+      #   tools/venv/bin/sigexport      signal-export console script
+      #   tools/venv/bin/wtsexporter    whatsapp-chat-exporter console script
+      #   tools/imessage-exporter       native macOS binary
+      - name: Bundle relocatable Python
+        run: |
+          set -euo pipefail
+          APP="build/bin/msgbrowse.app"
+          TOOLS="$APP/Contents/Resources/tools"
+          mkdir -p "$TOOLS"
+
+          # macos-latest is arm64; pick the matching install_only tarball. (A
+          # universal Python — both arches lipo'd — is the owner-gated follow-up.)
+          case "$(uname -m)" in
+            arm64) PBS_ARCH="aarch64" ;;
+            x86_64) PBS_ARCH="x86_64" ;;
+            *) echo "unsupported runner arch $(uname -m)"; exit 1 ;;
+          esac
+          TARBALL="cpython-${PBS_PYTHON}+${PBS_RELEASE}-${PBS_ARCH}-apple-darwin-install_only.tar.gz"
+          URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_RELEASE}/${TARBALL}"
+          echo "Downloading $URL"
+          curl -fL --retry 3 -o /tmp/python.tar.gz "$URL"
+          # The install_only tarball extracts a top-level `python/` dir.
+          tar -xzf /tmp/python.tar.gz -C "$TOOLS"
+          test -x "$TOOLS/python/bin/python3" || { echo "bundled python missing"; exit 1; }
+
+      - name: Build the reproducible venv (signal-export + whatsapp-chat-exporter)
+        run: |
+          set -euo pipefail
+          TOOLS="build/bin/msgbrowse.app/Contents/Resources/tools"
+          PY="$TOOLS/python/bin/python3"
+
+          # --copies so the venv holds real files (no symlinks into the runner's
+          # filesystem that would dangle on the user's Mac). pip is pinned inside.
+          "$PY" -m venv --copies "$TOOLS/venv"
+          "$TOOLS/venv/bin/python" -m pip install --upgrade "pip==24.3.1"
+          "$TOOLS/venv/bin/python" -m pip install "$SIGNAL_EXPORT_SPEC" "$WHATSAPP_EXPORT_SPEC"
+
+          # Relocation: a venv created on the runner hardcodes the runner's
+          # absolute interpreter path in every console-script shebang and in
+          # pyvenv.cfg. On the user's Mac the .app lives at a different path, so
+          # those absolute shebangs would dangle. Rewrite each bin/ script's
+          # shebang to an sh/python POLYGLOT header that re-execs the SIBLING
+          # python by a path derived from the script's own location at runtime —
+          # no absolute path baked in, so the venv is relocatable inside the .app
+          # (and the header quotes "$0" so a bundle path with spaces, e.g.
+          # "Application Support", still works). In /bin/sh the header runs
+          # `exec .../python "$0" "$@"`; in Python the same three lines are a
+          # single triple-quoted string literal (a no-op), so Python skips them
+          # and runs the real entry-point body below.
+          for f in "$TOOLS"/venv/bin/*; do
+            [ -f "$f" ] || continue
+            first="$(head -n1 "$f" 2>/dev/null || true)"
+            case "$first" in
+              "#!"*python*)
+                body="$(tail -n +2 "$f")"
+                {
+                  printf '%s\n' '#!/bin/sh'
+                  printf '%s\n' "''':'"
+                  printf '%s\n' 'exec "$(dirname "$0")/python" "$0" "$@"'
+                  printf '%s\n' "'''"
+                  printf '%s\n' "$body"
+                } > "$f.reloc"
+                chmod +x "$f.reloc"
+                mv "$f.reloc" "$f"
+                ;;
+            esac
+          done
+          # NOTE on pyvenv.cfg: we deliberately do NOT rewrite its `home` key.
+          # A --copies venv resolves its own site-packages from the location of
+          # its python binary (sys.prefix), independent of `home`; `home` only
+          # names the base install for sys.base_prefix. Rewriting it to a bogus
+          # relative path can break stdlib bootstrap, so it is left as-is — the
+          # in-CI verify step below proves the venv python and both console
+          # scripts import and run from the bundled tree.
+
+      - name: Bundle imessage-exporter (native binary)
+        run: |
+          set -euo pipefail
+          TOOLS="build/bin/msgbrowse.app/Contents/Resources/tools"
+          case "$(uname -m)" in
+            arm64) IE_ARCH="aarch64" ;;
+            x86_64) IE_ARCH="x86_64" ;;
+            *) echo "unsupported runner arch $(uname -m)"; exit 1 ;;
+          esac
+          ASSET="imessage-exporter-${IE_ARCH}-apple-darwin"
+          URL="https://github.com/ReagentX/imessage-exporter/releases/download/${IMESSAGE_EXPORTER_VERSION}/${ASSET}"
+          echo "Downloading $URL"
+          curl -fL --retry 3 -o "$TOOLS/imessage-exporter" "$URL"
+          chmod +x "$TOOLS/imessage-exporter"
+
+      # In-CI proof the bundled tools actually run on the runner (SPEC-0013 REQ
+      # "Bundled tool integrity and version check"). This is the check the story
+      # gates on: the versions printed here are reported in the PR body.
+      - name: Verify bundled tools respond on the runner
+        run: |
+          set -euo pipefail
+          TOOLS="build/bin/msgbrowse.app/Contents/Resources/tools"
+          echo "== bundled python =="
+          "$TOOLS/python/bin/python3" -V
+          echo "== bundled venv python =="
+          "$TOOLS/venv/bin/python" -V
+          echo "== sigexport (signal-export) =="
+          "$TOOLS/venv/bin/sigexport" --version
+          echo "== wtsexporter (whatsapp-chat-exporter) =="
+          # argparse CLI: no --version flag, --help proves it runs (exit 0).
+          "$TOOLS/venv/bin/wtsexporter" --help | head -n1
+          echo "== imessage-exporter =="
+          "$TOOLS/imessage-exporter" --version
+
+      # --- Ad-hoc code signing (owner-gated real signing is below) ------------
+      # NOTARIZATION IS OWNER-GATED (no Apple Developer ID yet). Ad-hoc sign
+      # (`codesign -s -`) every embedded executable and then the .app so the
+      # code-signature-present check passes and the embedded subprocesses are not
+      # killed as unsigned once a user strips quarantine
+      # (`xattr -dr com.apple.quarantine msgbrowse.app`). Ad-hoc signatures are
+      # NOT notarized and NOT trusted by a fresh Gatekeeper download — this is a
+      # bridge until the real Developer ID steps below activate.
+      - name: Ad-hoc codesign bundled binaries + app
+        run: |
+          set -euo pipefail
+          APP="build/bin/msgbrowse.app"
+          TOOLS="$APP/Contents/Resources/tools"
+          # Sign every Mach-O under tools/ (python dylibs/binaries, venv compiled
+          # extensions, imessage-exporter), deepest-first, then the app last.
+          find "$TOOLS" -type f | while read -r f; do
+            if file "$f" | grep -q "Mach-O"; then
+              codesign --force -s - --timestamp=none "$f" || true
+            fi
+          done
+          # The imessage-exporter binary is Mach-O; ensure it is signed even if
+          # `file` heuristics missed it.
+          codesign --force -s - --timestamp=none "$TOOLS/imessage-exporter" || true
+          # Sign the app bundle itself (deep) last.
+          codesign --force --deep -s - "$APP" || true
+          echo "Ad-hoc signature verification (informational):"
+          codesign -dv "$APP" 2>&1 | head -n 5 || true
+
+      # --- OWNER-GATED real Developer ID signing + notarization ----------------
+      # These steps are wired but INERT until the owner provisions an Apple
+      # Developer ID and adds the secrets. Each guards on its secret being
+      # non-empty, so with no secrets set (today) they skip cleanly and the job
+      # stays green; the moment the secrets exist they take over from the ad-hoc
+      # signature above and produce a notarized release.
+      - name: Import Developer ID signing certificate (gated)
+        if: ${{ env.MACOS_CERT_P12 != '' }}
+        env:
+          # MACOS_CERT_P12 is inherited from job env (used by the `if:` above);
+          # the password is step-scoped.
+          MACOS_CERT_P12_PASSWORD: ${{ secrets.MACOS_CERT_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_P12_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$KEYCHAIN"
+
+      - name: Developer ID codesign bundled binaries + app (gated)
+        if: ${{ env.MACOS_DEVELOPER_ID_APP != '' }}
+        # MACOS_DEVELOPER_ID_APP is inherited from job env.
+        run: |
+          set -euo pipefail
+          APP="build/bin/msgbrowse.app"
+          TOOLS="$APP/Contents/Resources/tools"
+          # Hardened runtime is required for notarization; sign embedded Mach-O
+          # first (deepest), then the app with the same identity.
+          find "$TOOLS" -type f | while read -r f; do
+            if file "$f" | grep -q "Mach-O"; then
+              codesign --force --options runtime --timestamp -s "$MACOS_DEVELOPER_ID_APP" "$f"
+            fi
+          done
+          codesign --force --options runtime --timestamp --deep -s "$MACOS_DEVELOPER_ID_APP" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Notarize + staple (gated)
+        if: ${{ env.AC_API_KEY_ID != '' }}
+        env:
+          # AC_API_KEY_ID is inherited from job env (used by the `if:`); the
+          # issuer id and the .p8 key are step-scoped.
+          AC_API_KEY_ISSUER_ID: ${{ secrets.AC_API_KEY_ISSUER_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          APP="build/bin/msgbrowse.app"
+          echo "$AC_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$AC_API_KEY_ID" \
+            --issuer "$AC_API_KEY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
 
       # ditto preserves the bundle's permissions and structure; zipping before
       # upload also keeps them through actions/upload-artifact's own zip.
