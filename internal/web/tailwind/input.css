@@ -1522,6 +1522,179 @@ html {
   flex: 1 1 16rem;
 }
 
+/* --- Setup (SPEC-0013 desktop guided setup, issue #132) ------------------
+ * The first-run/returning Setup surface: one card per source (Signal /
+ * iMessage / WhatsApp) with a computed state — Enabled / Ready / Needs
+ * permission / Not detected. Cards reuse the slate card box (border + base-200,
+ * borders-not-shadows); the source icon disc mirrors .link-card-icon but is
+ * tinted per source via the .src-* classes (sourceSlug). State is a text badge
+ * (never color alone — SPEC-0013 §Accessibility) whose accent rides the slate
+ * semantic tokens so slate-light restyles automatically (ADR-0012). */
+.setup-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.setup-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--color-neutral);
+  border-radius: 0.875rem;
+  background: var(--color-base-200);
+}
+/* Not-detected cards read as dimmed/inactive so the actionable ones stand out;
+   the dim is reinforced by the badge text, not carried by color alone. */
+.setup-card-not-detected {
+  opacity: 0.72;
+}
+/* Source-tinted icon disc (matches .link-card-icon geometry). The base uses the
+   accent; the .src-* modifier repaints per source. */
+.setup-card-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 0.5rem;
+  font-size: 18px;
+  color: var(--color-primary);
+  background: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-primary) 25%, transparent);
+}
+.setup-card-icon.src-signal {
+  color: var(--color-info);
+  background: color-mix(in oklab, var(--color-info) 10%, transparent);
+  border-color: color-mix(in oklab, var(--color-info) 25%, transparent);
+}
+.setup-card-icon.src-imessage {
+  color: var(--color-success);
+  background: color-mix(in oklab, var(--color-success) 10%, transparent);
+  border-color: color-mix(in oklab, var(--color-success) 25%, transparent);
+}
+.setup-card-icon.src-whatsapp {
+  color: var(--color-whatsapp);
+  background: color-mix(in oklab, var(--color-whatsapp) 10%, transparent);
+  border-color: color-mix(in oklab, var(--color-whatsapp) 25%, transparent);
+}
+.setup-card-body {
+  flex: 1;
+}
+.setup-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.setup-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+.setup-card-detail {
+  margin-top: 0.25rem;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.setup-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.7rem;
+}
+/* State badge: bordered pill carrying the state as TEXT. The color reinforces
+   but never solely conveys the state (SPEC-0013 §Accessibility). */
+.setup-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-neutral);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+}
+.setup-badge-enabled {
+  color: color-mix(in oklab, var(--color-success) 80%, white);
+  border-color: color-mix(in oklab, var(--color-success) 35%, transparent);
+}
+[data-theme="slate-light"] .setup-badge-enabled {
+  color: var(--color-success);
+}
+.setup-badge-ready {
+  color: var(--color-primary);
+  border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+.setup-badge-needs-permission {
+  color: var(--color-warning);
+  border-color: color-mix(in oklab, var(--color-warning) 40%, transparent);
+}
+.setup-badge-not-detected {
+  color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+  border-color: var(--color-neutral);
+}
+/* Read-only Enable placeholder (this story renders it disabled; the real Enable
+   flow is #134). Solid-accent when live; muted while disabled. */
+.setup-btn {
+  height: 32px;
+  padding: 0 0.95rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-content);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  @media (prefers-reduced-motion: no-preference) {
+    transition: filter 0.12s ease;
+  }
+}
+.setup-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.setup-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.setup-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: transparent;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  border-color: var(--color-neutral);
+}
+/* Inline note beside/instead of the action (e.g. "Imported", the permission
+   hint, or the not-detected instruction). */
+.setup-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+.setup-note-ok {
+  color: color-mix(in oklab, var(--color-success) 80%, white);
+}
+[data-theme="slate-light"] .setup-note-ok {
+  color: var(--color-success);
+}
+.setup-note-warn {
+  color: var(--color-warning);
+}
+.setup-footnote {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--color-base-content) 48%, transparent);
+}
+
 /* Boosted navigation swaps #main-content and htmx scrolls its top into view;
    offset the 54px sticky navbar so page headings are never covered. */
 #main-content {

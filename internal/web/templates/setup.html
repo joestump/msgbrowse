@@ -1,0 +1,73 @@
+{{define "setup"}}{{template "page_start" .}}{{template "setup_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* setup_content is the boosted-swap unit (SPEC-0008 REQ-0008-006, the
+     *_content pattern): <title> keeps history entries titled; the define owns
+     <main id="main-content"> so partial responses carry no shell.
+
+     Setup (SPEC-0013): one card per source (Signal / iMessage / WhatsApp) with a
+     computed state — Enabled / Ready / Needs permission / Not detected — read
+     from the shared internal/setup detection + permission probes. This story is
+     READ-ONLY (ADR-0020 / #132): the per-card Enable/Recheck actions arrive in
+     the follow-on flow (#133/#134/#135), so the primary action here is a disabled
+     affordance with a "coming in the setup flow" note — no privileged POST.
+
+     Accessibility (SPEC-0013 §Accessibility): a single page <h1>; the cards are a
+     labelled <ul>/<li> region so assistive tech can enumerate the sources; each
+     card's source glyph is decorative (aria-hidden) and the card carries an
+     explicit aria-label naming the source and its state; the state is conveyed as
+     text (the badge + detail line), never by color alone. */}}
+{{define "setup_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+    <h1 class="screen-h1">Setup</h1>
+    <p class="screen-sub">msgbrowse looks for Signal, iMessage, and WhatsApp on this Mac. Enable a
+      detected source to import its history — everything stays on this machine.</p>
+
+    {{/* One card per source (SPEC-0013 "one card per source"), as a labelled list
+         so assistive tech enumerates the sources. */}}
+    <ul class="setup-cards" aria-label="Message sources">
+      {{- range .Cards}}
+      <li class="setup-card setup-card-{{.State}}"
+          aria-label="{{.Label}}: {{.StateLabel}}">
+        <span class="setup-card-icon {{sourceSlug .Source}}" aria-hidden="true">
+          {{- if eq .Source "signal"}}{{template "icon-chat-bubble" $}}
+          {{- else if eq .Source "imessage"}}{{template "icon-chat-solid" $}}
+          {{- else}}{{template "icon-chat-dots" $}}{{end}}
+        </span>
+        <div class="setup-card-body min-w-0">
+          <div class="setup-card-head">
+            <span class="setup-card-title">{{.Label}}</span>
+            {{/* The state badge is text, not color alone (SPEC-0013 §Accessibility). */}}
+            <span class="setup-badge setup-badge-{{.State}}">{{.StateLabel}}</span>
+          </div>
+          <p class="setup-card-detail">{{.Detail}}</p>
+          <div class="setup-card-actions">
+            {{- if eq .State "enabled"}}
+            <span class="setup-note setup-note-ok">{{template "icon-check" $}} Imported</span>
+            {{- else if eq .State "needs-permission"}}
+            {{/* Detect-and-guide only (ADR-0020): the System Settings deep link +
+                 Recheck live in the follow-on flow (#134); here the blocker is
+                 surfaced as text and the primary action is a read-only placeholder. */}}
+            <span class="setup-note setup-note-warn">{{template "icon-lock" $}} Grant access in System Settings, then recheck</span>
+            <button type="button" class="setup-btn" disabled aria-disabled="true"
+                    title="The Enable flow arrives in a later setup story">Enable</button>
+            {{- else if eq .State "ready"}}
+            <button type="button" class="setup-btn" disabled aria-disabled="true"
+                    title="The Enable flow arrives in a later setup story">Enable</button>
+            <span class="setup-note">Enabling runs the import — coming in the setup flow.</span>
+            {{- else}}
+            <span class="setup-note">Install {{.Label}} and reopen Setup to detect it.</span>
+            {{- end}}
+          </div>
+        </div>
+      </li>
+      {{- end}}
+    </ul>
+
+    <p class="setup-footnote">
+      {{- if .AnyActionable}}Detected sources can be enabled from here once the import flow ships. Setup stays reachable from the sidebar at any time.
+      {{- else}}No sources are ready to enable on this machine yet. Setup stays reachable from the sidebar at any time.{{end}}
+    </p>
+  </div>
+    </main>
+{{end}}

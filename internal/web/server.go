@@ -27,6 +27,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/archivepath"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/imageconv"
+	"github.com/joestump/msgbrowse/internal/setup"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
 )
@@ -76,6 +77,10 @@ type Server struct {
 	// pairing is the live pairing-window source for /settings' QR section;
 	// nil until the device-sync listener story wires SetPairingSource.
 	pairing PairingSource
+	// setupDetector overrides the /setup source detector (SPEC-0013); nil uses a
+	// real HOME-rooted setup.NewDetector(). Tests inject a faked HOME; the desktop
+	// layer (#134) injects the genuine macOS Keychain check.
+	setupDetector *setup.Detector
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -173,6 +178,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
+	mux.HandleFunc("GET /setup", s.handleSetup)
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("GET /media/{id}/{path...}", s.handleMedia)
 
