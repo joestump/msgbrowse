@@ -2,15 +2,15 @@
 // archive synchronization: single-use pairing tokens with a bounded TTL,
 // long-lived self-signed TLS identities with SHA-256 fingerprint pinning, the
 // versioned QR/manual pairing payload, and the transport-agnostic pairing
-// exchange (importer handler + replica client) that later stories mount on a
-// real LAN listener.
+// exchange (importer handler + replica client) that the
+// internal/devices/listener subpackage mounts on the real LAN listener.
 //
-// This package deliberately contains NO network listener. Every primitive is
-// exercised over in-memory transports (net.Pipe TLS conns, custom
-// http.Transport dialers) so the trust machinery is proven before the first
-// socket beyond loopback ever opens. It uses only the standard library's
-// crypto/tls and crypto/x509 — no new dependencies, CGO_ENABLED=0 preserved
-// (ADR-0013).
+// This package deliberately contains NO network listener — that lives in
+// internal/devices/listener. Every primitive here is exercised over
+// in-memory transports (net.Pipe TLS conns, custom http.Transport dialers)
+// so the trust machinery is proven independently of any socket. It uses only
+// the standard library's crypto/tls and crypto/x509 — no new dependencies,
+// CGO_ENABLED=0 preserved (ADR-0013).
 //
 // # Naming
 //

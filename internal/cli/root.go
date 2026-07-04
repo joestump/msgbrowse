@@ -63,6 +63,7 @@ func NewRootCommand() *cobra.Command {
 		newIngestAliasCommand(),
 		newIMessageImportCommand(),
 		newWhatsAppImportCommand(),
+		newDevicesCommand(),
 		newDoctorCommand(),
 		newExportCommand(),
 		newSyncCommand(),
@@ -179,6 +180,14 @@ func configureLogger(level string) {
 
 // newLogHandler builds the charmbracelet/log handler at the requested level.
 func newLogHandler(level string) slog.Handler {
+	return newCharmLogger(level)
+}
+
+// newCharmLogger builds the styled charmbracelet logger at the requested
+// level. Exposed separately from newLogHandler for components that take a
+// *charmlog.Logger directly (the devices pairing/listener stack) so their
+// output matches the CLI's slog styling.
+func newCharmLogger(level string) *charmlog.Logger {
 	lvl := charmlog.InfoLevel
 	switch level {
 	case "debug":

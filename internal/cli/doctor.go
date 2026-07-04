@@ -161,6 +161,7 @@ func runDoctor(ctx context.Context, w io.Writer, cfg *config.Config, checkLLM bo
 	checkConverter(ctx, r, cfg, st)
 	checkEmbeddings(ctx, r, cfg, st)
 	checkExporters(r)
+	checkDeviceSync(ctx, r, cfg, st)
 	checkLLMEndpoint(r, cfg, checkLLM)
 
 	return r.summary()

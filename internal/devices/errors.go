@@ -47,6 +47,12 @@ var (
 	// ErrImporterConflict is returned when a peer attempts to register as
 	// importer for a source that already has a different registered importer.
 	ErrImporterConflict = errors.New("devices: importer already registered for source")
+
+	// ErrRedirectResponse is returned when a peer answers a sync request with
+	// any 3xx. The sync protocol never emits redirects (SPEC-0011 "Redirect
+	// Validation"), so a redirect is a protocol violation and the client
+	// aborts instead of following it.
+	ErrRedirectResponse = errors.New("devices: peer emitted a redirect (sync protocol violation)")
 )
 
 // HashMismatchError is the attributable form of ErrHashMismatch: it carries
