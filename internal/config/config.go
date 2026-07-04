@@ -9,6 +9,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -251,12 +253,40 @@ func (c *Config) Validate() error {
 		if c.DeviceSync.ListenAddr == "" {
 			return fmt.Errorf("device_sync.listen_addr must not be empty when device_sync.enabled is true")
 		}
-		if c.DeviceSync.ListenAddr == c.ListenAddr {
-			return fmt.Errorf("device_sync.listen_addr must differ from listen_addr (dedicated port per SPEC-0011)")
+		// SPEC-0011 "Sync Listener Posture": the sync listener needs a
+		// dedicated PORT distinct from the web UI's. Naive string equality
+		// misses spellings of the same port ("127.0.0.1:8787" vs ":8787"), so
+		// compare the ports themselves (#115 review fold-in).
+		syncPort, err := listenPort(c.DeviceSync.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("invalid device_sync.listen_addr %q: %w", c.DeviceSync.ListenAddr, err)
+		}
+		webPort, err := listenPort(c.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("invalid listen_addr %q: %w", c.ListenAddr, err)
+		}
+		if syncPort == webPort {
+			return fmt.Errorf("device_sync.listen_addr %q uses the web UI port %d; the sync listener needs its own port (SPEC-0011)",
+				c.DeviceSync.ListenAddr, webPort)
 		}
 		if c.DeviceSync.PollInterval <= 0 {
 			return fmt.Errorf("device_sync.poll_interval must be positive, got %v", c.DeviceSync.PollInterval)
 		}
 	}
 	return nil
+}
+
+// listenPort extracts and validates the numeric port of a host:port listen
+// address. Port 0 (ephemeral) is allowed — tests and the desktop shell bind
+// :0 deliberately — but the string must parse as a port number.
+func listenPort(addr string) (int, error) {
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 0 || port > 65535 {
+		return 0, fmt.Errorf("port %q is not a number in 0-65535", portStr)
+	}
+	return port, nil
 }

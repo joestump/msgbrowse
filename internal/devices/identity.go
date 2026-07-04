@@ -18,6 +18,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -188,6 +189,27 @@ func (id *Identity) ClientTLS(pinnedFingerprint string) (*tls.Config, error) {
 		Certificates:          []tls.Certificate{id.TLSCertificate},
 		InsecureSkipVerify:    true, // WebPKI replaced by exact pinning below
 		VerifyPeerCertificate: verifyPinnedPeer(fp),
+	}, nil
+}
+
+// NewPeerClient builds the http.Client a node uses to call a peer whose
+// certificate fingerprint it knows: transport pinned via ClientTLS (so a
+// fingerprint mismatch aborts in the handshake, before any application byte),
+// and redirects refused outright — the sync API never emits them, so any 3xx
+// is a protocol violation the client aborts on (SPEC-0011 "Redirect
+// Validation"). timeout of 0 means no client timeout (callers bound requests
+// with contexts instead).
+func (id *Identity) NewPeerClient(pinnedFingerprint string, timeout time.Duration) (*http.Client, error) {
+	cfg, err := id.ClientTLS(pinnedFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: cfg},
+		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			return fmt.Errorf("devices: refusing redirect to %s: %w", req.URL, ErrRedirectResponse)
+		},
 	}, nil
 }
 

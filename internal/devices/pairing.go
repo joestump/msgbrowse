@@ -13,8 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/log"
 )
@@ -27,6 +30,12 @@ const PairPath = "/v1/pair"
 // maxPairBodyBytes bounds the pairing request body (SPEC-0011 "Request Body
 // Size Limits": all sync request bodies are small JSON, capped at 64 KiB).
 const maxPairBodyBytes = 64 << 10
+
+// MaxDeviceNameLen bounds a peer's self-reported device name (SPEC-0011
+// Security Checklist: "device name length-bounded"). Long enough for any
+// real hostname, short enough that a hostile replica cannot stuff kilobytes
+// into the peer registry and every UI that renders it.
+const MaxDeviceNameLen = 128
 
 // Role is a peer's per-source role in the sync topology (ADR-0018): the node
 // that runs a source's exporters is its importer; everyone else replicates.
@@ -82,6 +91,29 @@ type PairRequest struct {
 	ListenerAddr string `json:"listener_addr"`
 }
 
+// validate enforces the pair-request field invariants server-side: the token
+// must be present (its value is judged by the window, in constant time), the
+// device name must be non-empty, valid UTF-8, and length-bounded, and the
+// replica's listener address — advisory, but persisted — must parse as
+// host:port when given.
+func (pr *PairRequest) validate() error {
+	if pr.Token == "" {
+		return fmt.Errorf("devices: pair request token must not be empty")
+	}
+	if pr.DeviceName == "" {
+		return fmt.Errorf("devices: pair request device name must not be empty")
+	}
+	if len(pr.DeviceName) > MaxDeviceNameLen || !utf8.ValidString(pr.DeviceName) {
+		return fmt.Errorf("devices: pair request device name must be valid UTF-8 of at most %d bytes", MaxDeviceNameLen)
+	}
+	if pr.ListenerAddr != "" {
+		if _, _, err := net.SplitHostPort(pr.ListenerAddr); err != nil {
+			return fmt.Errorf("devices: pair request listener_addr %q is not host:port: %w", pr.ListenerAddr, err)
+		}
+	}
+	return nil
+}
+
 // PairResponse is the importer's JSON reply on successful pairing: what the
 // replica needs to persist its side of the peer record.
 type PairResponse struct {
@@ -111,7 +143,7 @@ const (
 // Importer is the importer-side pairing service: it owns which window is
 // current and turns a valid token presentation into a pinned, persisted peer.
 // It is transport-agnostic — PairHandler is a plain http.Handler the listener
-// story will mount at PairPath behind Identity.PairingServerTLS.
+// (internal/devices/listener) mounts at PairPath.
 type Importer struct {
 	// DeviceName is this importer's name, returned to replicas.
 	DeviceName string
@@ -119,13 +151,32 @@ type Importer struct {
 	Sources []string
 	// Store persists pinned peers.
 	Store PeerStore
-	// Window is the current pairing window (nil when none was ever opened;
-	// requests are then refused with PairErrWindowClosed).
-	Window *Window
 	// Logger receives structured pairing events; nil uses log.Default().
 	Logger *log.Logger
 	// Now overrides the clock in tests; nil uses time.Now.
 	Now func() time.Time
+
+	// window is the current pairing window, swapped atomically because the
+	// operator opens/closes windows at runtime (CLI, settings page) while
+	// PairHandler reads it from concurrent listener goroutines (#115 review
+	// fold-in; SPEC-0011 REQ "Concurrency Safety"). nil means none was ever
+	// opened — requests are refused with PairErrWindowClosed.
+	window atomic.Pointer[Window]
+}
+
+// SetWindow atomically installs w as the current pairing window; nil clears
+// it. The previous window, if any open, is closed first so its token can
+// never race the new one (a stale QR must not stay redeemable).
+func (im *Importer) SetWindow(w *Window) {
+	if old := im.window.Swap(w); old != nil && old != w {
+		old.Close()
+	}
+}
+
+// CurrentWindow returns the pairing window PairHandler consults, or nil when
+// none was ever opened.
+func (im *Importer) CurrentWindow() *Window {
+	return im.window.Load()
 }
 
 func (im *Importer) logger() *log.Logger {
@@ -166,22 +217,32 @@ func (im *Importer) PairHandler() http.Handler {
 			return
 		}
 
+		// Strictly decode the pair request (SPEC-0011 Security Checklist:
+		// "pair-request JSON strictly decoded; device name length-bounded").
 		var req PairRequest
 		body := http.MaxBytesReader(w, r.Body, maxPairBodyBytes)
-		if err := json.NewDecoder(body).Decode(&req); err != nil {
+		dec := json.NewDecoder(body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, pairError{Code: PairErrBadRequest})
+			return
+		}
+		if err := req.validate(); err != nil {
+			im.logger().Warn("pairing request failed validation", "err", err)
 			writeJSON(w, http.StatusBadRequest, pairError{Code: PairErrBadRequest})
 			return
 		}
 
 		fp := Fingerprint(r.TLS.PeerCertificates[0].Raw)
 
-		if im.Window == nil {
+		window := im.CurrentWindow()
+		if window == nil {
 			im.logger().Warn("pairing attempt with no open window", "peer_fingerprint", fp)
 			writeJSON(w, http.StatusForbidden, pairError{Code: PairErrWindowClosed})
 			return
 		}
-		if err := im.Window.Consume(req.Token); err != nil {
-			st := im.Window.Status()
+		if err := window.Consume(req.Token); err != nil {
+			st := window.Status()
 			im.logger().Warn("pairing token rejected",
 				"err", err,
 				"peer_fingerprint", fp,
@@ -267,6 +328,14 @@ func Pair(ctx context.Context, client *http.Client, payload *PairingPayload, req
 		return nil, fmt.Errorf("devices: pair with %s: %w", payload.Endpoint, err)
 	}
 	defer resp.Body.Close()
+
+	// SPEC-0011 "Redirect Validation": the sync API never emits redirects, so
+	// any 3xx is a protocol violation — abort rather than follow. (A client
+	// built by NewPeerClient already refuses to follow Location; this guards
+	// 3xx responses that carry none.)
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, fmt.Errorf("devices: pairing with %s returned %d: %w", payload.Endpoint, resp.StatusCode, ErrRedirectResponse)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		var pe pairError

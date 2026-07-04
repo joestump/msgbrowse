@@ -101,6 +101,31 @@ func TestValidate(t *testing.T) {
 			c.DeviceSync.Enabled = true
 			c.DeviceSync.ListenAddr = c.ListenAddr
 		}, true},
+		// Port collisions must be caught across different SPELLINGS of the
+		// same port — naive string equality misses these (#115 review).
+		{"device sync wildcard host colliding with web ui port", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.ListenAddr = "127.0.0.1:8787"
+			c.DeviceSync.ListenAddr = ":8787"
+		}, true},
+		{"device sync explicit host colliding with web ui port", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.ListenAddr = ":8787"
+			c.DeviceSync.ListenAddr = "192.168.1.10:8787"
+		}, true},
+		{"device sync distinct port on same host ok", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.ListenAddr = "127.0.0.1:8787"
+			c.DeviceSync.ListenAddr = "127.0.0.1:8788"
+		}, false},
+		{"device sync unparseable listen addr", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.DeviceSync.ListenAddr = "not-an-addr"
+		}, true},
+		{"device sync non-numeric port", func(c *Config) {
+			c.DeviceSync.Enabled = true
+			c.DeviceSync.ListenAddr = "127.0.0.1:http"
+		}, true},
 		{"device sync non-positive poll interval", func(c *Config) {
 			c.DeviceSync.Enabled = true
 			c.DeviceSync.PollInterval = 0

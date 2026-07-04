@@ -124,9 +124,9 @@ func newPairingHarness(t *testing.T, serverID *Identity, opts ...WindowOption) *
 		DeviceName: "mac-importer",
 		Sources:    []string{"signal", "imessage"},
 		Store:      h.impStore,
-		Window:     h.window,
 		Logger:     log.New(io.Discard),
 	}
+	h.importer.SetWindow(h.window)
 
 	mux := http.NewServeMux()
 	inner := h.importer.PairHandler()
@@ -387,9 +387,9 @@ func TestPairHandlerEdgeCases(t *testing.T) {
 		DeviceName: "mac-importer",
 		Sources:    []string{"signal"},
 		Store:      &memPeerStore{},
-		Window:     nil, // never opened
 		Logger:     log.New(io.Discard),
 	}
+	// No window is ever opened: CurrentWindow stays nil.
 	handler := imp.PairHandler()
 
 	t.Run("GET rejected", func(t *testing.T) {
