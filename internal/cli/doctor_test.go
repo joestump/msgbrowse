@@ -140,7 +140,7 @@ func TestAttachmentVerdict(t *testing.T) {
 		{
 			name:       "all present",
 			src:        source.IMessage,
-			stats:      attachmentStats{present: 50},
+			stats:      attachmentStats{Present: 50},
 			wantStatus: statusPass,
 		},
 		{
@@ -152,35 +152,35 @@ func TestAttachmentVerdict(t *testing.T) {
 		{
 			name:       "imessage majority absolute -> fail",
 			src:        source.IMessage,
-			stats:      attachmentStats{present: 2, absolute: 98},
+			stats:      attachmentStats{Present: 2, Absolute: 98},
 			wantStatus: statusFail,
 			wantHint:   true,
 		},
 		{
 			name:       "imessage minority absolute -> warn",
 			src:        source.IMessage,
-			stats:      attachmentStats{present: 90, absolute: 10},
+			stats:      attachmentStats{Present: 90, Absolute: 10},
 			wantStatus: statusWarn,
 			wantHint:   true,
 		},
 		{
 			name:       "signal majority absolute -> fail",
 			src:        source.Signal,
-			stats:      attachmentStats{present: 1, absolute: 9},
+			stats:      attachmentStats{Present: 1, Absolute: 9},
 			wantStatus: statusFail,
 			wantHint:   true,
 		},
 		{
 			name:       "mostly missing -> warn",
 			src:        source.IMessage,
-			stats:      attachmentStats{present: 10, missing: 90},
+			stats:      attachmentStats{Present: 10, Missing: 90},
 			wantStatus: statusWarn,
 			wantHint:   true,
 		},
 		{
 			name:       "few missing -> warn",
 			src:        source.Signal,
-			stats:      attachmentStats{present: 95, missing: 5},
+			stats:      attachmentStats{Present: 95, Missing: 5},
 			wantStatus: statusWarn,
 			wantHint:   true,
 		},
@@ -203,7 +203,7 @@ func TestAttachmentVerdict(t *testing.T) {
 }
 
 func TestAttachmentVerdictImessageHintMentionsCopyMode(t *testing.T) {
-	s := attachmentStats{present: 1, absolute: 99}
+	s := attachmentStats{Present: 1, Absolute: 99}
 	status, hint := attachmentVerdict(source.IMessage, &s)
 	if status != statusFail {
 		t.Fatalf("status = %v, want statusFail", status)

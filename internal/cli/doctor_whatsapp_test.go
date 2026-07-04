@@ -77,32 +77,32 @@ func TestWhatsAppMediaVerdict(t *testing.T) {
 	}{
 		{
 			name:       "all present passes",
-			stats:      whatsappMediaStats{present: 10},
+			stats:      whatsappMediaStats{Present: 10},
 			wantStatus: statusPass,
 		},
 		{
 			name:       "majority outside fails",
 			device:     whatsapp.DeviceIOS,
-			stats:      whatsappMediaStats{present: 1, outside: 5},
+			stats:      whatsappMediaStats{Present: 1, Outside: 5},
 			wantStatus: statusFail,
 			wantInHint: "Finder/iTunes",
 		},
 		{
 			name:       "majority missing fails with media hint",
 			device:     whatsapp.DeviceAndroid,
-			stats:      whatsappMediaStats{present: 1, missing: 5},
+			stats:      whatsappMediaStats{Present: 1, Missing: 5},
 			wantStatus: statusFail,
 			wantInHint: "64-digit",
 		},
 		{
 			name:       "few outside warns",
-			stats:      whatsappMediaStats{present: 9, outside: 1},
+			stats:      whatsappMediaStats{Present: 9, Outside: 1},
 			wantStatus: statusWarn,
 			wantInHint: "outside the archive root",
 		},
 		{
 			name:       "few missing warns",
-			stats:      whatsappMediaStats{present: 9, missing: 1},
+			stats:      whatsappMediaStats{Present: 9, Missing: 1},
 			wantStatus: statusWarn,
 			wantInHint: "missing under the root",
 		},
