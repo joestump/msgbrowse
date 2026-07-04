@@ -81,6 +81,16 @@ type Server struct {
 	// real HOME-rooted setup.NewDetector(). Tests inject a faked HOME; the desktop
 	// layer (#134) injects the genuine macOS Keychain check.
 	setupDetector *setup.Detector
+	// enabler runs the privileged /setup/enable export→import job (SPEC-0013). It
+	// is the seam wired by SetEnabler: the desktop shell backs it with the bundled
+	// toolchain, `msgbrowse serve` with a $PATH/config resolver. nil disables
+	// Enable (the Setup cards render an "unavailable" affordance and the POST
+	// reports it) — the web layer never imports the cgo desktop module.
+	enabler Enabler
+	// setupTokens is the live per-session token set minted at /setup render and
+	// verified on the privileged Setup POSTs (SPEC-0013 §Security same-origin +
+	// per-session token). Always non-nil after NewServer.
+	setupTokens *setupTokens
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -98,6 +108,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		derivedDir:        imageconv.DerivedDir(cfg.DataDir),
 		log:               log,
 		deviceSyncEnabled: cfg.DeviceSync.Enabled,
+		setupTokens:       newSetupTokens(),
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"renderBody":       renderBody,
@@ -114,6 +125,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"dateLabel":        dateLabel,
 		"sourceSlug":       sourceSlug,
 		"humanSource":      source.Label,
+		"enableButton":     enableButton,
 		"imgRenderable":    s.imgRenderable,
 		"convRowCtx":       convRowCtx,
 	}).ParseFS(templatesFS, "templates/*.html")
@@ -179,6 +191,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET /setup", s.handleSetup)
+	// Privileged Setup POSTs (SPEC-0013 §Security): each is gated inside its
+	// handler by the same-origin + per-session-token check before any work.
+	mux.HandleFunc("POST /setup/enable", s.handleSetupEnable)
+	mux.HandleFunc("POST /setup/cancel", s.handleSetupCancel)
+	mux.HandleFunc("GET /setup/status/{source}", s.handleSetupStatus)
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("GET /media/{id}/{path...}", s.handleMedia)
 

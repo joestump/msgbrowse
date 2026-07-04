@@ -32,6 +32,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/mcp"
+	"github.com/joestump/msgbrowse/internal/onboard"
 	"github.com/joestump/msgbrowse/internal/store"
 	"github.com/joestump/msgbrowse/internal/web"
 )
@@ -105,8 +106,9 @@ type Server struct {
 	MCPURL string
 
 	store     *store.Store
-	done      chan struct{} // closed when the serve loop has exited
-	serveErr  error         // set before done is closed
+	onboard   *onboard.Runner // Setup Enable worker registry; torn down on Close
+	done      chan struct{}   // closed when the serve loop has exited
+	serveErr  error           // set before done is closed
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -127,6 +129,16 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger) (*Server, 
 	}
 
 	srv, err := web.NewServer(st, cfg, log)
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+
+	// Wire the Setup Enable flow (SPEC-0013) with the BUNDLED exporter toolchain,
+	// so a click on Enable resolves the exporter from Contents/Resources and never
+	// $PATH (making internal/toolchain.ResolveExporters live at the export site).
+	// The runner's workers are torn down in Close as part of graceful shutdown.
+	onboardRunner, err := wireEnable(cfg, st, srv, log)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -156,10 +168,11 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger) (*Server, 
 
 	base := "http://" + ln.Addr().String()
 	e := &Server{
-		URL:    base,
-		MCPURL: base + MCPPath,
-		store:  st,
-		done:   make(chan struct{}),
+		URL:     base,
+		MCPURL:  base + MCPPath,
+		store:   st,
+		onboard: onboardRunner,
+		done:    make(chan struct{}),
 	}
 	go func() {
 		e.serveErr = srv.ServeHandler(ctx, ln, root)
@@ -237,6 +250,14 @@ var healthClient = &http.Client{Timeout: 2 * time.Second}
 func (e *Server) Close() error {
 	e.closeOnce.Do(func() {
 		<-e.done
+		// Tear down any in-flight Setup Enable job before closing the store: the
+		// runner cancels each job's context (terminating the exporter subprocess)
+		// and waits for the worker to exit, so no exporter outlives the window and
+		// no import races the store close (SPEC-0013 REQ "Concurrency Safety":
+		// "Quitting the app tears down running jobs").
+		if e.onboard != nil {
+			e.onboard.Shutdown()
+		}
 		err := e.store.Close()
 		if e.serveErr != nil {
 			e.closeErr = e.serveErr

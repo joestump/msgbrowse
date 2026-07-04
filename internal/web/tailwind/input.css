@@ -1695,6 +1695,76 @@ html {
   color: color-mix(in oklab, var(--color-base-content) 48%, transparent);
 }
 
+/* Live Enable job progress (SPEC-0013 REQ "One-click enable and import"): a
+   per-source aria-live region the Enable POST fills and the status poller swaps.
+   State is carried as TEXT (the message line + phase color), never spinner-only
+   (SPEC-0013 §Accessibility). */
+.setup-progress {
+  margin-top: 0.55rem;
+}
+.setup-progress:empty {
+  display: none;
+}
+.setup-progress-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+}
+.setup-progress-line {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  margin: 0;
+}
+.setup-progress-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: color-mix(in oklab, var(--color-success) 80%, white);
+}
+[data-theme="slate-light"] .setup-progress-ok {
+  color: var(--color-success);
+}
+.setup-progress-err {
+  color: var(--color-error);
+}
+.setup-progress-warn {
+  color: var(--color-warning);
+}
+.setup-progress-unavailable {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+/* Small determinate-free activity indicator; text still carries the status, so
+   the ring is decorative (aria-hidden in the template). Honors reduced motion. */
+.setup-progress-spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklab, var(--color-primary) 30%, transparent);
+  border-top-color: var(--color-primary);
+  flex: none;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: setup-progress-spin 0.7s linear infinite;
+  }
+}
+@keyframes setup-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Ghost variant of the Enable button, used for the in-progress Cancel control. */
+.setup-btn-ghost {
+  background: transparent;
+  color: var(--color-base-content);
+  border-color: var(--color-neutral);
+}
+.setup-btn-ghost:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+
 /* Boosted navigation swaps #main-content and htmx scrolls its top into view;
    offset the 54px sticky navbar so page headings are never covered. */
 #main-content {

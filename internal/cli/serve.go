@@ -13,6 +13,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/devices"
 	"github.com/joestump/msgbrowse/internal/devices/listener"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/onboardsvc"
 	"github.com/joestump/msgbrowse/internal/store"
 	"github.com/joestump/msgbrowse/internal/web"
 	"github.com/spf13/cobra"
@@ -56,6 +57,19 @@ func newServeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Wire the Setup Enable flow (SPEC-0013): `serve` resolves exporters
+			// from config/$PATH (the bring-your-own path — only the .app bundles).
+			// A source with no resolvable tool renders "unavailable" rather than a
+			// silent no-op. The runner's workers are torn down on shutdown so no
+			// exporter subprocess outlives serve (SPEC-0013 REQ "Concurrency
+			// Safety").
+			onboardRunner, err := onboardsvc.Build(cfg, st, onboardsvc.PathResolverFromConfig(cfg), slog.Default())
+			if err != nil {
+				return err
+			}
+			defer onboardRunner.Shutdown()
+			srv.SetEnabler(onboardRunner)
 
 			// Device sync (ADR-0018): with device_sync.enabled the sync
 			// listener runs beside the web UI as a context-managed worker;

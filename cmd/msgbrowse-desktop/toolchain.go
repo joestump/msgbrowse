@@ -3,17 +3,18 @@
 // Desktop wiring for the bundled exporter toolchain. All resolution and
 // integrity logic lives in the pure-Go, Linux-tested internal/toolchain
 // package; this file is the thin desktop-tagged seam that feeds it the running
-// binary's real path via os.Executable(). Keeping the logic in the untagged
-// package means the whole export-path resolution is covered by the desktop
-// module's CGO_ENABLED=0 headless suite — this file adds only the os.Executable
-// call the tests deliberately inject around.
+// binary's real path via os.Executable() for the startup integrity log.
 //
-// The desktop Setup surface (a separate story in the onboarding epic, #129)
-// calls resolveBundledExporters to obtain the exporter paths before spawning an
-// export: in a macOS .app it gets verified, bundled absolute paths (never
-// $PATH); in the non-bundled Linux build it gets empty overrides so the export
-// orchestration falls back to $PATH exactly as the bring-your-own CLI does
-// (ADR-0020: only the .app bundles; the CLI is unchanged).
+// The LIVE export-path resolution — the seam the Setup Enable flow (#133) calls
+// before spawning an exporter — lives in the pure-Go embedded package
+// (cmd/msgbrowse-desktop/internal/embedded.bundledResolver), which invokes
+// toolchain.ResolveExporters at the export site: in a macOS .app it gets
+// verified, bundled absolute paths (never $PATH); in the non-bundled Linux build
+// it gets empty overrides so the export orchestration falls back to $PATH exactly
+// as the bring-your-own CLI does (ADR-0020: only the .app bundles; the CLI is
+// unchanged). Keeping that resolver in the untagged package means the whole
+// export-path resolution is covered by the desktop module's CGO_ENABLED=0
+// headless suite.
 //
 // Governing: ADR-0020 (bundled exporter toolchain + guided setup), SPEC-0013
 // REQ "Bundled toolchain resolution", REQ "Bundled tool integrity and version
@@ -29,25 +30,6 @@ import (
 
 	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/toolchain"
 )
-
-// resolveBundledExporters resolves the exporter binaries for the running
-// desktop app from the .app bundle, verifying integrity first. In a macOS .app
-// the returned ExporterPaths carry verified bundled absolute paths (Bundled
-// true); outside a bundle they are empty (Bundled false) so the export
-// orchestration falls back to $PATH. A corrupt bundle returns a typed
-// *toolchain.ToolError the Setup UI surfaces per source.
-//
-// This is the seam the Setup surface (onboarding epic #129) calls before
-// spawning an export; it is kept here, desktop-tagged, so the os.Executable()
-// call stays out of the Linux-tested resolver package.
-func resolveBundledExporters(ctx context.Context) (toolchain.ExporterPaths, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return toolchain.ExporterPaths{}, err
-	}
-	// nil runner => real process version probe (production).
-	return toolchain.ResolveExporters(ctx, exe, nil)
-}
 
 // logBundledToolchain runs the bundled-tool integrity + version check once at
 // startup and logs the outcome, recording each tool's pinned version for the

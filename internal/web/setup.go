@@ -41,6 +41,22 @@ const (
 	setupStateNotDetected = "not-detected"
 )
 
+// enableButtonCtx pairs a render's Enable availability + per-session token with
+// one card's source, so the shared "setup-enable-button" define can decide
+// live-vs-disabled and carry the token. html/template has no struct literals, so
+// the enableButton FuncMap adapter builds it inside the card range.
+type enableButtonCtx struct {
+	Available bool
+	Token     string
+	Source    string
+}
+
+// enableButton is the FuncMap adapter that builds an enableButtonCtx in the
+// setup template's card range.
+func enableButton(available bool, token, src string) enableButtonCtx {
+	return enableButtonCtx{Available: available, Token: token, Source: src}
+}
+
 // setupCard is one source's Setup card: everything the template needs to render
 // the card and its (read-only in this story) action affordance. Every field is a
 // server-computed value or a fixed constant — no request-derived content — so
@@ -76,6 +92,13 @@ type setupData struct {
 	// so the intro can nudge the user toward an action (vs. a pure returning-user
 	// view where everything is Enabled/Not-detected).
 	AnyActionable bool
+	// EnableAvailable reports whether an Enabler is wired (desktop bundle or a
+	// configured $PATH resolver): true renders live Enable buttons, false renders
+	// the "desktop app required / configure tools" affordance (SPEC-0013).
+	EnableAvailable bool
+	// Token is a fresh per-session token minted for this render, embedded in the
+	// page and submitted with every privileged Setup POST (SPEC-0013 §Security).
+	Token string
 }
 
 // handleSetup renders the Setup surface: the per-source detection cards. GET-only
@@ -108,10 +131,21 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	// Mint a fresh per-session token for the privileged Setup POSTs this page can
+	// trigger (SPEC-0013 §Security: minted at /setup render, submitted with the
+	// POST). A mint failure (crypto/rand) is a real server error, not a silent
+	// degrade — an Enable without a token would then always 403.
+	token, err := s.setupTokens.mint()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	s.render(w, r, "setup", setupData{
-		baseData:      base,
-		Cards:         cards,
-		AnyActionable: anyActionable,
+		baseData:        base,
+		Cards:           cards,
+		AnyActionable:   anyActionable,
+		EnableAvailable: s.enableAvailable(),
+		Token:           token,
 	})
 }
 

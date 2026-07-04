@@ -6,16 +6,27 @@
 
      Setup (SPEC-0013): one card per source (Signal / iMessage / WhatsApp) with a
      computed state — Enabled / Ready / Needs permission / Not detected — read
-     from the shared internal/setup detection + permission probes. This story is
-     READ-ONLY (ADR-0020 / #132): the per-card Enable/Recheck actions arrive in
-     the follow-on flow (#133/#134/#135), so the primary action here is a disabled
-     affordance with a "coming in the setup flow" note — no privileged POST.
+     from the shared internal/setup detection + permission probes. This story
+     (#133) makes the Enable action LIVE: a Ready card's Enable button POSTs
+     /setup/enable (same-origin + per-session token, htmx) to start a cancellable
+     background export→import job, and a per-card aria-live region polls
+     /setup/status/<source> every second and swaps itself with the job's
+     structured state until a terminal phase (SPEC-0013 REQ "One-click enable and
+     import per source", REQ "Concurrency Safety", REQ "Error Handling
+     Standards"). When no Enabler is wired (browser mode with no resolvable
+     tools) the button is disabled with a clear affordance.
+
+     Security (SPEC-0013 §Security): the privileged POSTs carry the per-session
+     Token (hidden field + the X-Setup-Token header htmx sends via hx-headers);
+     no path is ever submitted — the source is a fixed enum. All values are
+     server-computed, so html/template escaping is the only encoding needed.
 
      Accessibility (SPEC-0013 §Accessibility): a single page <h1>; the cards are a
      labelled <ul>/<li> region so assistive tech can enumerate the sources; each
      card's source glyph is decorative (aria-hidden) and the card carries an
      explicit aria-label naming the source and its state; the state is conveyed as
-     text (the badge + detail line), never by color alone. */}}
+     text (the badge + detail line), never by color alone; progress lands in an
+     aria-live="polite" region so job status is announced, not spinner-only. */}}
 {{define "setup_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1">
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
@@ -46,28 +57,86 @@
             <span class="setup-note setup-note-ok">{{template "icon-check" $}} Imported</span>
             {{- else if eq .State "needs-permission"}}
             {{/* Detect-and-guide only (ADR-0020): the System Settings deep link +
-                 Recheck live in the follow-on flow (#134); here the blocker is
-                 surfaced as text and the primary action is a read-only placeholder. */}}
-            <span class="setup-note setup-note-warn">{{template "icon-lock" $}} Grant access in System Settings, then recheck</span>
-            <button type="button" class="setup-btn" disabled aria-disabled="true"
-                    title="The Enable flow arrives in a later setup story">Enable</button>
+                 Recheck live in the follow-on flow (#135); here the blocker is
+                 surfaced as text. Enable is still offered — the export re-probes the
+                 grant and surfaces a permission error if it is still missing. */}}
+            <span class="setup-note setup-note-warn">{{template "icon-lock" $}} Grant access in System Settings, then Enable</span>
+            {{template "setup-enable-button" (enableButton $.EnableAvailable $.Token .Source)}}
             {{- else if eq .State "ready"}}
-            <button type="button" class="setup-btn" disabled aria-disabled="true"
-                    title="The Enable flow arrives in a later setup story">Enable</button>
-            <span class="setup-note">Enabling runs the import — coming in the setup flow.</span>
+            {{template "setup-enable-button" (enableButton $.EnableAvailable $.Token .Source)}}
             {{- else}}
             <span class="setup-note">Install {{.Label}} and reopen Setup to detect it.</span>
             {{- end}}
           </div>
+          {{- if or (eq .State "ready") (eq .State "needs-permission")}}
+          {{/* Per-source live progress region: the Enable POST targets it, and the
+               returned fragment self-polls until a terminal phase (SPEC-0013
+               §Accessibility aria-live). */}}
+          <div id="setup-progress-{{.Source}}" class="setup-progress" role="status" aria-live="polite"></div>
+          {{- end}}
         </div>
       </li>
       {{- end}}
     </ul>
 
     <p class="setup-footnote">
-      {{- if .AnyActionable}}Detected sources can be enabled from here once the import flow ships. Setup stays reachable from the sidebar at any time.
+      {{- if .AnyActionable}}Detected sources can be enabled from here — enabling runs the bundled exporter and imports the result. Setup stays reachable from the sidebar at any time.
       {{- else}}No sources are ready to enable on this machine yet. Setup stays reachable from the sidebar at any time.{{end}}
     </p>
   </div>
     </main>
+{{end}}
+
+{{/* enableButton pairs the render's EnableAvailable + Token with a card's source
+     so the shared button define can decide live-vs-disabled and carry the token
+     (html/template has no struct literals in-template — this adapter is provided
+     by the handler via a FuncMap). */}}
+{{define "setup-enable-button"}}
+  {{- if .Available}}
+  <button type="button" class="setup-btn"
+          hx-post="/setup/enable"
+          hx-vals='{"source": "{{.Source}}"}'
+          hx-headers='{"X-Setup-Token": "{{.Token}}"}'
+          hx-target="#setup-progress-{{.Source}}"
+          hx-swap="innerHTML"
+          hx-disabled-elt="this">Enable</button>
+  {{- else}}
+  <button type="button" class="setup-btn" disabled aria-disabled="true"
+          title="Enabling needs the desktop app with its bundled exporters, or a configured exporter path">Enable</button>
+  <span class="setup-note">Enabling needs the desktop app (bundled exporters) or a configured exporter path.</span>
+  {{- end}}
+{{end}}
+
+{{/* setup_progress is the htmx-swapped job-state fragment for one source. While
+     the job is Active it self-schedules the next poll of /setup/status/<source>
+     (hx-trigger="every 1s") and swaps itself, so the aria-live region announces
+     each phase; at a terminal phase it stops polling and shows the outcome. On a
+     successful Done it refreshes the sidebar so the new conversations appear.
+     All CSP-safe: htmx attributes only, no inline scripts/styles. */}}
+{{define "setup_progress"}}
+  {{- if .Unavailable}}
+  <p class="setup-progress-line setup-progress-unavailable">{{.Message}}</p>
+  {{- else}}
+  <div class="setup-progress-state setup-progress-{{.Phase}}"
+       {{if .Active}}hx-get="/setup/status/{{.Source}}" hx-trigger="every 1s" hx-target="this" hx-swap="outerHTML"{{end}}>
+    {{- if .Active}}
+    <span class="setup-progress-spin" aria-hidden="true"></span>
+    <span class="setup-progress-line">{{.Message}}</span>
+    <button type="button" class="setup-btn setup-btn-ghost"
+            hx-post="/setup/cancel"
+            hx-vals='{"source": "{{.Source}}"}'
+            hx-headers='{"X-Setup-Token": "{{.Token}}"}'
+            hx-target="#setup-progress-{{.Source}}"
+            hx-swap="innerHTML">Cancel</button>
+    {{- else if .Done}}
+    <p class="setup-progress-line setup-progress-ok">{{template "icon-check" .}} {{.Message}}</p>
+    {{- else if .Failed}}
+    <p class="setup-progress-line setup-progress-err">{{.Message}}</p>
+    {{- else if .Cancelled}}
+    <p class="setup-progress-line setup-progress-warn">{{.Message}}</p>
+    {{- else}}
+    <p class="setup-progress-line">{{.Message}}</p>
+    {{- end}}
+  </div>
+  {{- end}}
 {{end}}
