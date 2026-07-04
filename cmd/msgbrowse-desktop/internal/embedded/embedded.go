@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -37,6 +38,28 @@ import (
 	"github.com/joestump/msgbrowse/internal/syncthing"
 	"github.com/joestump/msgbrowse/internal/web"
 )
+
+// Option customizes the embedded web server before it starts serving. Options
+// mutate the web.Server through its public seams only, so the desktop shell's
+// extras stay out of the core web constructor (the same injection style as
+// SetDetector/SetEnabler).
+type Option func(*web.Server)
+
+// WithShellNotes wires the desktop shell's diagnostics provider into the web
+// Logs page (issue #167): fn is called per /logs render and must be safe for
+// concurrent use. The shell passes its shellnotes ring buffer's Snapshot so
+// systray/dock startup failures are observable in-app, never silent.
+func WithShellNotes(fn func() []web.ShellNote) Option {
+	return func(s *web.Server) { s.SetShellNotes(fn) }
+}
+
+// desktopChromeFor reports whether served pages should carry the
+// desktop-chrome presentation flag (issue #165) for the given GOOS: only
+// macOS hides the native title bar (mac.TitleBarHiddenInset in main.go) and
+// overlays the traffic lights on the web toolbar, so only darwin pads the
+// toolbar and arms the drag-region script. The Linux shell keeps its native
+// title bar, and browser mode never goes through this package at all.
+func desktopChromeFor(goos string) bool { return goos == "darwin" }
 
 // listenAddr is the only address the embedded server ever binds. SPEC-0010's
 // "Bind surface" security requirement pins the desktop shell to a loopback
@@ -120,8 +143,9 @@ type Server struct {
 // both from it. The server runs until ctx is cancelled; cancellation drains
 // in-flight requests via the same web.(*Server).ServeHandler shutdown path
 // `msgbrowse serve` uses. Callers must cancel ctx and then call Close to
-// release the store.
-func Start(ctx context.Context, cfg *config.Config, log *slog.Logger) (*Server, error) {
+// release the store. opts customize the web server before it serves (e.g.
+// WithShellNotes).
+func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Option) (*Server, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data dir %q: %w", cfg.DataDir, err)
 	}
@@ -134,6 +158,18 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger) (*Server, 
 	if err != nil {
 		_ = st.Close()
 		return nil, err
+	}
+
+	// Desktop-chrome presentation flag (issue #165): on macOS the shell hides
+	// the native title bar, so pages must pad the unified toolbar past the
+	// traffic lights and load the drag-region script. Decided once here — the
+	// embedded server is the desktop shell by definition — via the minimal
+	// template-flag seam web.SetDesktopChrome (no query params, no headers,
+	// no inline styles).
+	srv.SetDesktopChrome(desktopChromeFor(runtime.GOOS))
+
+	for _, opt := range opts {
+		opt(srv)
 	}
 
 	// Inject the desktop source detector with the GENUINE macOS Keychain check

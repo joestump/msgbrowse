@@ -29,6 +29,13 @@ type baseData struct {
 	Conversations []store.ConversationSummary
 	ActiveID      int64
 	TotalMessages int // global message count (Home/Status body, not the toolbar)
+	// DesktopChrome is true when rendering inside the desktop shell's
+	// hidden-title-bar window (SPEC-0010, issue #165): page_start then adds
+	// the `desktop-chrome` <body> class (traffic-light inset padding on the
+	// unified toolbar) and loads /static/desktop.js (the CSP-safe
+	// --wails-draggable drag-region reader). Only full-page renders emit the
+	// <body> tag, so partialBase never needs to carry it.
+	DesktopChrome bool
 }
 
 // PinnedConversations are the conversations the sidebar renders in its PINNED
@@ -81,6 +88,7 @@ func (s *Server) baseData(ctx context.Context, title string, activeID int64) (ba
 		Conversations: convs,
 		ActiveID:      activeID,
 		TotalMessages: total,
+		DesktopChrome: s.desktopChrome,
 	}, nil
 }
 
