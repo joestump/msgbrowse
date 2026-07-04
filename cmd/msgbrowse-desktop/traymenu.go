@@ -6,17 +6,27 @@
 //
 // Loop coexistence: systray.RunWithExternalLoop is the library's documented
 // mode for living beside another GUI toolkit's main loop. The returned
-// start() is called on the main goroutine *before* wails.Run — on macOS that
-// is the main thread, where the NSStatusItem must be created, and the item's
-// later menu updates dispatch onto the NSApplication run loop Wails owns; on
-// Linux the backend is pure-Go D-Bus (StatusNotifierItem), fully independent
-// of Wails' GTK loop. end() is called after wails.Run returns.
+// start() is handed to the per-platform scheduleTrayStart (issue #167): on
+// macOS it is DEFERRED onto the GCD main queue so the NSStatusItem is created
+// on the main thread after [NSApp run] has finished launching — created
+// earlier (as #122 did), AppKit can silently never render it, the exact
+// no-menubar-icon symptom on real hardware (see tray_platform_darwin.go); on
+// Linux it runs immediately, the backend being pure-Go D-Bus
+// (StatusNotifierItem), fully independent of Wails' GTK loop. end() is called
+// after wails.Run returns.
+//
+// Observability (issue #167): registration is instrumented through the shell
+// notes ring buffer — surfaced on the web app's Logs page — and onReady
+// completion closes a ready channel main.go's watchdog races against a
+// deadline, so a status item that never appears is a visible error, not a
+// silent gap. fyne.io/systray itself reports no registration error; onReady
+// is the only success signal it offers.
 //
 // Headless/Linux caveat (SPEC-0010 story #118): the tray requires a
 // StatusNotifier host (a desktop panel). Without one — headless boxes, bare
 // window managers — fyne.io/systray logs the D-Bus failure and every menu
 // operation degrades to a no-op; the guards below additionally convert any
-// teardown panic from that degraded state into a log line so tray failure
+// panic from that degraded state into a log line + shell note so tray failure
 // can never take down the app or its graceful shutdown.
 //
 // Governing: SPEC-0010 REQ "Menubar residency", REQ "Menubar quick menu".
@@ -24,10 +34,10 @@ package main
 
 import (
 	_ "embed"
-	"log/slog"
 	"time"
 
 	"fyne.io/systray"
+	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/shellnotes"
 	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/tray"
 )
 
@@ -47,26 +57,35 @@ var (
 const healthRefreshEvery = 15 * time.Second
 
 // setupTray registers the quick menu and returns start/stop functions per
-// the RunWithExternalLoop contract. Both are panic-guarded: on a Linux
-// session with no StatusNotifier host the library's teardown dereferences
-// the D-Bus connection it never got, and a resident app must shrug that off.
-func setupTray(m *tray.Menu) (start, stop func()) {
+// the RunWithExternalLoop contract, plus a ready channel closed once the
+// library's onReady confirms the status item registered and the quick menu
+// was installed — the only success signal systray offers, raced against a
+// deadline by main.go's watchdog (issue #167). Start/stop are panic-guarded:
+// on a Linux session with no StatusNotifier host the library's teardown
+// dereferences the D-Bus connection it never got, and a resident app must
+// shrug that off.
+func setupTray(m *tray.Menu, notes *shellnotes.Log) (start, stop func(), ready <-chan struct{}) {
 	done := make(chan struct{})
-	s, e := systray.RunWithExternalLoop(func() { trayReady(m, done) }, nil)
-	start = func() { guard("start", s) }
+	readyCh := make(chan struct{})
+	s, e := systray.RunWithExternalLoop(func() {
+		trayReady(m, done)
+		close(readyCh)
+	}, nil)
+	start = func() { guard("start", s, notes) }
 	stop = func() {
 		close(done)
-		guard("stop", e)
+		guard("stop", e, notes)
 	}
-	return start, stop
+	return start, stop, readyCh
 }
 
-// guard runs f, converting a panic into a log line — tray degradation must
-// never break the app (SPEC-0010: degrade gracefully when no tray host).
-func guard(what string, f func()) {
+// guard runs f, converting a panic into a log line AND a Logs-page shell note
+// — tray degradation must never break the app (SPEC-0010: degrade gracefully
+// when no tray host) and must never be silent (issue #167).
+func guard(what string, f func(), notes *shellnotes.Log) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn("systray unavailable; continuing without a tray", "during", what, "cause", r)
+			notes.Errorf("menubar: systray %s panicked (%v) — continuing without a tray", what, r)
 		}
 	}()
 	f()

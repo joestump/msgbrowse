@@ -20,6 +20,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/store"
+	"github.com/joestump/msgbrowse/internal/web"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -246,6 +247,68 @@ func TestHealthyReflectsServerState(t *testing.T) {
 	}
 	if err := es.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+}
+
+// TestDesktopChromeFollowsGOOS pins the #165 flag decision: only darwin (the
+// hidden-title-bar shell) marks pages desktop-chrome; the Linux shell keeps
+// its native title bar and needs no traffic-light inset.
+func TestDesktopChromeFollowsGOOS(t *testing.T) {
+	cases := map[string]bool{
+		"darwin":  true,
+		"linux":   false,
+		"windows": false,
+	}
+	for goos, want := range cases {
+		if got := desktopChromeFor(goos); got != want {
+			t.Errorf("desktopChromeFor(%q) = %v, want %v", goos, got, want)
+		}
+	}
+}
+
+// TestWithShellNotesSurfacesOnLogsPage proves the #167 observability wiring
+// end to end over the real loopback listener: notes handed to Start via
+// WithShellNotes render on /logs (and an error note carries the failed
+// badge), exactly what the owner will look at when the menubar misbehaves on
+// hardware.
+func TestWithShellNotesSurfacesOnLogsPage(t *testing.T) {
+	notes := func() []web.ShellNote {
+		return []web.ShellNote{
+			{Time: time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC), Level: web.ShellNoteInfo, Message: "menubar: registering status item"},
+			{Time: time.Date(2026, 7, 4, 10, 0, 30, 0, time.UTC), Level: web.ShellNoteError, Message: "menubar: status item did not register within 30s"},
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	es, err := Start(ctx, testConfig(t), testLogger(), WithShellNotes(notes))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		cancel()
+		if err := es.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+
+	resp, err := http.Get(es.URL + "/logs")
+	if err != nil {
+		t.Fatalf("GET /logs: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /logs status = %d; want 200", resp.StatusCode)
+	}
+	page := string(body)
+	if !strings.Contains(page, "Desktop shell") {
+		t.Error("/logs missing the Desktop shell diagnostics section")
+	}
+	if !strings.Contains(page, "menubar: registering status item") {
+		t.Error("/logs missing the info note")
+	}
+	if !strings.Contains(page, "menubar: status item did not register within 30s") {
+		t.Error("/logs missing the error note")
 	}
 }
 

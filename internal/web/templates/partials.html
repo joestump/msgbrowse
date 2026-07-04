@@ -16,8 +16,19 @@
   <script src="/static/copy.js" defer></script>
   <script src="/static/setup.js" defer></script>
   <script src="/static/htmx.min.js" defer></script>
+  {{/* Desktop shell only (SPEC-0010, #165): desktop.js posts the "drag"
+       message when a mousedown lands on a --wails-draggable:drag region (the
+       unified toolbar), driving native window dragging under the hidden macOS
+       title bar. Self-hosted and loaded under script-src 'self' — the strict
+       CSP posture is unchanged. Browser mode never renders this include. */}}
+  {{if .DesktopChrome}}<script src="/static/desktop.js" defer></script>{{end}}
 </head>
-<body class="bg-base-100 text-base-content">
+{{/* desktop-chrome (SPEC-0010, #165): set only by the desktop shell's embedded
+     server on macOS, where the native title bar is hidden and the traffic
+     lights overlay the toolbar — input.css pads .app-toolbar past them and
+     marks it draggable. Boosted partial renders never re-render this shell, so
+     the class persists across navigation. */}}
+<body class="bg-base-100 text-base-content{{if .DesktopChrome}} desktop-chrome{{end}}">
 <div class="drawer lg:drawer-open">
   <input id="nav-drawer" type="checkbox" class="drawer-toggle">
   <div class="drawer-content flex flex-col min-h-screen">

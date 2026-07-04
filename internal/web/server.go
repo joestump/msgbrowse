@@ -108,6 +108,18 @@ type Server struct {
 	// verified on the privileged Setup POSTs (SPEC-0013 §Security same-origin +
 	// per-session token). Always non-nil after NewServer.
 	setupTokens *setupTokens
+	// desktopChrome marks pages as rendered inside the desktop shell's
+	// hidden-title-bar window (SPEC-0010 "Native shell affordances", issue
+	// #165): page_start adds the `desktop-chrome` <body> class (traffic-light
+	// inset padding on the toolbar) and includes /static/desktop.js (the
+	// CSP-safe --wails-draggable reader). Set by the embedded server via
+	// SetDesktopChrome before serving; browser mode never sets it.
+	desktopChrome bool
+	// shellNotes supplies the desktop shell's startup diagnostics (systray
+	// registration, dock policy — issue #167) for the Logs page, so a tray
+	// that fails to render on real hardware is observable instead of silent.
+	// nil (browser mode) renders no shell section. Wired via SetShellNotes.
+	shellNotes func() []ShellNote
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -204,6 +216,23 @@ func (s *Server) imgRenderable(src, convName, relPath string) bool {
 
 // Handler returns the root http.Handler (security headers already applied).
 func (s *Server) Handler() http.Handler { return s.mux }
+
+// SetDesktopChrome marks rendered pages as living inside the desktop shell's
+// hidden-title-bar window (issue #165). The full-page shell then carries the
+// `desktop-chrome` <body> class — which pads the unified toolbar past the
+// macOS traffic lights and scopes the drag-region script — and loads
+// /static/desktop.js. Call before serving; the flag is read-only afterwards.
+// This is the minimal template-flag mechanism SPEC-0010 needs: no query
+// params, no inline styles, no per-request state — the embedded server knows
+// it is the desktop shell at construction time and says so once.
+func (s *Server) SetDesktopChrome(enabled bool) { s.desktopChrome = enabled }
+
+// SetShellNotes wires the desktop shell's diagnostics snapshot (issue #167:
+// systray/dock startup must be observable on the Logs page, not silent).
+// fn is called per /logs render and must be safe for concurrent use; the
+// returned notes are server-owned strings (never request- or message-derived),
+// rendered through html/template like everything else. Call before serving.
+func (s *Server) SetShellNotes(fn func() []ShellNote) { s.shellNotes = fn }
 
 // routes builds the mux and wraps it with the middleware stack: gzip outermost
 // (SPEC-0008 REQ-0008-007), then the security headers, then the mux. The order

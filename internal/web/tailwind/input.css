@@ -237,6 +237,62 @@ html {
   /* Subtle bottom hairline (the toolbar's only edge; no shadow — borders-not-
      shadows, depth 0). */
   border-bottom: 1px solid color-mix(in oklab, var(--color-neutral) 85%, transparent);
+  /* Desktop shell drag region (SPEC-0010 "Native shell affordances", #165):
+     with the macOS title bar hidden (TitleBarHiddenInset) the toolbar IS the
+     title bar, so the whole row declares itself draggable via the CSS custom
+     property Wails' drag protocol reads (getComputedStyle — a stylesheet
+     class, no inline style, CSP-safe). Browsers ignore the unknown property;
+     desktop.js only acts on it inside the shell. */
+  --wails-draggable: drag;
+}
+/* Interactive toolbar children opt back out of the drag region (#165): custom
+   properties inherit, so without this a click on the search field or a toolbar
+   button would drag the window instead of acting. Covers every interactive
+   element the toolbar renders — links (title, settings), buttons (theme
+   toggle), the drawer-toggle label, and the search form + input. */
+.app-toolbar a,
+.app-toolbar button,
+.app-toolbar label,
+.app-toolbar form,
+.app-toolbar input {
+  --wails-draggable: no-drag;
+}
+/* Traffic-light inset (#165): in the desktop shell on macOS (the shell adds
+   the desktop-chrome <body> class — see web.Server.SetDesktopChrome) the
+   hidden-inset title bar overlays the window's top-left with the close/min/max
+   buttons. WHICH element owns that corner depends on the drawer state:
+
+   - Below lg the sidebar drawer is closed and the toolbar spans the full
+     window, so its left cluster steps past the buttons: ~80px clears the
+     three lights at the hidden-inset metrics.
+   - At lg+ (the desktop default, `lg:drawer-open`) the 320px sidebar owns the
+     top-left, so the lights sit over the sidebar surface — the native macOS
+     sidebar-app arrangement (Finder, Notes). The sidebar reserves a
+     toolbar-height (52px) top strip for them, and that empty strip doubles as
+     drag region; the toolbar needs no extra inset there (it starts at x=320).
+
+   64rem is Tailwind's lg breakpoint — keep in lockstep with the template's
+   lg:drawer-open. Browser mode and the Linux shell (native title bar intact)
+   never carry the class. */
+.desktop-chrome .app-toolbar {
+  padding-left: 80px;
+}
+@media (min-width: 64rem) {
+  .desktop-chrome .app-toolbar {
+    padding-left: 1rem; /* back to the lg:px-4 metric; the sidebar clears the lights */
+  }
+  .desktop-chrome .app-sidebar {
+    padding-top: 52px; /* toolbar-height strip under the traffic lights */
+  }
+}
+/* The sidebar's reserved strip (the aside's own padding box) drags the window
+   like the toolbar does; every direct content block opts back out, so only
+   clicks landing on the aside itself (the empty strip) move the window. */
+.desktop-chrome .app-sidebar {
+  --wails-draggable: drag;
+}
+.desktop-chrome .app-sidebar > * {
+  --wails-draggable: no-drag;
 }
 /* Contextual title: "msgbrowse" on home / global surfaces, the active
    conversation name on a transcript. Links home; truncates rather than pushing

@@ -78,6 +78,13 @@ func (sh *shell) showWindow() {
 	if ctx == nil {
 		return // tray clicked before OnStartup; nothing to show yet
 	}
+	// Restore the Dock icon first (issue #167): close-to-tray may have
+	// switched the app to the accessory activation policy (no Dock icon, no
+	// Cmd+Tab), and an unhidden window under the accessory policy would not
+	// come frontmost. Both calls dispatch onto the macOS main queue in FIFO
+	// order, so the policy flip lands before the unhide. No-op off macOS and
+	// when the policy is already regular.
+	setDockVisible(true)
 	wailsruntime.Show(ctx)
 	wailsruntime.WindowShow(ctx)
 }

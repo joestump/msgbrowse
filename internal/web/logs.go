@@ -21,10 +21,43 @@ package web
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/joestump/msgbrowse/internal/onboard"
 	"github.com/joestump/msgbrowse/internal/source"
 )
+
+// ShellNote is one desktop-shell diagnostic line for the Logs page (issue
+// #167): systray registration progress/failures and dock-policy transitions,
+// recorded into the desktop shell's bounded ring buffer and surfaced here so a
+// menubar icon that never renders on real macOS is visible in-app instead of
+// lost to a stderr nobody sees. Every field is server-owned (composed by the
+// shell, never from a request or message content), so html/template escaping
+// is the only encoding needed. Browser mode wires no provider and renders no
+// shell section. Governing: SPEC-0010 REQ "Menubar residency" (the tray must
+// degrade observably, not silently).
+type ShellNote struct {
+	// Time is when the note was recorded (rendered as a clock time).
+	Time time.Time
+	// Level is ShellNoteInfo or ShellNoteError; errors reuse the failed badge.
+	Level string
+	// Message is the human-readable diagnostic line.
+	Message string
+}
+
+// ShellNote levels. Plain strings (not a new type) so the desktop module's
+// ring buffer can construct notes without importing more than this package.
+const (
+	ShellNoteInfo  = "info"
+	ShellNoteError = "error"
+)
+
+// IsError reports whether the note is an error, for the template's badge.
+func (n ShellNote) IsError() bool { return n.Level == ShellNoteError }
+
+// Clock renders the note's time-of-day for the Logs page; startup diagnostics
+// all happen within one app session, so the date would be noise.
+func (n ShellNote) Clock() string { return n.Time.Format("15:04:05") }
 
 // logEntry is one source's most-recent job log, projected for the Logs template.
 // Every field is a server-computed value (the resolved tool path, app-assembled
@@ -73,6 +106,11 @@ type logsData struct {
 	// AnyActive is true when at least one source's job is still running, so the
 	// entries region self-polls (aria-live) to update the running log tail in place.
 	AnyActive bool
+	// ShellNotes is the desktop shell's diagnostics section (issue #167); empty
+	// in browser mode (no provider) so the section renders only in the desktop
+	// app. It lives outside the self-polling entries fragment — these are
+	// startup diagnostics, not a live job tail.
+	ShellNotes []ShellNote
 }
 
 // handleLogs renders the Logs viewer. GET-only (the route pattern enforces it);
@@ -118,7 +156,17 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		Entries:         entries,
 		EnableAvailable: s.enableAvailable(),
 		AnyActive:       anyActive,
+		ShellNotes:      s.shellNoteSnapshot(),
 	})
+}
+
+// shellNoteSnapshot reads the desktop shell's diagnostics, or nothing when no
+// provider is wired (browser mode).
+func (s *Server) shellNoteSnapshot() []ShellNote {
+	if s.shellNotes == nil {
+		return nil
+	}
+	return s.shellNotes()
 }
 
 // logEntryFor projects one source's most-recent job snapshot into a logEntry. A

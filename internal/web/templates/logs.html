@@ -28,6 +28,31 @@
       Enable or Refresh; nothing here leaves this machine.</p>
 
     {{template "logs_entries" .}}
+
+    {{/* Desktop-shell diagnostics (issue #167): the systray/dock startup notes
+         the shell records into its bounded ring buffer — so a menubar icon that
+         fails to register on real macOS is visible HERE, not silently lost.
+         Present only when the desktop shell wires a provider (browser mode
+         renders nothing). Static per page load (startup diagnostics, not a live
+         job tail), so it lives outside the self-polling entries fragment. Every
+         line is a server-owned string; errors reuse the failed badge so state is
+         conveyed as text, never color alone. */}}
+    {{- if .ShellNotes}}
+    <section class="status-card space-y-1" aria-labelledby="log-title-shell">
+      <div class="log-entry-head">
+        <span id="log-title-shell" class="log-entry-title">Desktop shell</span>
+      </div>
+      <p class="log-empty">Menubar and window diagnostics from this app session.</p>
+      <div class="log-meta">
+        {{- range .ShellNotes}}
+        <div class="log-meta-row">
+          <span class="log-meta-label">{{.Clock}}</span>
+          <span class="log-meta-value">{{if .IsError}}<span class="log-badge log-badge-failed">error</span> {{end}}{{.Message}}</span>
+        </div>
+        {{- end}}
+      </div>
+    </section>
+    {{- end}}
   </div>
     </main>
 {{end}}
