@@ -8,9 +8,27 @@
 (function () {
   "use strict";
 
+  // The one live filter binding. #sidebar-filter persists across OOB row swaps
+  // (only the lists are replaced), so every re-init targets the SAME input —
+  // without detaching the previous handler first, each pin/import would stack
+  // another listener closed over a stale row list. Held at module scope so
+  // initFilter can unbind before rebinding; on htmx:historyRestore the input
+  // element itself is replaced and the removeEventListener is a harmless no-op.
+  var filterInput = null;
+  var filterHandler = null;
+
   function initFilter() {
     var input = document.getElementById("sidebar-filter");
     if (!input) return;
+
+    // Idempotent re-init: drop the previous binding (and its captured rows)
+    // before the early returns, so a re-init over an emptied list still
+    // detaches the stale handler.
+    if (filterInput && filterHandler) {
+      filterInput.removeEventListener("input", filterHandler);
+      filterInput = null;
+      filterHandler = null;
+    }
 
     // Every conversation row in either section carries .conv-item + data-name.
     var items = Array.prototype.slice.call(document.querySelectorAll(".conv-item"));
@@ -78,6 +96,8 @@
     }
 
     input.addEventListener("input", schedule);
+    filterInput = input;
+    filterHandler = schedule;
     apply();
   }
 
@@ -128,6 +148,11 @@
   // filterable and the active-row highlight is correct, making the payoff appear
   // without a manual navigation.
   document.body.addEventListener("msgbrowse:imported", init);
+
+  // A pin/unpin toggle answers its boosted POST with the same out-of-band
+  // sidebar-list swap (#176) — same row-list staleness as the Setup import
+  // above, same fix.
+  document.body.addEventListener("msgbrowse:pinned", init);
 
   // A failed boosted request swaps nothing (htmx's default for 4xx/5xx), which
   // would turn an error page into a dead click — fall back to full navigation

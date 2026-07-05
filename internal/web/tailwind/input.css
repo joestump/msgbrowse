@@ -653,6 +653,13 @@ html {
 .meta-chip:first-of-type {
   margin-left: 0.25rem;
 }
+/* Meta chips are anchors deep-linking to the per-conversation gallery (#177):
+   the resting chip look is unchanged; hover brightens to the full text color —
+   the same quiet affordance as .pin-btn:hover — because an underline would not
+   propagate into the inline-flex chip's children. */
+a.meta-chip:hover {
+  color: var(--color-base-content);
+}
 
 /* Pin/unpin toggle in the conversation header (REQ-0006-010). A bordered chip
    button; the active (pinned) state fills with the accent so the current state
