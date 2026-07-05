@@ -80,9 +80,13 @@ func TestPinFirstPinSwapsSidebarOOB(t *testing.T) {
 		t.Errorf("HX-Push-Url = %q, want %q", got, "/c/"+cid)
 	}
 	// The row swap stales sidebar.js's captured filter list; the trigger tells
-	// it to re-init.
-	if got := rec.Header().Get("HX-Trigger"); got != pinnedSidebarTrigger {
-		t.Errorf("HX-Trigger = %q, want %q", got, pinnedSidebarTrigger)
+	// it to re-init. It must ride HX-Trigger-After-Settle — plain HX-Trigger
+	// dispatches before the swap, so the re-init would capture the doomed rows.
+	if got := rec.Header().Get("HX-Trigger-After-Settle"); got != pinnedSidebarTrigger {
+		t.Errorf("HX-Trigger-After-Settle = %q, want %q", got, pinnedSidebarTrigger)
+	}
+	if got := rec.Header().Get("HX-Trigger"); got != "" {
+		t.Errorf("HX-Trigger = %q, want unset (re-init must fire after settle)", got)
 	}
 }
 

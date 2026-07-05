@@ -291,10 +291,12 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// pinnedSidebarTrigger is the HX-Trigger a boosted pin toggle response emits:
-// its OOB swap replaces the sidebar's conversation rows, staling sidebar.js's
-// captured filter row list, so the client re-inits — the same contract as the
-// Setup flows' msgbrowse:imported trigger.
+// pinnedSidebarTrigger is the event a boosted pin toggle response emits via
+// HX-Trigger-After-Settle: its OOB swap replaces the sidebar's conversation
+// rows, staling sidebar.js's captured filter row list, so the client re-inits.
+// It must be the After-Settle variant — plain HX-Trigger dispatches BEFORE the
+// swap, so sidebar.js would re-capture the about-to-be-replaced rows and the
+// filter would break after every pin.
 const pinnedSidebarTrigger = "msgbrowse:pinned"
 
 // handlePin toggles a conversation's pinned flag (REQ-0006-010). It is a
@@ -390,7 +392,9 @@ func (s *Server) renderPinToggle(w http.ResponseWriter, r *http.Request, id int6
 	// History must record the conversation URL the no-JS 303 lands on — never
 	// the POST-only /pin route the form targeted.
 	w.Header().Set("HX-Push-Url", "/c/"+strconv.FormatInt(id, 10))
-	w.Header().Set("HX-Trigger", pinnedSidebarTrigger)
+	// After-Settle, NOT plain HX-Trigger: the plain header fires before htmx
+	// performs the swap, so sidebar.js's re-init would capture the doomed rows.
+	w.Header().Set("HX-Trigger-After-Settle", pinnedSidebarTrigger)
 	w.Header().Add("Vary", "HX-Request")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = buf.WriteTo(w)
