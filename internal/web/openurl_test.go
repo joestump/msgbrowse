@@ -86,6 +86,38 @@ func TestOpenURLValidHTTPSAccepted(t *testing.T) {
 	}
 }
 
+// TestOpenURLWailsRejectedBytesAccepted pins the reason openExternal calls
+// pkg/browser instead of wailsruntime.BrowserOpenURL (PR #184 review fix):
+// ordinary message links carry bytes the Wails wrapper's
+// ValidateAndSanitizeURL rejects — parentheses (Wikipedia article titles),
+// ~ ! $ * and friends. Each must pass validExternalURL, survive the full
+// form-decode path, and reach the opener byte-for-byte.
+func TestOpenURLWailsRejectedBytesAccepted(t *testing.T) {
+	cases := []struct {
+		name, raw string
+	}{
+		{"parenthesized wikipedia article", "https://en.wikipedia.org/wiki/Go_(programming_language)"},
+		{"tilde user path", "https://example.org/~joe/index.html"},
+		{"bang and dollar in query", "https://example.org/search?q=$100!"},
+		{"asterisk and brackets", "https://example.org/a*b/%5Bx%5D?list[]=1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !validExternalURL(tc.raw) {
+				t.Fatalf("validExternalURL(%q) = false, want true", tc.raw)
+			}
+			srv, opened := newOpenURLServer(t)
+			rec := openURLPost(t, srv, selfOrigin, tc.raw)
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204", rec.Code)
+			}
+			if len(*opened) != 1 || (*opened)[0] != tc.raw {
+				t.Fatalf("opener saw %v, want exactly [%s] byte-for-byte", *opened, tc.raw)
+			}
+		})
+	}
+}
+
 // TestOpenURLCrossOriginRejected: a cross-origin POST is 403 and the opener is
 // never called — another local process or a hostile page must not be able to
 // drive the user's browser.
