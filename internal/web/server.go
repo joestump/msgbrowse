@@ -131,6 +131,12 @@ type Server struct {
 	// that fails to render on real hardware is observable instead of silent.
 	// nil (browser mode) renders no shell section. Wired via SetShellNotes.
 	shellNotes func() []ShellNote
+	// externalOpener hands a validated external http(s) URL to the OS default
+	// browser — the desktop shell's answer to target="_blank" links, which its
+	// webview otherwise drops silently (no new-window handler; issue #179).
+	// Wired via SetExternalOpener by the shell only; nil (browser mode) leaves
+	// POST /desktop/open-url answering 404.
+	externalOpener func(url string) error
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -291,6 +297,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /settings/devices/pair", s.handleDevicePair)
 	mux.HandleFunc("POST /settings/devices/unpair", s.handleDeviceUnpair)
 	mux.HandleFunc("GET /media/{id}/{path...}", s.handleMedia)
+	// Desktop-only external-link bridge (issue #179): 404s unless the shell
+	// wired an opener AND enabled desktop-chrome; same-origin gated inside the
+	// handler with the Setup POSTs' rigor.
+	mux.HandleFunc("POST /desktop/open-url", s.handleOpenURL)
 
 	return gzipMiddleware(securityHeaders(mux))
 }

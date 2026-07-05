@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	goruntime "runtime"
 
@@ -39,13 +40,15 @@ const settingsPath = "/settings"
 // dead-server watcher) close the app exactly once, at any point in the app
 // lifecycle.
 type shell struct {
-	lc      shellstate.Lifecycle
-	baseURL string // embedded server base URL, for deep links
+	lc shellstate.Lifecycle
+	// baseURL is the embedded server base URL, for deep links. Set by run()
+	// right after embedded.Start returns: the shell must exist BEFORE Start so
+	// openExternal can be wired into the server's /desktop/open-url seam
+	// (issue #179), and Start only serves after that wiring.
+	baseURL string
 }
 
-func newShell(baseURL string) *shell {
-	return &shell{baseURL: baseURL}
-}
+func newShell() *shell { return &shell{} }
 
 // startup captures the Wails runtime context and replays a latched
 // pre-startup quit: a SIGINT/SIGTERM (or embedded-server death) delivered
@@ -100,6 +103,23 @@ func (sh *shell) openPairing() {
 	}
 	sh.showWindow()
 	wailsruntime.WindowExecJS(ctx, fmt.Sprintf("window.location.assign(%q);", sh.baseURL+settingsPath))
+}
+
+// openExternal hands a server-validated external URL to the OS default
+// browser (issue #179): the webview registers no new-window handler — Wails
+// v2 installs none — so target="_blank" navigations are dropped; desktop.js
+// posts cross-origin link clicks to /desktop/open-url and the web layer calls
+// this. BrowserOpenURL re-validates the URL inside the Wails runtime before
+// the OS sees it. Before OnStartup there is no runtime context: report
+// failure and open nothing (the webview cannot deliver a click that early;
+// the interceptor drops the failure silently either way).
+func (sh *shell) openExternal(url string) error {
+	ctx := sh.lc.Context()
+	if ctx == nil {
+		return errors.New("shell runtime not started")
+	}
+	wailsruntime.BrowserOpenURL(ctx, url)
+	return nil
 }
 
 // copyText puts text on the native clipboard via the Wails runtime — the OS
