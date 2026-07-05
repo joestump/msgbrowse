@@ -130,6 +130,32 @@ func TestSidebarPresenceDotAndSource(t *testing.T) {
 	}
 }
 
+// TestSidebarFilterAboveConversationSections pins the #175 sidebar order: the
+// nav links come first, then the "Filter conversations" input directly above
+// the Pinned/Conversations section heads — all inside the collapsing <aside>,
+// where sidebar.js binds the input by id.
+func TestSidebarFilterAboveConversationSections(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/").Body.String()
+
+	asideStart := strings.Index(body, "<aside")
+	asideEnd := strings.Index(body, "</aside>")
+	if asideStart < 0 || asideEnd < 0 {
+		t.Fatal("home missing the sidebar <aside>")
+	}
+	aside := body[asideStart:asideEnd]
+
+	nav := strings.Index(aside, "<nav")
+	filter := strings.Index(aside, `id="sidebar-filter"`)
+	sections := strings.Index(aside, "sidebar-section-head")
+	if nav < 0 || filter < 0 || sections < 0 {
+		t.Fatalf("sidebar missing nav/filter/section (nav %d, filter %d, sections %d)", nav, filter, sections)
+	}
+	if !(nav < filter && filter < sections) {
+		t.Errorf("sidebar order should be nav → filter → sections (nav %d, filter %d, sections %d)", nav, filter, sections)
+	}
+}
+
 // TestSelectedRowAccentRail verifies the open conversation's sidebar row carries
 // the selected modifier (accent left rail + #1b2330 tint, REQ-0006-003) and that
 // non-open rows do not.
@@ -219,10 +245,11 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 }
 
 // TestPinnedSection covers REQ-0006-010 end to end: with nothing pinned the
-// sidebar shows no PINNED label; POSTing to /c/{id}/pin 303-redirects back, marks
-// the conversation pinned, and the sidebar then renders it under a PINNED
-// section. A second POST unpins it. The pin button on the conversation header
-// reflects the current state.
+// sidebar's PINNED section wrapper renders hidden (it is ALWAYS in the DOM as
+// the pin toggle's OOB swap target — #176); POSTing to /c/{id}/pin
+// 303-redirects back, marks the conversation pinned, and the sidebar then
+// shows the section. A second POST unpins it. The pin button on the
+// conversation header reflects the current state.
 func TestPinnedSection(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 	ctx := context.Background()
@@ -233,10 +260,12 @@ func TestPinnedSection(t *testing.T) {
 	}
 	cid := itoa(conv.ID)
 
-	// Nothing pinned: no PINNED label, and the header button reads "Pin".
+	// Nothing pinned: the wrapper is present but hidden (class, not inline
+	// style — the strict CSP forbids the latter), and the header button reads
+	// "Pin".
 	home := get(t, srv, "/").Body.String()
-	if contains(home, ">Pinned<") {
-		t.Error("PINNED section should be hidden when nothing is pinned")
+	if !contains(home, `id="sidebar-pinned-section" class="hidden"`) {
+		t.Error("PINNED section wrapper should render hidden when nothing is pinned")
 	}
 	convPage := get(t, srv, "/c/"+cid).Body.String()
 	if !contains(convPage, `action="/c/`+cid+`/pin"`) {
@@ -255,12 +284,12 @@ func TestPinnedSection(t *testing.T) {
 		t.Errorf("pin redirect = %q, want %q", loc, "/c/"+cid)
 	}
 
-	// Sidebar now has a PINNED section listing the conversation.
+	// Sidebar now shows the PINNED section listing the conversation.
 	home = get(t, srv, "/").Body.String()
-	if !contains(home, ">Pinned<") {
-		t.Error("PINNED section should appear after pinning")
+	if contains(home, `id="sidebar-pinned-section" class="hidden"`) {
+		t.Error("PINNED section should be visible after pinning")
 	}
-	if !contains(home, `id="sidebar-pinned"`) {
+	if !contains(home, ">Pinned<") || !contains(home, `id="sidebar-pinned"`) {
 		t.Error("PINNED list container missing")
 	}
 	// The pinned row links to the conversation and uses the shared row markup.
@@ -274,13 +303,13 @@ func TestPinnedSection(t *testing.T) {
 		t.Error("pin button should read 'Unpin' when pinned")
 	}
 
-	// Unpin: second POST flips it back; PINNED section disappears.
+	// Unpin: second POST flips it back; PINNED section hides again.
 	if rec := post(t, srv, "/c/"+cid+"/pin"); rec.Code != http.StatusSeeOther {
 		t.Fatalf("unpin POST status = %d, want 303", rec.Code)
 	}
 	home = get(t, srv, "/").Body.String()
-	if contains(home, ">Pinned<") {
-		t.Error("PINNED section should be gone after unpinning")
+	if !contains(home, `id="sidebar-pinned-section" class="hidden"`) {
+		t.Error("PINNED section should hide again after unpinning")
 	}
 }
 
@@ -291,7 +320,7 @@ func TestThemeStillSelfHosted(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/")
 	body := rec.Body.String()
-	for _, src := range []string{"/static/theme.js", "/static/sidebar.js", "/static/htmx.min.js"} {
+	for _, src := range []string{"/static/theme.js", "/static/sidebar-toggle.js", "/static/sidebar.js", "/static/htmx.min.js"} {
 		if !contains(body, `src="`+src+`"`) {
 			t.Errorf("page missing self-hosted script %q", src)
 		}

@@ -220,27 +220,33 @@ func TestSetupA11yLandmarksAndHeading(t *testing.T) {
 	}
 }
 
-// TestSetupNavLinkPresent asserts the Providers nav link (the renamed Setup
-// surface, at /providers) is in the sidebar and, like the other nav links, sits
-// under the hx-boost'd <aside> (so it navigates via the scoped #main-content
-// swap). It also confirms Status & backups is NO LONGER a primary sidebar nav
-// link — it moved under Settings.
-func TestSetupNavLinkPresent(t *testing.T) {
+// TestSidebarNavOmitsSettingsSurfaces is the issue-#175 information-
+// architecture contract: the sidebar's primary nav carries only the content
+// surfaces (Search, Media). Settings' sole entry is the toolbar gear, and
+// Providers / Logs / Status & backups are tabs in the Settings sub-nav — none
+// of them may reappear as sidebar links.
+func TestSidebarNavOmitsSettingsSurfaces(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv, "/").Body.String()
-	if !contains(body, `href="/providers"`) {
-		t.Error("sidebar missing the Providers nav link")
-	}
-	// The link lives inside the boosted <aside> nav (the whole nav block is
-	// boosted at the <aside>), so it is boosted like Search/Media/Settings.
 	navStart := strings.Index(body, "<nav")
 	navEnd := strings.Index(body, "</nav>")
-	if navStart < 0 || navEnd < 0 || !strings.Contains(body[navStart:navEnd], `href="/providers"`) {
-		t.Error("Providers link is not inside the sidebar <nav>")
+	if navStart < 0 || navEnd < 0 {
+		t.Fatal("home missing the sidebar <nav>")
 	}
-	// Status & backups moved out of the primary sidebar nav (under Settings now).
-	if navStart >= 0 && navEnd >= 0 && strings.Contains(body[navStart:navEnd], `href="/status"`) {
-		t.Error("Status & backups link should no longer be in the primary sidebar nav")
+	nav := body[navStart:navEnd]
+	for _, href := range []string{`href="/search"`, `href="/gallery"`} {
+		if !strings.Contains(nav, href) {
+			t.Errorf("sidebar nav missing %s", href)
+		}
+	}
+	for _, href := range []string{`href="/providers"`, `href="/settings"`, `href="/logs"`, `href="/status"`} {
+		if strings.Contains(nav, href) {
+			t.Errorf("sidebar nav must not carry %s — it lives under Settings (#175)", href)
+		}
+	}
+	// The toolbar gear stays the one Settings entry.
+	if !contains(body, `href="/settings" class="toolbar-icon-btn" aria-label="Settings"`) {
+		t.Error("toolbar missing the settings gear (the sole Settings entry)")
 	}
 }
 
@@ -273,7 +279,7 @@ func TestFirstRunRedirectsToSetup(t *testing.T) {
 
 // TestReturningLaunchShowsTranscript is the returning case: a configured store
 // (the fixture has conversations) renders the transcript home, NOT a redirect,
-// and Providers remains reachable as a nav item.
+// and Providers remains reachable — as a Settings sub-nav tab since #175.
 func TestReturningLaunchShowsTranscript(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/")
@@ -281,12 +287,13 @@ func TestReturningLaunchShowsTranscript(t *testing.T) {
 		t.Fatalf("configured store GET / = %d, want 200 (no redirect)", rec.Code)
 	}
 	body := rec.Body.String()
-	// The home/transcript UI renders (the hero), and Providers is a reachable nav item.
+	// The home/transcript UI renders (the hero).
 	if !contains(body, "home-hero-title") {
 		t.Error("configured store did not render the transcript home")
 	}
-	if !contains(body, `href="/providers"`) {
-		t.Error("configured store home missing the Providers nav link")
+	// Providers is reachable from the Settings shell (#175: it left the sidebar).
+	if !contains(get(t, srv, "/settings").Body.String(), `href="/providers"`) {
+		t.Error("Settings shell missing the Providers tab")
 	}
 }
 

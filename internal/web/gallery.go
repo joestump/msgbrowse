@@ -295,6 +295,15 @@ func (f galleryFilterForm) GalleryQuery(tab string) string {
 	return "/gallery?" + f.filterValues(tab).Encode()
 }
 
+// galleryConvURL is the FuncMap helper behind the conversation header's meta
+// chips (#177): the /gallery URL filtered to one conversation on the given tab.
+// It routes through the same filterValues/Encode path as the gallery's own tab
+// links, so the deep link's shape (and parseGalleryFilter round-trip) stays
+// identical to what the gallery emits for itself.
+func galleryConvURL(tab string, convID int64) string {
+	return galleryFilterForm{Tab: tab, ConversationID: convID}.GalleryQuery(tab)
+}
+
 // attachmentsNextURL builds the /gallery/items URL for the page after this
 // one ("" when the walk is done). The cursor is the (ts_unix, id) keyset pair
 // of the last row, mirroring the transcript's before_ts/before_id contract.
