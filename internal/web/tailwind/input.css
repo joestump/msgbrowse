@@ -294,6 +294,25 @@ html {
 .desktop-chrome .app-sidebar > * {
   --wails-draggable: no-drag;
 }
+/* Sidebar collapse at lg+ (#175): sidebar-toggle.js flips .sidebar-collapsed
+   on <html> when the toolbar burger is clicked at lg+, where the daisyUI
+   lg:drawer-open rules otherwise pin the sidebar visible. display:none (not a
+   translate) so the drawer grid's max-content column collapses to zero and
+   #main-content takes the full width. Below lg the class is inert (this whole
+   block is gated on the lg media query) — the overlay drawer stays the narrow
+   UX. These hand-written rules are un-layered, so they win over daisyUI's
+   layered drawer-open rules regardless of specificity. */
+@media (min-width: 64rem) {
+  html.sidebar-collapsed .drawer-side {
+    display: none;
+  }
+  /* Collapsed in the desktop shell, the toolbar owns the top-left corner
+     again, so it steps past the macOS traffic lights exactly like the
+     below-lg layout does (#165). */
+  html.sidebar-collapsed .desktop-chrome .app-toolbar {
+    padding-left: 80px;
+  }
+}
 /* Contextual title: "msgbrowse" on home / global surfaces, the active
    conversation name on a transcript. Links home; truncates rather than pushing
    the right-side controls off-screen. */
