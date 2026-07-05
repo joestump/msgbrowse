@@ -339,7 +339,11 @@
     <p class="setup-progress-line">{{.Message}}</p>
     {{- end}}
   </div>
-  {{- if .Done}}{{.SidebarOOB}}{{.CardOOB}}{{end}}
+  {{/* Out-of-band swaps: Done carries the sidebar refresh + the Enabled card
+       flip (#142/#149); a PermissionDenied failure carries the Needs-permission
+       card flip so the user re-enters the guidance flow — deep link + Recheck —
+       instead of a dead-end Failed line (issue #174). */}}
+  {{- if or .Done .PermissionDenied}}{{.SidebarOOB}}{{.CardOOB}}{{end}}
   {{- end}}
 {{end}}
 

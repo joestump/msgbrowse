@@ -95,6 +95,27 @@ func signalKeychainGuidance() Guidance {
 	}
 }
 
+// staleGrantNote is the extra Full Disk Access sentence for the export-failure
+// path (issue #174): macOS ties an FDA grant to the app's code signature, so
+// updating or replacing the app can silently invalidate a grant that still
+// shows as enabled in System Settings. The sentence tells the user the
+// remove-and-re-add step — detect-and-guide only, nothing here touches TCC.
+const staleGrantNote = "After updating or replacing msgbrowse, macOS may require removing it from Full Disk Access and adding it back before the grant applies again."
+
+// GuidanceForExportFailure returns the permission guidance for a source whose
+// EXPORT run failed with a permission-shaped error (issue #174) — the same
+// fixed content GuidanceFor returns, with the stale-grant sentence appended to
+// the Full Disk Access summary, because in this path a grant that LOOKS enabled
+// may be bound to a replaced binary. Signal's Keychain guidance is returned
+// unchanged (its grant is not the signature-bound FDA toggle).
+func GuidanceForExportFailure(src string) Guidance {
+	g := GuidanceFor(src)
+	if g.SettingsURL == FullDiskAccessDeepLink {
+		g.Summary += " " + staleGrantNote
+	}
+	return g
+}
+
 // GuidanceFor returns the permission guidance for a source's missing OS-consent
 // grant. The caller shows it only when the source's probe reports
 // PermissionNeeded; the content is stable per source so the UI can render it
