@@ -71,6 +71,43 @@ func TestDesktopDragRegionInBuiltCSS(t *testing.T) {
 	}
 }
 
+// TestSidebarToggleAllWidths is the issue-#175 burger contract: the toolbar
+// burger renders at every width (the old lg:hidden gate is gone), the shell
+// loads sidebar-toggle.js (the CSP-clean lg+ collapse path, before paint like
+// theme.js), and the built app.css carries the lg+ collapsed override plus the
+// desktop-chrome traffic-light re-inset for the collapsed state.
+func TestSidebarToggleAllWidths(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/").Body.String()
+
+	if !contains(body, `<label for="nav-drawer" class="toolbar-icon-btn" aria-label="Toggle sidebar">`) {
+		t.Error("toolbar burger should render at all widths (toolbar-icon-btn, no lg:hidden)")
+	}
+	if contains(body, "lg:hidden") {
+		t.Error("the burger must not be gated to narrow viewports (lg:hidden)")
+	}
+	if !contains(body, `<script src="/static/sidebar-toggle.js"></script>`) {
+		t.Error("shell missing sidebar-toggle.js (loaded without defer, like theme.js)")
+	}
+
+	css, err := staticFS.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatalf("read embedded app.css: %v", err)
+	}
+	s := string(css)
+	for _, want := range []string{
+		// The persistent collapse: sidebar-toggle.js flips this class on <html>.
+		"html.sidebar-collapsed .drawer-side{display:none}",
+		// Collapsed at lg+ in the desktop shell, the toolbar steps past the
+		// traffic lights again (#165).
+		"html.sidebar-collapsed .desktop-chrome .app-toolbar{padding-left:80px}",
+	} {
+		if !contains(s, want) {
+			t.Errorf("built app.css missing %q — run `rm -rf .tools && make css` after editing input.css", want)
+		}
+	}
+}
+
 // TestLogsPageRendersShellNotes verifies the #167 observability contract: the
 // desktop shell's diagnostics reach the Logs page, errors carry the failed
 // badge, and browser mode (no provider) renders no shell section.

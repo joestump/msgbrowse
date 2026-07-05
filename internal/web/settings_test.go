@@ -386,16 +386,17 @@ func TestSettingsAccessibilityContract(t *testing.T) {
 	}
 }
 
-// TestSettingsSidebarNavLink: the sidebar gains a boosted Settings entry like
-// the other primary nav links (it lives inside the aside's hx-boost scope).
-func TestSettingsSidebarNavLink(t *testing.T) {
+// TestSettingsToolbarEntry: the toolbar gear is the sole Settings entry (#175
+// dropped the sidebar link — see TestSidebarNavOmitsSettingsSurfaces), and it
+// stays a boosted link so it navigates via the scoped #main-content swap.
+func TestSettingsToolbarEntry(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv, "/").Body.String()
-	if !contains(body, `href="/settings"`) {
-		t.Error("sidebar missing the /settings nav link")
+	if !contains(body, `href="/settings" class="toolbar-icon-btn" aria-label="Settings"`) {
+		t.Error("toolbar missing the settings gear")
 	}
-	if !contains(body, "<span>Settings</span>") {
-		t.Error("sidebar Settings link missing its label")
+	if contains(body, "<span>Settings</span>") {
+		t.Error("sidebar must not carry a Settings nav link (#175)")
 	}
 }
 

@@ -36,7 +36,13 @@
 {{define "setup_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1">
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
-    <h1 class="screen-h1">Providers</h1>
+    {{/* Providers renders inside the Settings shell (#175): shared h1 +
+         sub-nav (its own tab active), with /providers staying the canonical
+         URL — matching how Logs and Status & backups integrate (#163). The
+         sub-nav lives in this *_content define, so full loads and boosted
+         swaps carry it alike. */}}
+    <h1 class="screen-h1">Settings</h1>
+    {{template "settings_subnav" "providers"}}
     <p class="screen-sub">msgbrowse looks for Signal, iMessage, and WhatsApp on this Mac. Enable a
       detected source to import its history — everything stays on this machine.</p>
 
@@ -79,9 +85,9 @@
          only when nothing is actionable AND nothing is enabled → the true
          empty state. */}}
     <p class="setup-footnote">
-      {{- if .AnyActionable}}Detected sources can be enabled from here — enabling runs the bundled exporter and imports the result. Providers stays reachable from the sidebar at any time.
-      {{- else if .AnyEnabled}}All detected sources are enabled. Refresh a source to import what's new. Providers stays reachable from the sidebar at any time.
-      {{- else}}No sources are ready to enable on this machine yet. Providers stays reachable from the sidebar at any time.{{end}}
+      {{- if .AnyActionable}}Detected sources can be enabled from here — enabling runs the bundled exporter and imports the result. Providers stays reachable from Settings at any time.
+      {{- else if .AnyEnabled}}All detected sources are enabled. Refresh a source to import what's new. Providers stays reachable from Settings at any time.
+      {{- else}}No sources are ready to enable on this machine yet. Providers stays reachable from Settings at any time.{{end}}
     </p>
   </div>
     </main>

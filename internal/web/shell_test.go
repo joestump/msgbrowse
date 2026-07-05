@@ -130,6 +130,32 @@ func TestSidebarPresenceDotAndSource(t *testing.T) {
 	}
 }
 
+// TestSidebarFilterAboveConversationSections pins the #175 sidebar order: the
+// nav links come first, then the "Filter conversations" input directly above
+// the Pinned/Conversations section heads — all inside the collapsing <aside>,
+// where sidebar.js binds the input by id.
+func TestSidebarFilterAboveConversationSections(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/").Body.String()
+
+	asideStart := strings.Index(body, "<aside")
+	asideEnd := strings.Index(body, "</aside>")
+	if asideStart < 0 || asideEnd < 0 {
+		t.Fatal("home missing the sidebar <aside>")
+	}
+	aside := body[asideStart:asideEnd]
+
+	nav := strings.Index(aside, "<nav")
+	filter := strings.Index(aside, `id="sidebar-filter"`)
+	sections := strings.Index(aside, "sidebar-section-head")
+	if nav < 0 || filter < 0 || sections < 0 {
+		t.Fatalf("sidebar missing nav/filter/section (nav %d, filter %d, sections %d)", nav, filter, sections)
+	}
+	if !(nav < filter && filter < sections) {
+		t.Errorf("sidebar order should be nav → filter → sections (nav %d, filter %d, sections %d)", nav, filter, sections)
+	}
+}
+
 // TestSelectedRowAccentRail verifies the open conversation's sidebar row carries
 // the selected modifier (accent left rail + #1b2330 tint, REQ-0006-003) and that
 // non-open rows do not.
@@ -291,7 +317,7 @@ func TestThemeStillSelfHosted(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/")
 	body := rec.Body.String()
-	for _, src := range []string{"/static/theme.js", "/static/sidebar.js", "/static/htmx.min.js"} {
+	for _, src := range []string{"/static/theme.js", "/static/sidebar-toggle.js", "/static/sidebar.js", "/static/htmx.min.js"} {
 		if !contains(body, `src="`+src+`"`) {
 			t.Errorf("page missing self-hosted script %q", src)
 		}

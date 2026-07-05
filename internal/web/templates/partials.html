@@ -5,13 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
-  {{/* theme.js runs before paint to apply the saved theme (no FOUC); all are
-       self-hosted so they load under script-src 'self'. sidebar.js powers the
-       live "Filter conversations" box; copy.js powers the Settings page's copy
-       buttons; setup.js powers the Setup permission-guidance modals (focus trap,
-       Escape, restore focus, recheck aria-live) — all via document-level
-       delegation (CSP-safe, deferred, no inline handlers). */}}
+  {{/* theme.js and sidebar-toggle.js run before paint to apply the saved theme
+       and sidebar-collapsed state (no FOUC); all are self-hosted so they load
+       under script-src 'self'. sidebar.js powers the live "Filter
+       conversations" box; sidebar-toggle.js makes the toolbar burger
+       collapse/expand the sidebar at every width (#175); copy.js powers the
+       Settings page's copy buttons; setup.js powers the Setup
+       permission-guidance modals (focus trap, Escape, restore focus, recheck
+       aria-live) — all via document-level delegation (CSP-safe, no inline
+       handlers). */}}
   <script src="/static/theme.js"></script>
+  <script src="/static/sidebar-toggle.js"></script>
   <script src="/static/sidebar.js" defer></script>
   <script src="/static/copy.js" defer></script>
   <script src="/static/setup.js" defer></script>
@@ -37,18 +41,21 @@
          (SPEC-0006): one ~52px frosted row, skipped by boosted partial renders
          (it lives only in this page_start shell, never in a *_content define —
          SPEC-0008 REQ-0008-006), so it never leaks into an #main-content swap.
-         LEFT: the mobile drawer toggle (still the #nav-drawer label) + a
+         LEFT: the sidebar burger (the #nav-drawer label, at every width —
+         below lg it toggles the overlay drawer natively, at lg+
+         sidebar-toggle.js flips the persistent collapsed state, #175) + a
          contextual title (.NavTitle — "msgbrowse" on home, the active
          conversation name on a transcript) that links home (boosted, matching
          the app's boosted-nav pattern). RIGHT: a real toolbar search pill (a
          plain boosted GET form to /search — CSP-safe, needs no inline JS), the
-         existing theme toggle, and a settings gear → /settings. Global counts
+         existing theme toggle, and a settings gear → /settings (the sole
+         Settings entry — #175 dropped the sidebar link). Global counts
          moved off the toolbar to keep it clean; they live on Status (under
          Settings → Diagnostics). Icon-only controls carry aria-labels; the
          search input is labelled; the header stays role=banner (the daisyUI
          .navbar semantics) and is fully keyboard operable. */}}
     <header class="app-toolbar sticky top-0 z-30 px-3 lg:px-4">
-      <label for="nav-drawer" class="toolbar-icon-btn lg:hidden" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
+      <label for="nav-drawer" class="toolbar-icon-btn" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
       <a href="/" class="toolbar-title" aria-label="msgbrowse home"
          hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{if .NavTitle}}{{.NavTitle}}{{else}}msgbrowse{{end}}</a>
       <div class="flex-1"></div>
@@ -88,22 +95,23 @@
          plain links without JS. */}}
     <aside class="app-sidebar w-80 min-h-full bg-base-300 border-r border-neutral flex flex-col"
            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-      {{/* Filter input — live-narrows the conversation list via sidebar.js. */}}
-      <div class="p-3 pb-2">
+      {{/* Primary nav links. No Journal link yet (the route would 404). Settings
+           and Providers moved off the sidebar (#175): the toolbar gear is the
+           sole Settings entry, and Providers is a tab in the Settings sub-nav —
+           the sidebar stays a content surface (Search / Media / conversations). */}}
+      <nav class="px-2 pt-3 pb-1 flex flex-col gap-0.5">
+        <a href="/search" class="sidebar-link">{{template "icon-search" .}} <span>Search</span></a>
+        <a href="/gallery" class="sidebar-link">{{template "icon-photo" .}} <span>Media</span></a>
+      </nav>
+      {{/* Filter input — live-narrows the conversation list via sidebar.js
+           (bound by id). Sits directly above the Pinned/Conversations section
+           heads (#175) so it reads as the lists' control, not the nav's. */}}
+      <div class="p-3 pt-1 pb-2">
         <label class="sidebar-filter flex items-center gap-2">
           <span class="opacity-50 inline-flex">{{template "icon-search" .}}</span>
           <input type="search" id="sidebar-filter" class="grow bg-transparent outline-none text-sm" placeholder="Filter conversations" autocomplete="off" aria-label="Filter conversations" aria-controls="sidebar-conversations">
         </label>
       </div>
-      {{/* Primary nav links. No Journal link yet (the route would 404). "Status &
-           backups" moved under Settings (it is a diagnostic surface, not a primary
-           destination); "Providers" is the renamed Setup surface at /providers. */}}
-      <nav class="px-2 pb-2 flex flex-col gap-0.5">
-        <a href="/search" class="sidebar-link">{{template "icon-search" .}} <span>Search</span></a>
-        <a href="/gallery" class="sidebar-link">{{template "icon-photo" .}} <span>Media</span></a>
-        <a href="/providers" class="sidebar-link">{{template "icon-plus-circle" .}} <span>Providers</span></a>
-        <a href="/settings" class="sidebar-link">{{template "icon-settings" .}} <span>Settings</span></a>
-      </nav>
       {{/* PINNED section (REQ-0006-010): pinned conversations float above the
            CONVERSATIONS list, using the SAME row markup. Rendered only when at
            least one conversation is pinned. sidebar.js filters BOTH sections
