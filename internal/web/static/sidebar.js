@@ -129,6 +129,11 @@
   // without a manual navigation.
   document.body.addEventListener("msgbrowse:imported", init);
 
+  // A pin/unpin toggle answers its boosted POST with the same out-of-band
+  // sidebar-list swap (#176) — same row-list staleness as the Setup import
+  // above, same fix.
+  document.body.addEventListener("msgbrowse:pinned", init);
+
   // A failed boosted request swaps nothing (htmx's default for 4xx/5xx), which
   // would turn an error page into a dead click — fall back to full navigation
   // so the error stays visible.

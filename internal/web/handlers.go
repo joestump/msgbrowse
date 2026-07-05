@@ -291,12 +291,23 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePin toggles a conversation's pinned flag and redirects back to it
-// (REQ-0006-010). It is a plain form POST + 303 redirect — CSP-clean (no inline
-// JS; form-action 'self' already permits the POST) and idempotent enough for the
-// back button. The toggle is a single direct UPDATE in the store — no summary
-// fetch first (SPEC-0008 REQ-0008-005); a missing conversation surfaces as the
-// UPDATE matching no row.
+// pinnedSidebarTrigger is the HX-Trigger a boosted pin toggle response emits:
+// its OOB swap replaces the sidebar's conversation rows, staling sidebar.js's
+// captured filter row list, so the client re-inits — the same contract as the
+// Setup flows' msgbrowse:imported trigger.
+const pinnedSidebarTrigger = "msgbrowse:pinned"
+
+// handlePin toggles a conversation's pinned flag (REQ-0006-010). It is a
+// CSP-clean form POST (no inline JS; form-action 'self' already permits it) and
+// idempotent enough for the back button. The toggle is a single direct UPDATE
+// in the store — no summary fetch first (SPEC-0008 REQ-0008-005); a missing
+// conversation surfaces as the UPDATE matching no row.
+//
+// A plain (no-JS) POST 303-redirects back to the conversation. A boosted POST
+// is answered directly with the flipped conversation view plus an out-of-band
+// re-render of the sidebar's PINNED + CONVERSATIONS sections — htmx never
+// processes a redirect's body, so the 303 path could not carry the sidebar
+// refresh and the pin read as a visual no-op (#176).
 func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := parseID(r.PathValue("id"))
@@ -313,7 +324,76 @@ func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, "/c/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+	if !isPartialRequest(r) {
+		http.Redirect(w, r, "/c/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+		return
+	}
+	s.renderPinToggle(w, r, id)
+}
+
+// renderPinToggle answers a boosted pin/unpin POST: the conversation_content
+// partial (the #main-content swap, with the pin button flipped) followed by the
+// sidebar_lists_oob fragment (#176). Unlike the boosted GET path — which stays
+// listing-free per SPEC-0008 REQ-0008-006 — this runs the full baseData listing
+// by design: a pin toggle is a rare click, and the OOB sidebar sections are
+// exactly the markup the listing feeds.
+func (s *Server) renderPinToggle(w http.ResponseWriter, r *http.Request, id int64) {
+	ctx := r.Context()
+	active, err := s.store.GetConversationByID(ctx, id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if active == nil {
+		http.NotFound(w, r)
+		return
+	}
+	base, err := s.baseData(ctx, active.Name+" · msgbrowse", id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	base.NavTitle = humanName(active.Name)
+	// Newest-first default order, matching the /c/{id} landing the no-JS 303
+	// redirects to.
+	page, err := s.store.GetMessages(ctx, id, 0, 0, pageSize, true)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	var buf bytes.Buffer
+	err = s.tmpl.ExecuteTemplate(&buf, "conversation_content", conversationData{
+		baseData: base,
+		Active:   active,
+		List: messageListData{
+			ActiveID:   id,
+			Source:     active.Source,
+			ConvName:   active.Name,
+			Sort:       sortDesc,
+			Messages:   page.Messages,
+			HasMore:    page.HasMore,
+			NextTSUnix: page.NextTSUnix,
+			NextID:     page.NextID,
+		},
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	// Best-effort like the Setup flows: an OOB render failure degrades to a
+	// stale sidebar, not a failed toggle.
+	if oob, oerr := s.renderOOB("sidebar_lists_oob", base); oerr != nil {
+		s.log.Warn("pin: could not render sidebar refresh", "error", oerr)
+	} else {
+		buf.WriteString(string(oob))
+	}
+	// History must record the conversation URL the no-JS 303 lands on — never
+	// the POST-only /pin route the form targeted.
+	w.Header().Set("HX-Push-Url", "/c/"+strconv.FormatInt(id, 10))
+	w.Header().Set("HX-Trigger", pinnedSidebarTrigger)
+	w.Header().Add("Vary", "HX-Request")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {

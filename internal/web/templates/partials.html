@@ -117,23 +117,17 @@
         </label>
       </div>
       {{/* PINNED section (REQ-0006-010): pinned conversations float above the
-           CONVERSATIONS list, using the SAME row markup. Rendered only when at
-           least one conversation is pinned. sidebar.js filters BOTH sections
-           because every row carries .conv-item with data-name. */}}
-      {{- if .PinnedConversations}}
-      <div class="sidebar-section-head flex items-baseline justify-between px-4 pt-2 pb-1">
-        <span class="sidebar-section-label">Pinned</span>
-        <span class="font-mono opacity-40 text-xs">{{len .PinnedConversations}}</span>
-      </div>
-      <ul id="sidebar-pinned" class="flex flex-col gap-0.5 px-2 pb-1">
-        {{- range .PinnedConversations}}
-        {{- template "conv_row" (convRowCtx . $.ActiveID)}}
-        {{- end}}
-      </ul>
-      {{- end}}
+           CONVERSATIONS list, using the SAME row markup. The wrapper (section
+           header + list together) is ALWAYS rendered — hidden via the `hidden`
+           utility class when nothing is pinned — so the pin toggle's
+           out-of-band swap has a stable target from any starting state: the
+           first-ever pin used to find no #sidebar-pinned and drop silently
+           (#176). sidebar.js filters BOTH sections because every row carries
+           .conv-item with data-name. */}}
+      <div id="sidebar-pinned-section"{{if not .PinnedConversations}} class="hidden"{{end}}>{{template "sidebar_pinned_inner" .}}</div>
       <div class="sidebar-section-head flex items-baseline justify-between px-4 pt-2 pb-1">
         <span class="sidebar-section-label">Conversations</span>
-        <span class="font-mono opacity-40 text-xs">{{len .UnpinnedConversations}}</span>
+        <span id="sidebar-conversations-count" class="font-mono opacity-40 text-xs">{{len .UnpinnedConversations}}</span>
       </div>
       {{/* Scrolling conversation list (non-pinned). */}}
       <ul id="sidebar-conversations" class="flex flex-col gap-0.5 px-2 pb-3 overflow-y-auto flex-1">
@@ -148,20 +142,33 @@
 </body>
 </html>{{end}}
 
+{{/* sidebar_pinned_inner is the PINNED section's body — header + list — shared
+     verbatim by the base sidebar render above and the out-of-band refresh below,
+     so the two can never drift. Only the #sidebar-pinned-section wrapper tag
+     differs (the OOB copy carries hx-swap-oob). */}}
+{{define "sidebar_pinned_inner"}}
+        <div class="sidebar-section-head flex items-baseline justify-between px-4 pt-2 pb-1">
+          <span class="sidebar-section-label">Pinned</span>
+          <span class="font-mono opacity-40 text-xs">{{len .PinnedConversations}}</span>
+        </div>
+        <ul id="sidebar-pinned" class="flex flex-col gap-0.5 px-2 pb-1">
+          {{- range .PinnedConversations}}
+          {{- template "conv_row" (convRowCtx . $.ActiveID)}}
+          {{- end}}
+        </ul>
+{{end}}
+
 {{/* sidebar_lists_oob is the out-of-band sidebar refresh appended to a Setup
-     Done fragment (#142, SPEC-0013 REQ "the source appears in the transcript
-     sidebar"). It re-renders the PINNED + CONVERSATIONS lists with hx-swap-oob
-     so htmx swaps them into the live sidebar in place, making the freshly
-     imported conversations appear without a manual nav. It reuses the exact
-     conv_row partial the shell renders, so the swapped rows are identical. Only
-     the two <ul>s are OOB-swapped; the section-count spans update on the next
-     full load (the important payoff — the rows themselves — is immediate). */}}
+     Done/Disable fragment (#142, SPEC-0013 REQ "the source appears in the
+     transcript sidebar") and to a boosted pin toggle response (#176). It
+     re-renders the PINNED section wrapper (header + list, so the section
+     appears/disappears and its count updates from any starting state), the
+     CONVERSATIONS count, and the CONVERSATIONS list with hx-swap-oob so htmx
+     swaps them into the live sidebar in place. It reuses the exact conv_row
+     partial the shell renders, so the swapped rows are identical. */}}
 {{define "sidebar_lists_oob"}}
-<ul id="sidebar-pinned" class="flex flex-col gap-0.5 px-2 pb-1" hx-swap-oob="true">
-  {{- range .PinnedConversations}}
-  {{- template "conv_row" (convRowCtx . $.ActiveID)}}
-  {{- end}}
-</ul>
+<div id="sidebar-pinned-section"{{if not .PinnedConversations}} class="hidden"{{end}} hx-swap-oob="true">{{template "sidebar_pinned_inner" .}}</div>
+<span id="sidebar-conversations-count" class="font-mono opacity-40 text-xs" hx-swap-oob="true">{{len .UnpinnedConversations}}</span>
 <ul id="sidebar-conversations" class="flex flex-col gap-0.5 px-2 pb-3 overflow-y-auto flex-1" hx-swap-oob="true">
   {{- range .UnpinnedConversations}}
   {{- template "conv_row" (convRowCtx . $.ActiveID)}}

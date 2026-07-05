@@ -177,6 +177,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"humanSource":      source.Label,
 		"imgRenderable":    s.imgRenderable,
 		"convRowCtx":       convRowCtx,
+		"galleryConvURL":   galleryConvURL,
 	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
