@@ -29,6 +29,7 @@ import (
 	"net/http"
 
 	"github.com/joestump/msgbrowse/internal/onboard"
+	"github.com/joestump/msgbrowse/internal/setup"
 	"github.com/joestump/msgbrowse/internal/source"
 )
 
@@ -177,14 +178,22 @@ type progressData struct {
 	Token     string
 	// Unavailable marks the "no Enabler / no tools" affordance state.
 	Unavailable bool
+	// PermissionDenied marks a Failed terminal state whose recorded error is
+	// permission-shaped (errors.Is onboard.ErrPermissionDenied — issue #174).
+	// The fragment then carries CardOOB below: the source's card flips back into
+	// the Needs-permission guidance state (System Settings deep link + Recheck)
+	// instead of resting on the generic failed line.
+	PermissionDenied bool
 	// SidebarOOB is the pre-rendered out-of-band sidebar-list swap appended to a
 	// Done fragment so the newly-imported conversations appear immediately (#142).
 	// Empty for every non-Done render.
 	SidebarOOB template.HTML
-	// CardOOB is the pre-rendered out-of-band swap of this source's Setup card,
-	// appended to a Done fragment so the card flips to the Enabled state and the
-	// stale "Needs permission" badge cannot linger beside "✓ Enabled" (issue #149).
-	// Empty for every non-Done render.
+	// CardOOB is the pre-rendered out-of-band swap of this source's Setup card:
+	// on a Done fragment it flips the card to Enabled so the stale "Needs
+	// permission" badge cannot linger beside "✓ Enabled" (issue #149); on a
+	// PermissionDenied failure it flips the card into the Needs-permission
+	// guidance state so the user lands back in detect-and-guide (issue #174).
+	// Empty for every other render.
 	CardOOB template.HTML
 	// (The former NavbarOOB counts swap was removed with the toolbar's global
 	// counts — #152 Option A dropped them from the toolbar. The sidebar OOB swap
@@ -224,6 +233,29 @@ func (s *Server) renderProgress(w http.ResponseWriter, r *http.Request, src stri
 	}
 	if data.Message == "" && !data.Active {
 		data.Message = "Ready to enable."
+	}
+
+	if data.Failed && errors.Is(prog.Err, onboard.ErrPermissionDenied) {
+		// Permission-shaped failure (issue #174): re-enter the guidance flow
+		// instead of resting on a generic Failed. The card flips out-of-band into
+		// the Needs-permission state carrying the existing guidance modal — the
+		// System Settings deep link + Recheck — with the stale-grant sentence,
+		// because a Refresh-time TCC failure means a grant that LOOKS enabled no
+		// longer applies (the .app was replaced). Store-presence normally wins the
+		// card state (issue #149), so this is a deliberate override for exactly
+		// this render; the raw exporter output stays in the job's Log for the
+		// Settings → Logs viewer. Best-effort like the Done swaps: a render
+		// failure falls back to the failed progress line.
+		data.PermissionDenied = true
+		if cardTok, err := s.setupTokens.mint(); err == nil {
+			if oob, err := s.renderOOB("setup_card", s.permissionGuidanceCard(src, cardTok)); err == nil {
+				data.CardOOB = oob
+			} else {
+				s.log.Warn("setup: could not render permission-guidance card after failed export", "error", err)
+			}
+		} else {
+			s.log.Warn("setup: could not mint token for permission-guidance card swap", "error", err)
+		}
 	}
 
 	if data.Done {
@@ -277,6 +309,31 @@ func (s *Server) renderOOB(name string, data any) (template.HTML, error) {
 		return "", err
 	}
 	return template.HTML(buf.String()), nil //nolint:gosec // server-rendered markup, no user HTML
+}
+
+// permissionGuidanceCard builds the forced Needs-permission card for a source
+// whose export job just failed with a permission-shaped error (issue #174). It
+// bypasses setupCardFor deliberately: store-presence would render the source
+// Enabled (issue #149) even though the export just proved the OS grant no
+// longer applies, so the failure path forces the guidance state for this swap.
+// The guidance is the existing per-source content (setup.GuidanceFor) with the
+// stale-grant sentence added for the Full Disk Access sources — reused, never
+// re-derived — and the card carries the modal's Recheck affordance as on any
+// Needs-permission render. Every field is server-composed from the fixed source
+// enum; nothing here is request-derived.
+func (s *Server) permissionGuidanceCard(src, token string) setupCard {
+	return setupCard{
+		Source:          src,
+		Label:           source.Label(src),
+		State:           setupStateNeedsPermission,
+		StateLabel:      "Needs permission",
+		Detail:          source.Label(src) + " was found, but macOS blocked the last export — access needs to be granted again.",
+		Actionable:      true,
+		Guidance:        setup.GuidanceForExportFailure(src),
+		EnableAvailable: s.enableAvailable(),
+		Token:           token,
+		SwapOOB:         true,
+	}
 }
 
 // renderProgressError renders a failed progress fragment for a start-time error

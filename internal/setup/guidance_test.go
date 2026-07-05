@@ -61,6 +61,37 @@ func TestGuidanceForWhatsApp(t *testing.T) {
 	}
 }
 
+// TestGuidanceForExportFailureAddsStaleGrantNote: the export-failure variant
+// (issue #174) appends the stale-grant sentence to the Full Disk Access
+// guidance — after an app update/replace, macOS may require removing and
+// re-adding msgbrowse before the grant applies — for the FDA sources (iMessage,
+// WhatsApp) while leaving everything else (steps, deep link) identical.
+func TestGuidanceForExportFailureAddsStaleGrantNote(t *testing.T) {
+	for _, src := range []string{source.IMessage, source.WhatsApp} {
+		base := GuidanceFor(src)
+		g := GuidanceForExportFailure(src)
+		if !strings.Contains(g.Summary, "adding it back") {
+			t.Errorf("%s export-failure guidance missing the stale-grant sentence; got %q", src, g.Summary)
+		}
+		if !strings.HasPrefix(g.Summary, base.Summary) {
+			t.Errorf("%s export-failure guidance should extend the base summary, not replace it", src)
+		}
+		if g.SettingsURL != base.SettingsURL || len(g.Steps) != len(base.Steps) {
+			t.Errorf("%s export-failure guidance changed more than the summary", src)
+		}
+	}
+}
+
+// TestGuidanceForExportFailureSignalUnchanged: Signal's Keychain guidance has no
+// FDA pane, so the export-failure variant returns it byte-for-byte unchanged.
+func TestGuidanceForExportFailureSignalUnchanged(t *testing.T) {
+	base := GuidanceFor(source.Signal)
+	g := GuidanceForExportFailure(source.Signal)
+	if g.Summary != base.Summary || g.SettingsURL != base.SettingsURL {
+		t.Errorf("Signal export-failure guidance should be unchanged; got %+v", g)
+	}
+}
+
 // TestGuidanceForUnknownSourceIsEmpty: an unknown source yields empty guidance,
 // so the UI can safely gate on it.
 func TestGuidanceForUnknownSourceIsEmpty(t *testing.T) {

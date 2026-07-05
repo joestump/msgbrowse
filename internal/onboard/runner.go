@@ -514,7 +514,18 @@ func (r *Runner) execute(jobCtx context.Context, src string, mode jobMode) {
 			r.cancel(src)
 			return
 		}
-		r.fail(src, wrapSentinel(err, ErrExportFailed), fmt.Sprintf("%s export failed: %v", source.Label(src), err))
+		// Classify the non-zero exit from the captured output (issue #174): a
+		// permission-shaped stderr (a stale Full Disk Access grant after the .app
+		// was replaced) wraps ErrPermissionDenied so the UI re-enters the guidance
+		// flow instead of a generic Failed. The original error stays wrapped and
+		// the raw output is already recorded in the JobLog above, so the Logs
+		// viewer shows the exporter's own words either way.
+		if sentinel := classifyExportFailure(out); errors.Is(sentinel, ErrPermissionDenied) {
+			r.fail(src, wrapSentinel(err, sentinel),
+				fmt.Sprintf("%s export was blocked by macOS — grant access in System Settings, then try again", source.Label(src)))
+		} else {
+			r.fail(src, wrapSentinel(err, sentinel), fmt.Sprintf("%s export failed: %v", source.Label(src), err))
+		}
 		return
 	}
 	if r.cancelled(jobCtx) {
