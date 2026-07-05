@@ -53,9 +53,13 @@
          moved off the toolbar to keep it clean; they live on Status (under
          Settings → Diagnostics). Icon-only controls carry aria-labels; the
          search input is labelled; the header stays role=banner (the daisyUI
-         .navbar semantics) and is fully keyboard operable. */}}
+         .navbar semantics). Keyboard: the burger is a <label>, which has no
+         native focus/key activation, so it carries role=button + tabindex=0
+         and sidebar-toggle.js maps Enter/Space to a click and keeps
+         aria-expanded in sync with the drawer/collapse state (#175) — with
+         that, every toolbar control is keyboard operable. */}}
     <header class="app-toolbar sticky top-0 z-30 px-3 lg:px-4">
-      <label for="nav-drawer" class="toolbar-icon-btn" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
+      <label for="nav-drawer" class="toolbar-icon-btn" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
       <a href="/" class="toolbar-title" aria-label="msgbrowse home"
          hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{if .NavTitle}}{{.NavTitle}}{{else}}msgbrowse{{end}}</a>
       <div class="flex-1"></div>
