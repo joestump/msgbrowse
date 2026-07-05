@@ -7,6 +7,7 @@ package web
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -47,13 +48,21 @@ func newOpenURLServer(t *testing.T) (*Server, *[]string) {
 	return srv, opened
 }
 
-// TestOpenURLRouteAbsentOutsideDesktop: without an opener the endpoint does
-// not exist (404) — and an opener alone is not enough; the desktop-chrome
-// flag must be set too, matching the desktop.js interceptor's guard.
+// TestOpenURLRouteAbsentOutsideDesktop: without an opener the route is never
+// registered — 404 on EVERY method, including the GET that would otherwise
+// 405 off the "POST /desktop/open-url" mux pattern and advertise a desktop
+// surface plain `msgbrowse serve` doesn't have. And an opener alone is not
+// enough; the desktop-chrome flag must be set too, matching the desktop.js
+// interceptor's guard.
 func TestOpenURLRouteAbsentOutsideDesktop(t *testing.T) {
 	srv, _, _ := newTestServer(t) // browser mode: no opener, no desktop-chrome
 	if rec := openURLPost(t, srv, selfOrigin, "https://example.org/x"); rec.Code != http.StatusNotFound {
-		t.Fatalf("no-opener status = %d, want 404", rec.Code)
+		t.Fatalf("no-opener POST status = %d, want 404", rec.Code)
+	}
+	// Route absence, not method mismatch: a GET must 404 too. With the route
+	// registered unconditionally this would be a 405 from the mux pattern.
+	if rec := get(t, srv, "/desktop/open-url"); rec.Code != http.StatusNotFound {
+		t.Fatalf("no-opener GET status = %d, want 404 (route must not exist)", rec.Code)
 	}
 
 	srv.SetExternalOpener(func(string) error { return nil }) // opener but no desktop-chrome
@@ -151,6 +160,52 @@ func TestOpenURLRejectsBadURLs(t *testing.T) {
 				t.Error("response echoes the submitted URL")
 			}
 		})
+	}
+}
+
+// TestOpenURLRejectionLogged: a 400 rejection leaves a debug-level trace with
+// a sanitized, truncated form of the value — "clicked and nothing happened"
+// must be diagnosable from the logs — while the raw value never appears in
+// full.
+func TestOpenURLRejectionLogged(t *testing.T) {
+	st, cfg, _ := newTestStoreAndConfig(t)
+	var buf strings.Builder
+	srv, err := NewServer(st, cfg, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	srv.SetDesktopChrome(true)
+	srv.SetExternalOpener(func(string) error { return nil })
+
+	raw := "javascript:alert(1)//" + strings.Repeat("a", 100)
+	if rec := openURLPost(t, srv, selfOrigin, raw); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "external url rejected") {
+		t.Errorf("rejection left no log trace; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, "javascript:") {
+		t.Errorf("log trace does not show the rejected scheme; log:\n%s", logged)
+	}
+	if strings.Contains(logged, raw) {
+		t.Error("log carries the full raw value; want a truncated prefix")
+	}
+}
+
+// TestRejectedURLForLog pins the sanitizer the rejection log relies on:
+// control bytes become '?', long values truncate to a marked prefix, and
+// short clean values pass through.
+func TestRejectedURLForLog(t *testing.T) {
+	if got := rejectedURLForLog("https://example.org/\x00\x1f\x7f"); got != "https://example.org/???" {
+		t.Errorf("control bytes: got %q", got)
+	}
+	long := "https://example.org/" + strings.Repeat("a", 100)
+	if got, want := rejectedURLForLog(long), long[:48]+"..."; got != want {
+		t.Errorf("truncation: got %q, want %q", got, want)
+	}
+	if got := rejectedURLForLog("ftp://x"); got != "ftp://x" {
+		t.Errorf("short clean value: got %q", got)
 	}
 }
 

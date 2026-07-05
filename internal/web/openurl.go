@@ -13,8 +13,9 @@
 // single privileged render to mint from): the same layered same-origin check
 // (Origin, then Sec-Fetch-Site, then Referer), the same small body cap, and a
 // strict URL allowlist — absolute http/https only, no control characters,
-// bounded length. The URL is never echoed back into a response and only a
-// scheme://host reduction is ever logged.
+// bounded length. The URL is never echoed back into a response; logs carry
+// only a scheme://host reduction (opener failures) or a sanitized, truncated
+// prefix (validation rejections, debug level).
 package web
 
 import (
@@ -31,18 +32,25 @@ const openURLMaxLen = 2048
 // into POST /desktop/open-url (issue #179). fn receives an already-validated
 // absolute http(s) URL and is called from request goroutines, so it must be
 // safe for concurrent use. Call before serving (the SetDetector /
-// SetDesktopChrome wiring contract); with no opener wired the route answers
-// 404 — browser mode has no such endpoint.
-func (s *Server) SetExternalOpener(fn func(url string) error) { s.externalOpener = fn }
+// SetDesktopChrome wiring contract) — the mux is rebuilt here, not swapped
+// under live requests. With no opener wired the route is never registered:
+// browser mode has no such endpoint and answers 404 on every method, rather
+// than a 405 advertising a POST surface that doesn't exist there.
+func (s *Server) SetExternalOpener(fn func(url string) error) {
+	s.externalOpener = fn
+	s.mux = s.routes()
+}
 
 // handleOpenURL is POST /desktop/open-url: validate a clicked external link
 // and open it in the OS default browser via the shell-wired opener.
 func (s *Server) handleOpenURL(w http.ResponseWriter, r *http.Request) {
 	// The bridge exists only inside the desktop shell: an opener wired by the
 	// shell AND the desktop-chrome presentation flag that also gates the
-	// desktop.js interceptor. Anywhere else — `msgbrowse serve`, a desktop
-	// build whose platform never set desktop-chrome — the endpoint does not
-	// exist: 404, not 403.
+	// desktop.js interceptor. In plain `msgbrowse serve` the route is never
+	// registered (SetExternalOpener rebuilds the mux), so the nil-opener arm
+	// is defense-in-depth; a desktop build whose platform never set
+	// desktop-chrome still lands here — the endpoint does not exist: 404,
+	// not 403.
 	if s.externalOpener == nil || !s.desktopChrome {
 		http.NotFound(w, r)
 		return
@@ -62,7 +70,11 @@ func (s *Server) handleOpenURL(w http.ResponseWriter, r *http.Request) {
 	}
 	raw := r.PostFormValue("url")
 	if !validExternalURL(raw) {
-		// Fixed string only: the submitted URL is never reflected back.
+		// Debug-level trace so a "clicked and nothing happened" report is
+		// diagnosable from the logs (run with --verbose): sanitized + truncated
+		// via rejectedURLForLog, never the raw value. The response stays a
+		// fixed string — the submitted URL is never reflected back.
+		s.log.Debug("external url rejected", "url", rejectedURLForLog(raw), "len", len(raw))
 		http.Error(w, "invalid url", http.StatusBadRequest)
 		return
 	}
@@ -109,4 +121,29 @@ func externalURLForLog(raw string) string {
 		return "(unparseable)"
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// rejectedURLForLog renders a value that FAILED validation safely for the
+// debug log. It cannot lean on url.Parse the way externalURLForLog does —
+// the value may not parse at all — so it sanitizes bytewise: control bytes
+// (the very thing validExternalURL rejects) become '?', and the value is
+// truncated to a short prefix, enough to show the offending scheme or shape
+// without writing a full attacker-shaped string — or a full message link —
+// into the log.
+func rejectedURLForLog(raw string) string {
+	const max = 48
+	truncated := len(raw) > max
+	if truncated {
+		raw = raw[:max]
+	}
+	b := []byte(raw)
+	for i, c := range b {
+		if c < 0x20 || c == 0x7f {
+			b[i] = '?'
+		}
+	}
+	if truncated {
+		return string(b) + "..."
+	}
+	return string(b)
 }

@@ -297,10 +297,15 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /settings/devices/pair", s.handleDevicePair)
 	mux.HandleFunc("POST /settings/devices/unpair", s.handleDeviceUnpair)
 	mux.HandleFunc("GET /media/{id}/{path...}", s.handleMedia)
-	// Desktop-only external-link bridge (issue #179): 404s unless the shell
-	// wired an opener AND enabled desktop-chrome; same-origin gated inside the
-	// handler with the Setup POSTs' rigor.
-	mux.HandleFunc("POST /desktop/open-url", s.handleOpenURL)
+	// Desktop-only external-link bridge (issue #179): registered only when the
+	// shell wired an opener, so in plain `msgbrowse serve` the route does not
+	// exist at all — 404 on every method, never a 405 advertising a POST
+	// surface browser mode doesn't have. SetExternalOpener rebuilds the mux to
+	// pick this up (wiring precedes serving). The handler still gates on the
+	// desktop-chrome flag and the Setup POSTs' same-origin rigor inside.
+	if s.externalOpener != nil {
+		mux.HandleFunc("POST /desktop/open-url", s.handleOpenURL)
+	}
 
 	return gzipMiddleware(securityHeaders(mux))
 }

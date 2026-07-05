@@ -16,8 +16,11 @@
 // new-window handler, so a target="_blank" navigation to another origin is
 // silently dropped. The click interceptor below hands cross-origin http(s)
 // links to the server's POST /desktop/open-url bridge, which opens the OS
-// default browser; same-origin links (including the _blank media thumbs,
-// which resolve to this loopback origin) are untouched.
+// default browser; same-origin links are left alone. Note "left alone" is
+// not "working": a same-origin target="_blank" anchor (the media thumbs
+// resolve to this loopback origin) is still dropped by the webview for the
+// same no-new-window-handler reason — a pre-existing gap issue #179 scoped
+// out, since this bridge only covers cross-origin external links.
 //
 // It is included by page_start ONLY when the shell marks the render as
 // desktop-chrome (web.Server.SetDesktopChrome), and it additionally no-ops
@@ -123,7 +126,11 @@
         return;
       }
       if (url.origin === window.location.origin) {
-        return; // same-origin (media thumbs etc.) keeps normal navigation
+        // Same-origin: not ours to intercept. Plain same-origin links
+        // navigate normally, but target="_blank" ones (the media thumbs)
+        // are still dropped by the webview — no new-window handler — a
+        // pre-existing gap out of issue #179's cross-origin scope.
+        return;
       }
       e.preventDefault();
       fetch("/desktop/open-url", {
