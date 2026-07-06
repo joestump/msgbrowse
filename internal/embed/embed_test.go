@@ -130,6 +130,61 @@ func TestRunRespectsBatchSize(t *testing.T) {
 	}
 }
 
+// TestRunProgressHook: the Options.Progress callback receives batch-level
+// progress — once before the first batch (0, total) and after every stored
+// batch — so a caller can drive a live progress surface without forking the
+// run loop (#191).
+func TestRunProgressHook(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	conv, _ := st.UpsertConversation(ctx, source.Signal, "Big")
+	var msgs []signal.Message
+	for i := 0; i < 10; i++ {
+		parsed, _ := time.Parse(signal.TimestampLayout, "2022-03-01 09:00:00")
+		msgs = append(msgs, signal.Message{
+			Conversation: "Big", Timestamp: parsed.Add(time.Duration(i) * time.Minute),
+			TimestampRaw: "2022-03-01 09:00:00", Sender: "X", Body: padBody(i),
+		})
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, msgs); err != nil {
+		t.Fatal(err)
+	}
+
+	type step struct{ processed, total int }
+	var got []step
+	_, err := Run(ctx, st, &fakeClient{}, Options{
+		EmbedModel: "m",
+		BatchSize:  4,
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Progress:   func(processed, total int) { got = append(got, step{processed, total}) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []step{{0, 10}, {4, 10}, {8, 10}, {10, 10}}
+	if len(got) != len(want) {
+		t.Fatalf("progress calls = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("progress[%d] = %v, want %v (all: %v)", i, got[i], want[i], got)
+		}
+	}
+
+	// An up-to-date run reports no progress at all (nothing to embed, no bar).
+	var extra []step
+	if _, err := Run(ctx, st, &fakeClient{}, Options{
+		EmbedModel: "m",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Progress:   func(processed, total int) { extra = append(extra, step{processed, total}) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(extra) != 0 {
+		t.Errorf("up-to-date run made %d progress calls, want 0: %v", len(extra), extra)
+	}
+}
+
 func TestRunNoModel(t *testing.T) {
 	st := newStore(t)
 	if _, err := Run(context.Background(), st, &fakeClient{}, Options{}); err == nil {

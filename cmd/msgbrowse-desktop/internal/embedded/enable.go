@@ -43,9 +43,11 @@ import (
 // and wires it into the web server's Setup Enable flow. It returns the runner so
 // Start can tear its workers down on Close (SPEC-0013 REQ "Concurrency Safety":
 // no exporter subprocess outlives the app). A construction failure is returned;
-// the caller aborts Start rather than serving a half-wired app.
-func wireEnable(cfg *config.Config, st *store.Store, srv *web.Server, log *slog.Logger) (*onboard.Runner, error) {
-	runner, err := onboardsvc.Build(cfg, st, bundledResolver{}, log)
+// the caller aborts Start rather than serving a half-wired app. opts pass
+// through to onboardsvc.Build (Start threads the post-import embed trigger,
+// issue #191).
+func wireEnable(cfg *config.Config, st *store.Store, srv *web.Server, log *slog.Logger, opts ...onboardsvc.Option) (*onboard.Runner, error) {
+	runner, err := onboardsvc.Build(cfg, st, bundledResolver{}, log, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("wire setup enable: %w", err)
 	}

@@ -37,6 +37,25 @@ import (
 	"github.com/joestump/msgbrowse/internal/whatsapp"
 )
 
+// Option customizes Build's wiring beyond the required seams.
+type Option func(*buildOptions)
+
+type buildOptions struct {
+	postImport func(src string)
+}
+
+// WithPostImport registers fn to run after every SUCCESSFUL import — Enable,
+// Refresh, and sync re-ingest alike, in serve and desktop alike (they all end
+// in the same storeImporter.Import). It is the "after a successful
+// import/refresh" trigger seam for the background embedding job (issue #191):
+// new messages just landed, a user-attributable moment where starting the
+// incremental embed pass is deliberate egress, never an app-launch auto-run.
+// fn receives the fixed source id, runs on the job's goroutine, and must not
+// block; a failed import never invokes it.
+func WithPostImport(fn func(src string)) Option {
+	return func(b *buildOptions) { b.postImport = fn }
+}
+
 // Build constructs the onboard.Runner that backs the web Setup Enable flow,
 // wiring the pure orchestration to the concrete store, the real exporter
 // subprocess runner, and the source-dispatching Importer. resolver decides where
@@ -48,14 +67,18 @@ import (
 // The returned *onboard.Runner satisfies web.Enabler directly; wire it with
 // (*web.Server).SetEnabler and call Shutdown as part of graceful shutdown so no
 // exporter subprocess outlives the app (SPEC-0013 REQ "Concurrency Safety").
-func Build(cfg *config.Config, st *store.Store, resolver onboard.ToolResolver, log *slog.Logger) (*onboard.Runner, error) {
+func Build(cfg *config.Config, st *store.Store, resolver onboard.ToolResolver, log *slog.Logger, opts ...Option) (*onboard.Runner, error) {
 	if log == nil {
 		log = slog.Default()
+	}
+	var b buildOptions
+	for _, opt := range opts {
+		opt(&b)
 	}
 	return onboard.NewRunner(onboard.Config{
 		Resolver: resolver,
 		Exec:     ExecRunner,
-		Importer: &storeImporter{st: st, cfg: cfg, log: log},
+		Importer: &storeImporter{st: st, cfg: cfg, log: log, after: b.postImport},
 		// The detected live-source resolver threads WhatsApp's container DB + media
 		// dir into wtsexporter's iOS-mode argv (issue #150). It is HOME-rooted like
 		// the /setup detector, so serve and desktop resolve the same paths; on a
@@ -184,6 +207,9 @@ type storeImporter struct {
 	st  *store.Store
 	cfg *config.Config
 	log *slog.Logger
+	// after runs once per SUCCESSFUL import (WithPostImport) — the post-import
+	// trigger seam for the background embedding job. nil skips it.
+	after func(src string)
 }
 
 // Import loads root into the store for src and returns the onboard-shaped result,
@@ -235,6 +261,14 @@ func (im *storeImporter) Import(ctx context.Context, src, root string) (onboard.
 		res.MediaFailed = msum.Failed
 		im.log.Info("onboardsvc: image transcode complete", "source", src,
 			"converted", msum.Converted, "cached", msum.Skipped, "failed", msum.Failed)
+	}
+
+	// Post-import hook (WithPostImport): the import succeeded, so new messages
+	// may be in the store — the moment the background embedding job is allowed
+	// to start (issue #191). Runs after the best-effort transcode so the hook
+	// observes the same "import fully settled" point `msgbrowse import` ends at.
+	if im.after != nil {
+		im.after(src)
 	}
 
 	return res, nil

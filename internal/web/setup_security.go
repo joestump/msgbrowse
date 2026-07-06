@@ -2,11 +2,11 @@
 // (SPEC-0013 §Security "Same-origin protection for privileged POSTs"). The
 // read-only /setup GET renders detection cards under the ADR-0010 loopback
 // single-user trust and needs no token; but /setup/enable (and /setup/refresh,
-// /setup/refresh-all, /setup/recheck, which reuse this gate) spawns a bundled
-// exporter that reads a personal database — a privileged local action that MUST
-// NOT be triggerable cross-origin, even under loopback, because another local
-// process or a malicious page loaded in a browser could otherwise drive the
-// exporter.
+// /setup/recheck, /setup/embed/resume, which reuse this gate) spawns a bundled
+// exporter that reads a personal database — or starts network egress — a
+// privileged local action that MUST NOT be triggerable cross-origin, even
+// under loopback, because another local process or a malicious page loaded in
+// a browser could otherwise drive it.
 //
 // The gate requires BOTH, and rejects with 403 BEFORE any subprocess starts:
 //

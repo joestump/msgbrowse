@@ -43,8 +43,12 @@
          swaps carry it alike. */}}
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "providers"}}
-    <p class="screen-sub">msgbrowse looks for Signal, iMessage, and WhatsApp on this Mac. Enable a
-      detected source to import its history — everything stays on this machine.</p>
+    <p class="screen-sub">Enable a detected source to import its history — everything stays on this machine.</p>
+
+    {{/* Semantic-index progress card (issue #191): where the vector index
+         stands — off / indexing / behind / current / failed — between the
+         intro and the source cards, per the owner's mock. */}}
+    {{template "embed_progress_card" .Embed}}
 
     {{/* One card per source (SPEC-0013 "one card per source"), as a labelled list
          so assistive tech enumerates the sources. Each card renders via the shared
@@ -55,42 +59,71 @@
       {{- end}}
     </ul>
 
-    {{/* All-sources Refresh (SPEC-0013 REQ "Refresh"): one control that refreshes
-         every Enabled source. Rendered only when at least one source is Enabled.
-         It POSTs /setup/refresh-all (same-origin + token gate, identical to the
-         per-source POSTs); the Runner's per-source job model starts one job per
-         distinct Enabled source, so it can never spawn two concurrent jobs for the
-         same source. Each source's own aria-live region reports its live state;
-         the summary lands in this control's own aria-live region. */}}
-    {{- if .AnyEnabled}}
-    <div class="setup-refresh-all">
-      {{- if .EnableAvailable}}
-      <button type="button" class="setup-btn"
-              hx-post="/setup/refresh-all"
-              hx-headers='{"X-Setup-Token": "{{.Token}}"}'
-              hx-target="#setup-refresh-all-result"
-              hx-swap="innerHTML"
-              hx-disabled-elt="this">Refresh all sources</button>
-      {{- else}}
-      <button type="button" class="setup-btn" disabled aria-disabled="true"
-              title="Refreshing needs the desktop app with its bundled exporters, or a configured exporter path">Refresh all sources</button>
-      {{- end}}
-      <p id="setup-refresh-all-result" class="setup-refresh-all-result" role="status" aria-live="polite"></p>
-    </div>
-    {{- end}}
-
-    {{/* Footer copy keyed on the page's real state (issue #162: the old
-         two-way condition showed "No sources are ready to enable" while every
-         card read Enabled): actionable → nudge; everything-enabled → status;
-         only when nothing is actionable AND nothing is enabled → the true
-         empty state. */}}
+    {{/* Footer copy keyed on the page's real state (issue #162): actionable →
+         nudge; something-enabled → the refresh hint; otherwise the true empty
+         state. Terse per #194. */}}
     <p class="setup-footnote">
-      {{- if .AnyActionable}}Detected sources can be enabled from here — enabling runs the bundled exporter and imports the result. Providers stays reachable from Settings at any time.
-      {{- else if .AnyEnabled}}All detected sources are enabled. Refresh a source to import what's new. Providers stays reachable from Settings at any time.
-      {{- else}}No sources are ready to enable on this machine yet. Providers stays reachable from Settings at any time.{{end}}
+      {{- if .AnyActionable}}Enabling runs the source's exporter and imports the result.
+      {{- else if .AnyEnabled}}Refresh a source to import what's new.
+      {{- else}}No sources are ready to enable on this machine yet.{{end}}
     </p>
   </div>
     </main>
+{{end}}
+
+{{/* embed_progress_card is the semantic-index status card (issue #191),
+     rendered on the Providers page and as the standalone fragment GET
+     /setup/embed/status returns. While the background embed job is RUNNING it
+     self-polls that route every 2s and swaps itself (the setup_progress
+     pattern); every non-running render carries no hx-trigger, so polling
+     stops with the job. The Resume POST is gated like every privileged Setup
+     POST (same-origin + per-session token). CSP-safe: a native <progress>
+     element and fixed classes — no inline styles or scripts. All values are
+     server-computed counts/tokens, so html/template escaping is the only
+     encoding needed. */}}
+{{define "embed_progress_card"}}
+<div id="embed-progress" class="embed-progress embed-progress-{{.State}}" role="status" aria-live="polite"
+     {{- if .Polling}} hx-get="/setup/embed/status" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{{end}}>
+  {{- if eq .State "unconfigured"}}
+  <p class="embed-progress-line">Semantic search is off — set an AI endpoint in
+    <a href="/settings/llm" hx-boost="true" hx-target="#main-content" hx-select="#main-content"
+       hx-swap="outerHTML" hx-push-url="true">Settings → LLM</a>.</p>
+  {{- else if eq .State "running"}}
+  <div class="embed-progress-state">
+    <span class="setup-progress-spin" aria-hidden="true"></span>
+    {{- if .Total}}
+    <progress class="embed-progress-bar" value="{{.Processed}}" max="{{.Total}}"></progress>
+    <span class="embed-progress-line">Indexing {{num .Processed}} of {{num .Total}} messages</span>
+    {{- else}}
+    <progress class="embed-progress-bar"></progress>
+    <span class="embed-progress-line">Preparing the semantic index…</span>
+    {{- end}}
+  </div>
+  {{- else if eq .State "failed"}}
+  <p class="embed-progress-line setup-progress-err">Semantic indexing failed — see
+    <a href="/logs" hx-boost="true" hx-target="#main-content" hx-select="#main-content"
+       hx-swap="outerHTML" hx-push-url="true">Settings → Logs</a> for details.</p>
+  {{- if .Available}}{{template "embed-resume-button" .}}{{end}}
+  {{- else if eq .State "behind"}}
+  <p class="embed-progress-line">{{num .Missing}} message{{if ne .Missing 1}}s{{end}} await semantic indexing ({{num .Indexed}} indexed).</p>
+  {{- if .Available}}{{template "embed-resume-button" .}}{{end}}
+  {{- else}}
+  <p class="embed-progress-line">Semantic index current — {{num .Indexed}} message{{if ne .Indexed 1}}s{{end}}.</p>
+  {{- end}}
+</div>
+{{end}}
+
+{{/* embed-resume-button is the explicit "Resume indexing" affordance
+     (issue #191's deliberate-egress posture: indexing starts only at
+     user-attributable moments). It POSTs /setup/embed/resume behind the
+     same-origin + token gate and swaps the whole card with the response. */}}
+{{define "embed-resume-button"}}
+  <button type="button" class="setup-btn"
+          hx-post="/setup/embed/resume"
+          hx-headers='{"X-Setup-Token": "{{.Token}}"}'
+          hx-target="#embed-progress"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this">Resume indexing</button>
 {{end}}
 
 {{/* setup_card is one source's card, rendered both inside the page range and as
@@ -350,22 +383,5 @@
        card flip so the user re-enters the guidance flow — deep link + Recheck —
        instead of a dead-end Failed line (issue #174). */}}
   {{- if or .Done .PermissionDenied}}{{.SidebarOOB}}{{.CardOOB}}{{end}}
-  {{- end}}
-{{end}}
-
-{{/* setup_refresh_all_result is the summary fragment the all-sources Refresh POST
-     swaps into its aria-live region. It reports how many sources it kicked off —
-     the per-source live state is announced by each card's own progress region, so
-     this stays a short count-only summary. All values are server-computed counts,
-     so html/template escaping is the only encoding needed. */}}
-{{define "setup_refresh_all_result"}}
-  {{- if .Unavailable}}
-  <span class="setup-progress-unavailable">Refreshing needs the desktop app (bundled exporters) or a configured exporter path.</span>
-  {{- else if .None}}
-  <span>No enabled sources to refresh.</span>
-  {{- else}}
-  <span>Refreshing {{.Started}} source{{if ne .Started 1}}s{{end}}
-    {{- if .AlreadyRunning}} · {{.AlreadyRunning}} already in progress{{end}}
-    {{- if .Failed}} · {{.Failed}} could not start{{end}} — see each source below for progress.</span>
   {{- end}}
 {{end}}

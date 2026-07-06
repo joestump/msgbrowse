@@ -140,10 +140,12 @@ type setupData struct {
 	// so the intro can nudge the user toward an action (vs. a pure returning-user
 	// view where everything is Enabled/Not-detected).
 	AnyActionable bool
-	// AnyEnabled is true when at least one source is Enabled, so the page renders
-	// the all-sources Refresh control (SPEC-0013 REQ "Refresh": "a single control
-	// that refreshes every enabled source"). Hidden when nothing is Enabled.
+	// AnyEnabled is true when at least one source is Enabled — it steers the
+	// footer copy (the former all-sources Refresh control was removed, #194).
 	AnyEnabled bool
+	// Embed drives the semantic-index progress card between the intro and the
+	// source cards (issue #191).
+	Embed embedCardData
 	// EnableAvailable reports whether an Enabler is wired (desktop bundle or a
 	// configured $PATH resolver): true renders live Enable buttons, false renders
 	// the "desktop app required / configure tools" affordance (SPEC-0013).
@@ -200,6 +202,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Cards:           cards,
 		AnyActionable:   anyActionable,
 		AnyEnabled:      anyEnabled,
+		Embed:           s.embedCard(r.Context(), token),
 		EnableAvailable: s.enableAvailable(),
 		Token:           token,
 	})
@@ -274,7 +277,7 @@ func (s *Server) setupCardFor(det setup.Detector, src, token string, present map
 	if present[src] || s.sourceConfigured(src) {
 		card.State = setupStateEnabled
 		card.StateLabel = "Enabled"
-		card.Detail = "This source is enabled and its archive is imported."
+		card.Detail = "Archive imported."
 		card.Actionable = false
 		if c, ok := counts[src]; ok {
 			card.Conversations = c.Conversations

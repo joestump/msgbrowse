@@ -100,6 +100,35 @@ func TestEmbeddingLifecycle(t *testing.T) {
 	}
 }
 
+// TestCountEmbeddable: the denominator for the index-progress card (#191) —
+// the same non-system/non-empty predicate MessagesNeedingEmbedding applies,
+// regardless of whether embeddings exist, and independent of model.
+func TestCountEmbeddable(t *testing.T) {
+	st, h1, _, _ := seedEmbeddingCorpus(t)
+	ctx := context.Background()
+
+	if n, err := st.CountEmbeddable(ctx); err != nil || n != 3 {
+		t.Fatalf("CountEmbeddable = %d, %v; want 3, nil", n, err)
+	}
+
+	// Embedding a message does not change the total (it changes missing).
+	if err := st.PutEmbedding(ctx, h1, "test-embed", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.CountEmbeddable(ctx); n != 3 {
+		t.Errorf("CountEmbeddable after PutEmbedding = %d, want 3", n)
+	}
+	if n, _ := st.CountMissingEmbeddings(ctx, "test-embed"); n != 2 {
+		t.Errorf("missing = %d, want 2", n)
+	}
+
+	// Empty store: zero, not an error.
+	empty := newTestStore(t)
+	if n, err := empty.CountEmbeddable(ctx); err != nil || n != 0 {
+		t.Errorf("empty CountEmbeddable = %d, %v; want 0, nil", n, err)
+	}
+}
+
 // TestEmbeddingsCoexistAcrossModels confirms the composite PK (message_hash,
 // model): a message can hold vectors for two models at once, so switching
 // models doesn't overwrite, and re-running under a prior model is a no-op.

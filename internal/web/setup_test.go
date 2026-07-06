@@ -324,10 +324,12 @@ func TestBuiltCSSCarriesSetupComponents(t *testing.T) {
 		".setup-guide-steps",
 		".setup-guide-result",
 		".setup-guide-close:focus-visible", // keyboard focus on the close control
-		// All-sources Refresh control (#135): the drift guard must carry the new
-		// classes so a stale app.css cannot ship the refresh control unstyled.
-		".setup-refresh-all",
-		".setup-refresh-all-result",
+		// Semantic-index progress card (#191): the drift guard must carry the
+		// embed-card classes so a stale app.css cannot ship the card unstyled.
+		// (The former all-sources Refresh classes left with the control, #194.)
+		".embed-progress",
+		".embed-progress-line",
+		".embed-progress-bar",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("built app.css missing %q (rebuild: rm -rf .tools && make css)", want)

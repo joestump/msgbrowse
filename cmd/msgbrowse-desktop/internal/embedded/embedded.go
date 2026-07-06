@@ -31,9 +31,11 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/embedsvc"
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/mcp"
 	"github.com/joestump/msgbrowse/internal/onboard"
+	"github.com/joestump/msgbrowse/internal/onboardsvc"
 	"github.com/joestump/msgbrowse/internal/store"
 	"github.com/joestump/msgbrowse/internal/web"
 )
@@ -142,6 +144,7 @@ type Server struct {
 
 	store     *store.Store
 	onboard   *onboard.Runner // Setup Enable worker registry; torn down on Close
+	embed     *embedsvc.Job   // background embedding job (#191); torn down on Close
 	sync      *deviceSync     // supervised device-sync stack, nil when sync is disabled or failed to start
 	done      chan struct{}   // closed when the serve loop has exited
 	serveErr  error           // set before done is closed
@@ -191,16 +194,6 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Op
 	// `security` (no cgo) and is inert off macOS, so the core stays Linux-testable.
 	srv.SetDetector(newDesktopDetector())
 
-	// Wire the Setup Enable flow (SPEC-0013) with the BUNDLED exporter toolchain,
-	// so a click on Enable resolves the exporter from Contents/Resources and never
-	// $PATH (making internal/toolchain.ResolveExporters live at the export site).
-	// The runner's workers are torn down in Close as part of graceful shutdown.
-	onboardRunner, err := wireEnable(cfg, st, srv, log)
-	if err != nil {
-		_ = st.Close()
-		return nil, err
-	}
-
 	// One live LLM provider for the whole app (issue #191): the MCP server
 	// and the Settings → LLM tab share this holder, so a save on the tab
 	// swaps the client and semantic search uses the new endpoint on its very
@@ -209,6 +202,28 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Op
 	// tools return errors — identical degradation.
 	holder := newLLMHolder(cfg)
 	srv.SetLLMConfig(newLLMApplier(cfg, holder))
+
+	// The background embedding job (#191): the incremental embed pass as a
+	// supervised singleton over the live holder — this is how the desktop app
+	// builds the vector index at all (the .app exposes no CLI). It never
+	// auto-runs at launch; it is kicked only after a successful import, after
+	// an LLM-settings save, or from the Providers card's explicit Resume.
+	// Torn down in Close (progress persists per batch, so nothing is lost).
+	embedJob := embedsvc.New(st, holder, holder.EmbedModel, log)
+	srv.SetEmbedIndexer(embedJob)
+
+	// Wire the Setup Enable flow (SPEC-0013) with the BUNDLED exporter toolchain,
+	// so a click on Enable resolves the exporter from Contents/Resources and never
+	// $PATH (making internal/toolchain.ResolveExporters live at the export site).
+	// The runner's workers are torn down in Close as part of graceful shutdown.
+	// Every successful import kicks the embed job (#191).
+	onboardRunner, err := wireEnable(cfg, st, srv, log,
+		onboardsvc.WithPostImport(func(string) { embedJob.Kick() }))
+	if err != nil {
+		embedJob.Shutdown()
+		_ = st.Close()
+		return nil, err
+	}
 	mcpSrv := mcp.NewServer(st, holder, mcp.Options{
 		EmbedModelFunc: holder.EmbedModel,
 		Logger:         log,
@@ -259,6 +274,7 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Op
 		MCPURL:  base + MCPPath,
 		store:   st,
 		onboard: onboardRunner,
+		embed:   embedJob,
 		sync:    sup,
 		done:    make(chan struct{}),
 	}
@@ -388,6 +404,12 @@ func (e *Server) Close() error {
 		// "Quitting the app tears down running jobs").
 		if e.onboard != nil {
 			e.onboard.Shutdown()
+		}
+		// Stop any in-flight embedding run before closing the store. The pass
+		// persists each stored batch, so cancellation loses nothing — the next
+		// launch's first Kick resumes the remainder (#191).
+		if e.embed != nil {
+			e.embed.Shutdown()
 		}
 		// Drain the device-sync stack: the Start context is already
 		// cancelled (Close's contract), so this waits for the SIGTERM→grace

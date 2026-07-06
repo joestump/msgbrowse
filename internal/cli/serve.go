@@ -13,6 +13,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/devsync"
+	"github.com/joestump/msgbrowse/internal/embedsvc"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/onboard"
 	"github.com/joestump/msgbrowse/internal/onboardsvc"
@@ -63,23 +64,36 @@ func newServeCommand() *cobra.Command {
 				return err
 			}
 
+			// The Settings → LLM tab (#191): saves persist the three llm
+			// keys into the loaded config file and swap the process's live
+			// LLM holder, so a changed endpoint applies without a restart.
+			holder := newLLMHolder(cfg)
+			srv.SetLLMConfig(newLLMApplier(cfg, holder))
+
+			// The background embedding job (#191): the incremental embed pass
+			// as a supervised singleton, reading the CURRENT endpoint + model
+			// through the live holder. Never auto-runs at launch — it is
+			// kicked only after a successful import/refresh, after an LLM
+			// save, or from the Providers card's explicit Resume. Shut down
+			// with the other workers so no run outlives serve (its progress
+			// persists per batch; the next run resumes the remainder).
+			embedJob := embedsvc.New(st, holder, holder.EmbedModel, slog.Default())
+			defer embedJob.Shutdown()
+			srv.SetEmbedIndexer(embedJob)
+
 			// Wire the Setup Enable flow (SPEC-0013): `serve` resolves exporters
 			// from config/$PATH (the bring-your-own path — only the .app bundles).
 			// A source with no resolvable tool renders "unavailable" rather than a
 			// silent no-op. The runner's workers are torn down on shutdown so no
 			// exporter subprocess outlives serve (SPEC-0013 REQ "Concurrency
-			// Safety").
-			onboardRunner, err := onboardsvc.Build(cfg, st, onboardsvc.PathResolverFromConfig(cfg), slog.Default())
+			// Safety"). Every successful import kicks the embed job (#191).
+			onboardRunner, err := onboardsvc.Build(cfg, st, onboardsvc.PathResolverFromConfig(cfg), slog.Default(),
+				onboardsvc.WithPostImport(func(string) { embedJob.Kick() }))
 			if err != nil {
 				return err
 			}
 			defer onboardRunner.Shutdown()
 			srv.SetEnabler(onboardRunner)
-
-			// The Settings → LLM tab (#191): saves persist the three llm
-			// keys into the loaded config file and swap the process's live
-			// LLM holder, so a changed endpoint applies without a restart.
-			srv.SetLLMConfig(newLLMApplier(cfg, newLLMHolder(cfg)))
 
 			// Device sync (ADR-0021): with device_sync.enabled the
 			// supervised Syncthing engine runs beside the web UI as a

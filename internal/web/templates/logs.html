@@ -29,6 +29,29 @@
 
     {{template "logs_entries" .}}
 
+    {{/* Embedding-job run history (issue #191): the background semantic-index
+         runs of this app session — started / embedded N in M batches /
+         failure lines, from embedsvc's bounded ring. Its own labelled stream
+         beside the per-source job logs, rendered exactly like the sync/shell
+         note feeds. Counts and timings only — never message content. Static
+         per page load (the Providers card is the live surface). */}}
+    {{- if .EmbedNotes}}
+    <section class="status-card space-y-1" aria-labelledby="log-title-embedding">
+      <div class="log-entry-head">
+        <span id="log-title-embedding" class="log-entry-title">Embedding</span>
+      </div>
+      <p class="log-empty">Semantic-index runs from this app session.</p>
+      <div class="log-meta">
+        {{- range .EmbedNotes}}
+        <div class="log-meta-row">
+          <span class="log-meta-label">{{.Clock}}</span>
+          <span class="log-meta-value">{{if .IsError}}<span class="log-badge log-badge-failed">error</span> {{end}}{{.Message}}</span>
+        </div>
+        {{- end}}
+      </div>
+    </section>
+    {{- end}}
+
     {{/* Device-sync event feed (#158; SPEC-0014 REQ "Status and Doctor
          Surfacing"): the significant sync events of this app session — pairs,
          unpairs, accepted offers, dispatched sync imports, peer connects —

@@ -145,6 +145,15 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("LLM settings saved and applied live",
 		"base_url", data.BaseURL, "embed_model", data.EmbedModel, "chat_model", data.FactsModel)
 
+	// Post-save embed trigger (issue #191): the user just (re)pointed the AI
+	// endpoint — a user-attributable moment where starting the incremental
+	// embed pass is deliberate egress. Kick is a no-op when the embed model is
+	// empty (semantic search off), when a run is already in flight, or when
+	// nothing is behind (the pass finds zero missing and makes no calls).
+	if s.embedIndexer != nil {
+		s.embedIndexer.Kick()
+	}
+
 	cur := s.llmConfig.CurrentLLM()
 	s.renderLLMSettings(w, r, llmSettingsData{
 		BaseURL:    cur.BaseURL,

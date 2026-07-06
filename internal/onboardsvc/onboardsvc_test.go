@@ -116,3 +116,80 @@ func TestStoreImporterDispatchesSignal(t *testing.T) {
 		t.Fatalf("store has %d conversations (want 1 signal): %+v", len(convs), convs)
 	}
 }
+
+// TestStoreImporterPostImportHook: the WithPostImport hook (#191 — the
+// background embedding job's trigger seam) fires exactly once after a
+// SUCCESSFUL import, with the source id.
+func TestStoreImporterPostImportHook(t *testing.T) {
+	dataDir := t.TempDir()
+	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	root := filepath.Join(dataDir, "archives", "signal")
+	convDir := filepath.Join(root, "export", "Alice")
+	if err := os.MkdirAll(convDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	chat := "[2022-01-01 10:00:00] Alice: hello\n"
+	if err := os.WriteFile(filepath.Join(convDir, "chat.md"), []byte(chat), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var fired []string
+	im := &storeImporter{
+		st: st, cfg: &config.Config{DataDir: dataDir}, log: discardLogger(),
+		after: func(src string) { fired = append(fired, src) },
+	}
+	if _, err := im.Import(context.Background(), source.Signal, root); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if len(fired) != 1 || fired[0] != source.Signal {
+		t.Fatalf("post-import hook fired %v, want exactly [signal]", fired)
+	}
+}
+
+// TestStoreImporterPostImportHookSkippedOnFailure: a FAILED import never
+// invokes the hook — no import, no embed trigger.
+func TestStoreImporterPostImportHookSkippedOnFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	fired := 0
+	im := &storeImporter{
+		st: st, cfg: &config.Config{DataDir: dataDir}, log: discardLogger(),
+		after: func(string) { fired++ },
+	}
+	// A managed root with no export dir: the Signal importer errors.
+	if _, err := im.Import(context.Background(), source.Signal, filepath.Join(dataDir, "archives", "signal")); err == nil {
+		t.Fatal("Import over a missing export dir should error")
+	}
+	if fired != 0 {
+		t.Fatalf("post-import hook fired %d times on a failed import, want 0", fired)
+	}
+}
+
+// TestBuildWithPostImportOption: Build threads the option through to the
+// runner's importer (compile-and-wire check; the hook behavior itself is
+// covered above).
+func TestBuildWithPostImportOption(t *testing.T) {
+	dataDir := t.TempDir()
+	st, err := store.Open(filepath.Join(dataDir, store.DBFileName))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	runner, err := Build(&config.Config{DataDir: dataDir}, st, nil, discardLogger(),
+		WithPostImport(func(string) {}))
+	if err != nil {
+		t.Fatalf("Build with option: %v", err)
+	}
+	runner.Shutdown()
+}

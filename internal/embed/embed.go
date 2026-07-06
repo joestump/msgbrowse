@@ -29,6 +29,14 @@ type Options struct {
 	Prune bool
 	// Logger receives progress; defaults to slog.Default().
 	Logger *slog.Logger
+	// Progress, when non-nil, receives batch-level progress: processed is the
+	// cumulative number of messages embedded this run, total the number the run
+	// set out to embed. It is called once before the first batch (processed 0)
+	// and again after every stored batch, so a caller can drive a live progress
+	// surface without forking the run loop. Counts only — never message content.
+	// It is invoked from the run's own goroutine; implementations must be fast
+	// (or hand off) and safe for use from that goroutine.
+	Progress func(processed, total int)
 }
 
 // Summary reports what an embedding run did.
@@ -84,6 +92,9 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		return sum, nil
 	}
 	log.Info("embedding messages", "model", model, "to_embed", total, "batch_size", batch)
+	if opts.Progress != nil {
+		opts.Progress(0, total)
+	}
 
 	// Bound the loop as a backstop against any future "no progress" seam (e.g. a
 	// stored model string that never matches the query): embedding `total`
@@ -126,6 +137,9 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		sum.Embedded += len(targets)
 		sum.Batches++
 		log.Debug("embedded batch", "batch", sum.Batches, "embedded", sum.Embedded, "of", total)
+		if opts.Progress != nil {
+			opts.Progress(sum.Embedded, total)
+		}
 	}
 
 	sum.DurationMS = time.Since(start).Milliseconds()

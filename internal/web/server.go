@@ -64,6 +64,12 @@ type Store interface {
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
+	// The semantic-index counts behind the Providers embed-progress card
+	// (issue #191): how many embeddable messages still lack an embedding for
+	// the current model, and how many exist at all. Read only on page/fragment
+	// renders — the running job's 2s poll reports from memory.
+	CountMissingEmbeddings(ctx context.Context, model string) (int, error)
+	CountEmbeddable(ctx context.Context) (int, error)
 }
 
 // Server holds the dependencies shared by all handlers.
@@ -146,6 +152,11 @@ type Server struct {
 	// llmBoot is the boot-time LLM config snapshot (file + defaults merged),
 	// the tab's display fallback when no configurator is wired.
 	llmBoot llm.Settings
+	// embedIndexer is the background embedding job behind the Providers
+	// embed-progress card and the Logs page's embedding stream (issue #191):
+	// serve and the desktop shell wire an embedsvc.Job via SetEmbedIndexer.
+	// nil renders the informational card states but no Resume control.
+	embedIndexer EmbedIndexer
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -302,11 +313,15 @@ func (s *Server) routes() http.Handler {
 	// handler by the same-origin + per-session-token check before any work.
 	mux.HandleFunc("POST /setup/enable", s.handleSetupEnable)
 	mux.HandleFunc("POST /setup/refresh", s.handleSetupRefresh)
-	mux.HandleFunc("POST /setup/refresh-all", s.handleSetupRefreshAll)
 	mux.HandleFunc("POST /setup/cancel", s.handleSetupCancel)
 	mux.HandleFunc("POST /setup/recheck", s.handleSetupRecheck)
 	mux.HandleFunc("POST /setup/disable", s.handleSetupDisable)
 	mux.HandleFunc("GET /setup/status/{source}", s.handleSetupStatus)
+	// The semantic-index progress card (issue #191): a safe status GET the
+	// RUNNING card polls, plus the privileged Resume POST (it starts network
+	// egress), gated inside its handler like every other Setup POST.
+	mux.HandleFunc("GET /setup/embed/status", s.handleEmbedStatus)
+	mux.HandleFunc("POST /setup/embed/resume", s.handleEmbedResume)
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	// The Settings → LLM tab (#191): a safe GET render plus the privileged
 	// save POST, gated inside its handler by the same checkSetupPOST contract

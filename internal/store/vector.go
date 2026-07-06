@@ -88,6 +88,22 @@ SELECT COUNT(*)
 	return n, err
 }
 
+// CountEmbeddable returns the total number of embeddable messages — non-system
+// with a non-empty body, the same predicate MessagesNeedingEmbedding applies —
+// regardless of whether they already have an embedding. It is the denominator
+// for index-progress reporting ("N of M messages"): CountMissingEmbeddings is
+// how many remain, CountEmbeddable how many exist. Both run only on page
+// renders (the running job reports progress from memory), so a COUNT scan over
+// messages is well inside the render budget.
+func (s *Store) CountEmbeddable(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+  FROM messages m
+ WHERE m.is_system = 0 AND TRIM(m.body) <> ''`).Scan(&n)
+	return n, err
+}
+
 // PutEmbedding upserts the embedding for a message hash under the given model.
 func (s *Store) PutEmbedding(ctx context.Context, hash, model string, vec []float32) error {
 	if len(vec) == 0 {

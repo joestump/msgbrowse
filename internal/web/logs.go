@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/devsync"
+	"github.com/joestump/msgbrowse/internal/embedsvc"
 	"github.com/joestump/msgbrowse/internal/onboard"
 	"github.com/joestump/msgbrowse/internal/source"
 )
@@ -118,6 +119,11 @@ type logsData struct {
 	// bounded ring. Empty when device sync is disabled (no provider wired).
 	// Rendered beside the shell notes, outside the self-polling fragment.
 	SyncNotes []devsync.Note
+	// EmbedNotes is the background embedding job's run history (issue #191):
+	// run started / embedded N in M batches / failure lines — counts and
+	// timings only, never message content, from embedsvc's bounded ring.
+	// Empty when no indexer is wired or no run has happened this session.
+	EmbedNotes []embedsvc.Note
 }
 
 // handleLogs renders the Logs viewer. GET-only (the route pattern enforces it);
@@ -165,6 +171,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		AnyActive:       anyActive,
 		ShellNotes:      s.shellNoteSnapshot(),
 		SyncNotes:       s.syncNoteSnapshot(),
+		EmbedNotes:      s.embedNoteSnapshot(),
 	})
 }
 

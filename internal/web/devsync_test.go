@@ -125,26 +125,6 @@ func TestEnableConflictOnSyncedSource(t *testing.T) {
 	}
 }
 
-// TestRefreshAllSkipsSyncedSources: the all-sources Refresh never fans out to
-// a replica's synced-in source.
-func TestRefreshAllSkipsSyncedSources(t *testing.T) {
-	srv, _, _ := newTestServer(t)
-	srv.SetSyncMonitor(replicaMonitor())
-	enabler := &fakeEnabler{}
-	srv.SetEnabler(enabler)
-	tok := mintToken(t, srv)
-
-	rec := refreshAllPOST(t, srv, selfOrigin, tok)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("refresh-all = %d", rec.Code)
-	}
-	for _, src := range enabler.refreshedSources() {
-		if src == "signal" {
-			t.Error("refresh-all ran the exporter pipeline for a synced-in source")
-		}
-	}
-}
-
 // unpairPOST posts the unpair form.
 func unpairPOST(t *testing.T, srv *Server, origin, token string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
