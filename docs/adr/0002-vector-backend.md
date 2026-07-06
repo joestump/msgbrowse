@@ -1,6 +1,6 @@
 # 2. Vector backend: sqlite-vec loadable extension, Go brute-force fallback
 
-- Status: accepted
+- Status: accepted; superseded in part by [ADR-0013](0013-pure-go-sqlite-driver.md) (the loadable-extension path is closed — the Go brute-force scan is the implemented backend)
 - Date: 2026-06-27
 
 ## Context and Problem Statement
@@ -35,12 +35,22 @@ scale (hundreds of thousands of chunks) brute-force cosine is fast enough.
 Qdrant is rejected as the default: it adds a service, breaks the "one file"
 property, and is unnecessary at this scale.
 
+**Update ([ADR-0013](0013-pure-go-sqlite-driver.md)):** the extension half of
+this decision was never implemented. The driver switch to pure-Go
+`modernc.org/sqlite` removed the ability to load C extensions, so the "vec0
+loadable extension" path is closed; what shipped is the brute-force cosine
+scan in Go (`SemanticSearch` in `internal/store/vector.go`), which keeps
+everything in one SQLite file with no extension and is fast enough at
+single-user personal-archive scale.
+
 ### Consequences
 
-- The container bakes in a `vec0` extension for its platform; the data layer
-  detects whether the extension loaded and selects the vec0 path or the Go
-  fallback transparently.
+- The implemented backend is the Go brute-force scan; no `vec0` extension is
+  baked into the container (the image is a static binary on distroless per
+  [ADR-0013](0013-pure-go-sqlite-driver.md)), and the data layer has no
+  extension-loading path.
 - A `vector_backend` config key (`sqlite-vec` | `qdrant`) leaves the door open
-  for a future Qdrant implementation without further schema churn.
-- Revisit if the archive grows large enough that brute-force latency is felt on
-  hosts lacking the extension.
+  for a future extension-based or Qdrant implementation without further schema
+  churn; it still defaults to `sqlite-vec` (`internal/config/config.go`) even
+  though no extension backend exists today — the Go scan serves regardless.
+- Revisit if the archive grows large enough that brute-force latency is felt.

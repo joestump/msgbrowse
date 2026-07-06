@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-03
 - **Deciders:** Joe Stump
-- **Related:** [ADR-0006 (web stack)](0006-web-stack-htmx.md), [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md), [ADR-0013 (pure-Go SQLite driver)](0013-pure-go-sqlite-driver.md), [ADR-0018 (device pairing & archive sync)](0018-device-pairing-archive-sync.md), [SPEC-0008 (web performance)](../openspec/specs/web-performance/spec.md), [SPEC-0010 (desktop shell)](../openspec/specs/desktop-shell/spec.md)
+- **Related:** [ADR-0006 (web stack)](0006-web-stack-htmx.md), [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md), [ADR-0013 (pure-Go SQLite driver)](0013-pure-go-sqlite-driver.md), [ADR-0021 (Syncthing sync engine)](0021-syncthing-sync-engine.md), [SPEC-0008 (web performance)](../openspec/specs/web-performance/spec.md), [SPEC-0010 (desktop shell)](../openspec/specs/desktop-shell/spec.md)
 
 ## Context and Problem Statement
 
@@ -61,9 +61,10 @@ on a loopback ephemeral port and points its window at it, so browser mode and
 desktop mode serve the identical app
 ([SPEC-0010 (desktop shell)](../openspec/specs/desktop-shell/spec.md)
 specifies the shell;
-[SPEC-0011 (device sync)](../openspec/specs/device-sync/spec.md) — see
-[ADR-0018](0018-device-pairing-archive-sync.md) — specifies device pairing,
-whose QR the shared Connect page renders).
+[SPEC-0014 (Syncthing device sync)](../openspec/specs/device-sync-syncthing/spec.md)
+— see [ADR-0021](0021-syncthing-sync-engine.md), which superseded the original
+[ADR-0018](0018-device-pairing-archive-sync.md)/SPEC-0011 pairing design —
+specifies device sync, whose QR the shared Connect page renders).
 
 The key consequence is that webview bindings **require cgo**. This is
 resolved by isolation, not by surrender: the shell lives in its own build
@@ -73,9 +74,13 @@ build-tag-agnostic and tags alone would have pulled Wails' dependency tree
 into the core `go.mod`/`go.sum`; see the
 [SPEC-0010 design](../openspec/specs/desktop-shell/design.md) "Build
 isolation" decision) so `CGO_ENABLED=0 go build ./...` keeps succeeding for
-the server, CLI, and MCP core. Because webview shells cannot be cross-compiled, desktop binaries are
-built in a GitHub Actions matrix — macOS runner → `.app`/dmg, Ubuntu runner
-with WebKit2GTK → Linux build, Windows runner → `.exe`.
+the server, CLI, and MCP core. Because webview shells cannot be
+cross-compiled, desktop binaries are built on per-OS GitHub Actions runners
+(`.github/workflows/desktop.yml`): a macOS runner producing a zipped `.app`
+and an Ubuntu runner with WebKit2GTK producing the Linux build. A Windows leg
+(windows-latest → `.exe`) and dmg packaging are deferred, consistent with
+[ADR-0020](0020-bundled-exporters-guided-setup.md)'s "Windows bundling
+deferred".
 
 Options 2, 3, and 5 are rejected outright (Chromium bundle; Rust +
 sidecar supervision; unmaintained wrong-stack). Option 6 is rejected as the

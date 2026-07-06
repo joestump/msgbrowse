@@ -6,9 +6,10 @@
 
 ## Context
 
-msgbrowse is a multi-command binary (`signal-import`, `imessage-import`, `embed`,
-`serve`, `mcp`, `watch`, `journal`, `version`) that must be configurable three
-ways for three deployment styles: a committed-ish `config.yaml` for stable
+msgbrowse is a multi-command binary (`import`, `signal-import`,
+`imessage-import`, `whatsapp-import`, `devices`, `doctor`, `export`, `sync`,
+`embed`, `facts`, `media`, `serve`, `mcp`, `watch`, `journal`, `version`) that
+must be configurable three ways for three deployment styles: a committed-ish `config.yaml` for stable
 settings, environment variables for Docker/secrets, and flags for one-off
 overrides. It needs `--help`, subcommands, and a single resolved config object
 each command can rely on — with a predictable precedence and a hard rule that
@@ -22,7 +23,8 @@ defaults < config.yaml < `MSGBROWSE_*` env < flags.**
 1. **Cobra command tree.** `NewRootCommand` (`internal/cli/root.go`) defines the
    root `msgbrowse` command and attaches every subcommand (each in its own file).
    The root owns persistent flags shared by all commands (`--config`,
-   `--archive-root`, `--imessage-archive-root`, `--data-dir`, `--log-level`) and
+   `--archive-root`, `--imessage-archive-root`, `--whatsapp-archive-root`,
+   `--data-dir`, `--log-level`) and
    sets `SilenceUsage`/`SilenceErrors` so failures render through the logger, not
    as a usage dump.
 2. **Viper config, single lifecycle.** The root's `PersistentPreRunE` runs
@@ -42,8 +44,10 @@ defaults < config.yaml < `MSGBROWSE_*` env < flags.**
    vars — e.g. `MSGBROWSE_LLM_API_KEY` → `llm.api_key`,
    `MSGBROWSE_ARCHIVE_ROOT` → `archive_root`.
 5. **Per-source archive roots.** Distinct read-only roots — `archive_root`
-   (signal-export) and `imessage_archive_root` (imessage-exporter) — are separate
-   config keys/flags ([ADR-0003](0003-dual-source-archive.md)), each with its own
+   (signal-export), `imessage_archive_root` (imessage-exporter), and
+   `whatsapp_archive_root` (WhatsApp-Chat-Exporter,
+   [ADR-0016](0016-whatsapp-source-exporter.md)) — are separate config
+   keys/flags ([ADR-0003](0003-dual-source-archive.md)), each with its own
    `errorHint` when mis-pointed.
 6. **Secrets via env only.** `LLMConfig.APIKey` has a default of `""` and the
    `config` package docstring directs users to `MSGBROWSE_LLM_API_KEY` rather than

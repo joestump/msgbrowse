@@ -1,10 +1,15 @@
 ---
-status: draft
+status: deprecated
 date: 2026-07-03
 implements: [ADR-0018]
 ---
 
 # SPEC-0011 Design: Device sync
+
+> **Deprecated.** This design was retired with [SPEC-0011](spec.md) before
+> full implementation (#158); the shipped design is [SPEC-0014
+> (Syncthing-based device sync)](../device-sync-syncthing/design.md) per
+> [ADR-0021](../../../adr/0021-syncthing-sync-engine.md).
 
 ## Context
 

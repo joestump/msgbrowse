@@ -36,9 +36,16 @@ exactly one configurable network egress and no telemetry.**
    re-escapes text runs and linkifies URLs with `rel="noopener noreferrer
    nofollow"`; `highlightSnippet` escapes before applying `<mark>` and strips
    stray control-character sentinels.
-4. **Archives are read-only and never written.** Archives mount `:ro` in Docker
-   and msgbrowse only opens files for reading; all writes go to `data_dir`, which
-   must be outside the archive. Media serving is path-traversal-contained:
+4. **User-supplied archives are read-only and never written.** User-pointed
+   archive roots mount `:ro` in Docker and msgbrowse only opens their files for
+   reading; all writes go to `data_dir`, which must be outside any user-supplied
+   archive. Since [ADR-0020](0020-bundled-exporters-guided-setup.md) the desktop
+   app additionally owns **managed archive roots inside `data_dir`**
+   (`<data_dir>/archives/<source>`, `internal/setup/layout.go`); those are
+   written only by the app-spawned bundled exporters and — on replica nodes —
+   by the bundled Syncthing daemon ([ADR-0021](0021-syncthing-sync-engine.md)),
+   never by msgbrowse's own importer, which still only reads them. Media serving
+   is path-traversal-contained:
    `containWithin` (`internal/web/media.go`) anchors and cleans the relative path
    and verifies it stays inside the per-source base. SVG attachments are forced to
    download, never inlined (they can carry script).
@@ -47,12 +54,19 @@ exactly one configurable network egress and no telemetry.**
    msgbrowse never opens, decrypts, or reads them, and never touches the macOS
    Keychain.
 6. **One egress, local by default.** The single configurable `llm.base_url`
-   (`internal/llm`) is the **only** outbound connection; it defaults to a local
-   LiteLLM proxy (`http://127.0.0.1:4000/v1`) routing to a local model, so out of
-   the box no message content leaves the device. There is **no telemetry or
-   analytics**. The LLM API key is env-only (`MSGBROWSE_LLM_API_KEY`,
-   [ADR-0009](0009-config-cli-cobra-viper.md)), never baked into the image or a
-   committed file.
+   (`internal/llm`) is the **only** outbound connection off the local network;
+   it defaults to a local LiteLLM proxy (`http://127.0.0.1:4000/v1`) routing to
+   a local model, so out of the box no message content leaves the device. There
+   is **no telemetry or analytics**. The LLM API key is env-only
+   (`MSGBROWSE_LLM_API_KEY`, [ADR-0009](0009-config-cli-cobra-viper.md)), never
+   baked into the image or a committed file. Device sync
+   ([ADR-0018](0018-device-pairing-archive-sync.md), superseded by
+   [ADR-0021](0021-syncthing-sync-engine.md)) later added a second, **opt-in**
+   network surface: a bundled Syncthing daemon with a non-loopback sync
+   listener (`device_sync.listen_addr`, default `:8788`; `device_sync.enabled`
+   defaults to `false`) that does LAN-local discovery and archive transfers
+   only — global discovery, relays, and NAT traversal are all disabled
+   (`internal/syncthing/configgen.go`), so enabling it adds no cloud egress.
 7. **Per-thread privacy denylist.** `journal.exclude_conversations` is a denylist
    of conversations whose content is **never** sent to any LLM, for any feature —
    the right control regardless of source ([ADR-0003](0003-dual-source-archive.md)).
@@ -90,7 +104,9 @@ exactly one configurable network egress and no telemetry.**
 ### Positive
 
 - Out of the box, nothing leaves the machine; the one egress is explicit,
-  single, and local-by-default.
+  single, and local-by-default. The only other network surface — the Syncthing
+  sync listener ([ADR-0021](0021-syncthing-sync-engine.md)) — is off by
+  default, LAN-only, and never touches a cloud relay.
 - A malicious archive cannot execute script in the UI (escaping + strict CSP) or
   escape its directory (path containment), nor force a script-capable SVG inline.
 - Container blast radius is minimized (non-root, read-only rootfs, cap-drop,
@@ -111,7 +127,9 @@ exactly one configurable network egress and no telemetry.**
 - Keep the default local LiteLLM route; routing to a hosted model must be a
   deliberate `litellm.config.yaml` edit and is documented as off-device.
 - Supply the LLM key via `MSGBROWSE_LLM_API_KEY`; never commit it.
-- `data_dir` must live outside the (read-only) archive.
+- `data_dir` must live outside any user-supplied (read-only) archive root
+  (app-managed roots live *inside* `data_dir` by design,
+  [ADR-0020](0020-bundled-exporters-guided-setup.md)).
 
 ## Alternatives considered
 

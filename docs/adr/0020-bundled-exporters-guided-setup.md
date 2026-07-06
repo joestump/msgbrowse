@@ -143,6 +143,13 @@ Alongside the provisioning choice, this ADR settles five coupled decisions:
    the app MUST be notarized. This retires ADR-0017's "unsigned artifacts are
    acceptable initially" for the desktop release.
 
+   *Implementation status:* the Developer ID codesign + `notarytool` steps are
+   wired into CI (`.github/workflows/desktop.yml`) but gated behind signing
+   secrets (`MACOS_CERT_P12`, `AC_API_KEY_*`) that are not yet provisioned.
+   Until they are, the workflow ad-hoc signs (`codesign -s -`) the app and
+   every embedded binary, and a downloaded `.app` needs
+   `xattr -dr com.apple.quarantine` to launch.
+
 Requirements: [SPEC-0013 (desktop guided setup)](../openspec/specs/desktop-onboarding/spec.md).
 
 ### Consequences
@@ -165,7 +172,9 @@ Requirements: [SPEC-0013 (desktop guided setup)](../openspec/specs/desktop-onboa
   (cost + provisioning), a CI notary submission step, and signing of every
   embedded executable become release prerequisites — new pipeline surface
   ([ADR-0019](0019-gitea-primary-github-publishing.md)'s release story gains a
-  signing/notarization stage).
+  signing/notarization stage). The CI stages exist but run only once the
+  Developer ID secrets are provisioned; today's artifacts are ad-hoc signed
+  and not notarized (see decision point 5).
 - **Upstream version tracking becomes our job.** We must monitor the three
   exporters for security fixes and re-bundle + re-notarize to ship them; the
   BYO path let the user's package manager carry that.
