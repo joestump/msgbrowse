@@ -65,7 +65,8 @@ desktop's embedded server.
   bookkeeping + per-run summaries.
 - `paired_devices`, `sync_state` — device sync (ADR-0021): the explicitly
   paired Syncthing peers (device-ID fingerprint, per-source importer/replica
-  roles) and per-peer sync bookkeeping.
+  roles) and per-folder re-ingest bookkeeping (folder↔source mapping + last
+  re-ingest time).
 - `messages_fts` — FTS5 external-content table kept in sync by triggers.
 
 Schema changes go through the versioned migration runner (`internal/store/migrations.go`),

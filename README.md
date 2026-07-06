@@ -282,7 +282,7 @@ covers all three end to end, including the macOS WhatsApp-app route
 | Command | What it does |
 | --- | --- |
 | `msgbrowse export` | Run the upstream exporters into the configured roots: `sigexport` (Signal), `imessage-exporter -f txt -c clone` (iMessage), and `wtsexporter` (WhatsApp). Tools must be on PATH or set via `--signal-export-bin` / `--imessage-exporter-bin` / `--whatsapp-exporter-bin`; `--skip-on-error` continues past a failing source; per-tool extra args plus trailing `-- …` passthrough. msgbrowse stores no secrets. |
-| `msgbrowse sync` | **One-command onboarding**: the whole pipeline — export → import → media → embed → facts — in order. `--no-export` / `--no-import` / `--no-media` / `--no-embed` / `--no-facts` skip stages; `--skip-on-error` continues past a failing stage; embed/facts warn-and-continue when no LLM is reachable. |
+| `msgbrowse sync` | **One-command onboarding**: the whole pipeline — export → import → media → embed → facts — in order. `--no-export` / `--no-media` / `--no-embed` / `--no-facts` skip stages (import always runs — it is the incremental core); `--skip-on-error` continues past a failing stage; embed/facts warn-and-continue when no LLM is reachable. |
 | `msgbrowse import` | **All-in-one**: import every configured archive (Signal + iMessage + WhatsApp) into one DB. Unset sources are skipped. |
 | `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). |
 | `msgbrowse imessage-import` | Import/refresh an imessage-exporter archive (`-f txt`, 4.2.0). |
