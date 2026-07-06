@@ -251,6 +251,16 @@ body {
   min-height: 0;
   overflow-y: auto;
 }
+/* The scroller is keyboard-focusable (tabindex="0" in every *_content define;
+   #197 review): with the body no longer scrolling, PageDown/Space/arrow keys
+   do nothing until focus enters the scroll container (axe
+   scrollable-region-focusable). Accent ring on keyboard focus only, inset so
+   the scrollport doesn't clip it — the same accent treatment as the app's
+   other :focus-visible rules. */
+#main-content:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
 /* The sidebar column fills the row (overriding daisyUI's 100dvh overlay
    height) and lets the <aside> manage its own internal scrolling; below md
    the base .drawer-side rules keep the fixed full-height overlay drawer.
@@ -265,19 +275,35 @@ body {
 
 /* --- Unified header (~52px, full-width) ---------------------------------- */
 /* #152 Option A's frosted toolbar, promoted to a full-window header row
-   (#190). LEFT: the below-md drawer toggle + contextual title; CENTER: the
-   Messages/Media tab pair; RIGHT: a search pill (icon-only link below sm), the
-   theme toggle, a settings gear. The frosted material is a semi-transparent
-   base-300 surface + backdrop-blur with a subtle bottom hairline; both slate
-   and slate-light stay readable because the surface and hairline ride the
-   theme variables. Web-layer only, so it renders the same in the browser and
-   the desktop shell. position: relative anchors the absolutely-centered
-   .header-tabs. */
+   (#190). A 3-column grid: [left cluster | tabs | right cluster]. LEFT: the
+   below-md drawer toggle + contextual title; CENTER: the Messages/Media tab
+   pair; RIGHT: a search pill (icon-only link below sm), the theme toggle, a
+   settings gear. The tab strip is IN-FLOW (#197 review) — the old
+   position:absolute + translateX(-50%) centering reserved no layout space
+   and landed the tabs on the search pill at 640-~830px and on the below-sm
+   search icon at phone widths. The side tracks are deliberately asymmetric:
+   the RIGHT track is a plain 1fr, whose automatic minimum (its min-content:
+   fixed 34px flex-shrink:0 icon buttons + the search pill's 3rem input
+   floor) the grid never shrinks below, so the tab strip structurally cannot
+   paint over or click-intercept the controls; the LEFT track is
+   minmax(0, 1fr) because its nowrap contextual title would otherwise set a
+   full-conversation-name min-content floor and blow the header wider than
+   the window — instead the title truncates inside the track (its cluster
+   carries min-width: 0; the 34px burger is flex-shrink: 0 and holds). When
+   both side tracks fit, they split the free space equally and the tabs
+   center in the header's AVAILABLE space — including under the desktop
+   shell's 80px traffic-light inset, because the grid divides the padded
+   content box (macOS-toolbar behavior); when the right side needs more, the
+   tabs shift left instead of overlapping. The frosted material is a
+   semi-transparent base-300 surface + backdrop-blur with a subtle bottom
+   hairline; both slate and slate-light stay readable because the surface and
+   hairline ride the theme variables. Web-layer only, so it renders the same
+   in the browser and the desktop shell. */
 .app-toolbar {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 1fr;
   align-items: center;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
   min-height: 52px;
   height: 52px;
   flex-shrink: 0;
@@ -311,26 +337,56 @@ body {
 .app-toolbar nav {
   --wails-draggable: no-drag;
 }
+/* Header side clusters (#197 review): plain flex rows filling the grid's
+   side tracks. The right cluster deliberately has NO min-width: 0 — its 1fr
+   track's automatic minimum (the cluster's min-content) is what makes tab
+   overlap structurally impossible; zeroing it would let the track collapse
+   below its content and the flex-end cluster would spill leftward under the
+   tab strip again (live-reproduced during the #197 fix). The left cluster
+   DOES carry min-width: 0, pairing with its minmax(0, 1fr) track so the
+   nowrap title truncates instead of widening the header. Empty cluster
+   space stays part of the drag region — the custom property inherits, and
+   only the interactive children opt out above. */
+.toolbar-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.toolbar-cluster-left {
+  min-width: 0;
+}
+.toolbar-cluster-right {
+  justify-content: flex-end;
+}
 /* Traffic-light inset (#165, simplified by #190): in the desktop shell on
    macOS (the shell adds the desktop-chrome <body> class — see
    web.Server.SetDesktopChrome) the hidden-inset title bar overlays the
-   window's top-left with the close/min/max buttons. The header now spans the
-   full window at every width, so it ALWAYS owns that corner: an unconditional
-   ~80px left inset clears the three lights at the hidden-inset metrics. The
-   old drawer-state-dependent corner-ownership rules (sidebar top strip,
-   collapsed-state re-inset) retired with the #175 collapse feature. Browser
-   mode and the Linux shell (native title bar intact) never carry the class. */
-.desktop-chrome .app-toolbar {
-  padding-left: 80px;
+   window's top-left with the close/min/max buttons. The header spans the
+   full window, so it owns that corner: an ~80px left inset clears the three
+   lights at the hidden-inset metrics. Gated to md+ (#197 review): the macOS
+   shell window has MinWidth 800 ≥ md (48rem), so the inset can never
+   legitimately coexist with the below-md burger — and below md the 80px
+   would squeeze the left grid track until the flex-shrink:0 burger spilled
+   under the in-flow tab strip. The old drawer-state-dependent
+   corner-ownership rules (sidebar top strip, collapsed-state re-inset)
+   retired with the #175 collapse feature. Browser mode and the Linux shell
+   (native title bar intact) never carry the class. */
+@media (min-width: 48rem) {
+  .desktop-chrome .app-toolbar {
+    padding-left: 80px;
+  }
 }
 /* Contextual title: "msgbrowse" on home / global surfaces, the active
-   conversation name on a transcript. Links home; truncates rather than
-   running under the window-centered tabs (#190): the cap ends the title
-   ~150px left of center, clearing the tab strip's half-width with margin;
-   the 3rem floor keeps a legible stub on the narrowest viewports. */
+   conversation name on a transcript. Links home. It truncates INSIDE the
+   grid's left track (#197 review): overflow: hidden zeroes its automatic
+   flex minimum, so a long conversation title gives up width to the track —
+   which already accounts for the desktop shell's 80px traffic-light inset,
+   because the grid divides the header's padded content box — instead of
+   running under the in-flow tab strip. The old viewport-based clamp() cap
+   (which ignored that inset) is gone; the grid makes overlap structurally
+   impossible. */
 .toolbar-title {
   min-width: 0;
-  max-width: clamp(3rem, 50vw - 150px, 46vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -346,15 +402,14 @@ body {
 .toolbar-title:hover {
   color: var(--color-primary);
 }
-/* Centered Messages/Media tabs (#190): the header's primary nav, absolutely
-   centered on the window so the uneven left/right clusters can't skew it.
-   Same segmented-control look as .settings-subnav (bordered strip, active tab
+/* Centered Messages/Media tabs (#190): the header's primary nav, sitting
+   IN-FLOW as the middle column of the .app-toolbar grid (see above — the old
+   absolutely-positioned translateX(-50%) strip reserved no layout space and
+   painted over the side clusters at narrow widths; #197 review). Same
+   segmented-control look as .settings-subnav (bordered strip, active tab
    lifted onto base-100 with full-contrast text), sized up a step for the
    app-level surface. */
 .header-tabs {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -433,10 +488,29 @@ body {
     display: none;
   }
 }
+/* Narrow-width trims (#197 review): below sm the header carries the burger +
+   title + tab strip + three 34px icon buttons; at a 320px viewport that
+   inventory only fits in-flow with tighter paddings and gaps. Un-layered, so
+   the padding override also outranks the template's layered px-3 utility.
+   39.9375rem = just under Tailwind's 40rem sm breakpoint. */
+@media (max-width: 39.9375rem) {
+  .app-toolbar {
+    padding-inline: 0.5rem;
+    column-gap: 0.25rem;
+  }
+  .toolbar-cluster {
+    gap: 0.25rem;
+  }
+  .header-tab {
+    padding: 0 0.55rem;
+  }
+}
 /* Toolbar search pill: a compact 34px field with a leading glyph, sitting in the
    toolbar's right cluster. Fills with the app background so it reads as an inset
    field against the frosted surface. */
 .toolbar-search {
+  flex: 0 1 auto; /* shrink inside the right cluster before anything clips (#197) */
+  min-width: 0;
   align-items: center;
   gap: 0.4rem;
   height: 34px;
@@ -457,8 +531,9 @@ body {
   color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
 }
 .toolbar-search-input {
-  width: 12rem;
-  min-width: 0;
+  flex: 1 1 12rem; /* wants 12rem; shrinks when the right track is tight… */
+  width: auto;
+  min-width: 3rem; /* …down to a floor that stays typable at sm-md widths */
   background: transparent;
   border: 0;
   outline: none;

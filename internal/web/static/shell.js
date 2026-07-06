@@ -23,6 +23,21 @@
 //    excluded: those already reach window natively, and the synthetic event —
 //    dispatched ON window, so it never re-enters this document-level capture
 //    listener — must not double-fire for them.
+//
+// 3. Back/forward reading position (#197 review). htmx's history restore
+//    re-applies only the *window* scroll (window.scrollTo), but this shell
+//    scrolls #main-content, so Back into a long transcript landed at the
+//    top. saveScroll stashes the scroller's position in sessionStorage on
+//    htmx:beforeHistorySave, keyed by the event's detail.path — htmx's own
+//    path-for-history — NOT by location: when htmx handles popstate it saves
+//    the page being LEFT after the URL has already flipped to the
+//    destination, so a location-derived key would clobber the destination's
+//    saved offset with the departing page's (live-reproduced during #197
+//    verification). restoreScroll re-applies the destination's offset after
+//    htmx swaps the snapshot back in (htmx:historyRestore; popstate too, for
+//    restores the browser serves without an htmx swap). Boosted forward
+//    navigations never restore: each swap is a fresh scroller that
+//    intentionally lands at the top (#190).
 (function () {
   "use strict";
 
@@ -70,4 +85,39 @@
     },
     true
   );
+
+  function scrollKey(path) {
+    return (
+      "msgbrowse:scroll:" +
+      (path || window.location.pathname + window.location.search)
+    );
+  }
+
+  function saveScroll(e) {
+    var main = document.getElementById("main-content");
+    if (!main) return;
+    var path = e && e.detail && e.detail.path;
+    try {
+      sessionStorage.setItem(scrollKey(path), String(main.scrollTop));
+    } catch (err) {
+      // Storage unavailable (private mode/quota): reading position is lost,
+      // navigation still works.
+    }
+  }
+
+  function restoreScroll() {
+    var main = document.getElementById("main-content");
+    if (!main) return;
+    var saved = null;
+    try {
+      saved = sessionStorage.getItem(scrollKey());
+    } catch (err) {
+      return;
+    }
+    if (saved !== null) main.scrollTop = parseInt(saved, 10) || 0;
+  }
+
+  document.addEventListener("htmx:beforeHistorySave", saveScroll);
+  document.addEventListener("htmx:historyRestore", restoreScroll);
+  window.addEventListener("popstate", restoreScroll);
 })();

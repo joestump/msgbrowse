@@ -172,8 +172,10 @@ func TestSidebarListOnly(t *testing.T) {
 // direct child of <body>, rendered BEFORE (outside) the drawer that holds the
 // sidebar and content — full window width, traffic lights always over its
 // left edge in the desktop shell — and the conversation header inside the
-// content scroller pins at top-0 (the drifting top-[54px] offset, whose
-// see-through slit was the owner's item 1, is structurally gone).
+// content scroller pins at top-0 (the drifting 54px sticky offset, whose
+// see-through slit was the owner's item 1, is structurally gone — the token
+// is not spelled as the utility class here because Tailwind v4 scans Go
+// comments too and would resurrect it into the built app.css).
 func TestHeaderFullWidthShell(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 
@@ -186,6 +188,24 @@ func TestHeaderFullWidthShell(t *testing.T) {
 	}
 	if !(header < drawer && drawer < aside) {
 		t.Errorf("the header must precede the drawer (full-width, above the sidebar): header %d, drawer %d, aside %d", header, drawer, aside)
+	}
+
+	// #197 review: the header lays out as [left cluster | tabs | right
+	// cluster] IN FLOW (a 3-column grid in input.css) — the tab strip is a
+	// grid column, not an absolutely-positioned overlay, so it can never
+	// paint over the search pill/icon. Pin the flow order here.
+	left := strings.Index(body, `<div class="toolbar-cluster toolbar-cluster-left">`)
+	tabs := strings.Index(body, `<nav class="header-tabs"`)
+	right := strings.Index(body, `<div class="toolbar-cluster toolbar-cluster-right">`)
+	if left < 0 || tabs < 0 || right < 0 || !(left < tabs && tabs < right) {
+		t.Errorf("header should flow [left cluster | tabs | right cluster] (left %d, tabs %d, right %d)", left, tabs, right)
+	}
+
+	// #main-content is the app's scroll container (#190); it must be
+	// keyboard-focusable so PageDown/Space/arrows scroll without a pointer
+	// (#197 review; axe scrollable-region-focusable).
+	if !contains(body, `<main id="main-content" class="flex-1" tabindex="0"`) {
+		t.Error(`#main-content scroller should carry tabindex="0"`)
 	}
 
 	conv, err := st.GetConversation(context.Background(), "Harper")
@@ -317,6 +337,9 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 		".toolbar-title",             // contextual title
 		".toolbar-icon-btn",          // icon buttons (drawer/theme/settings)
 		".toolbar-search",            // toolbar search pill
+		".toolbar-cluster",           // in-flow header side clusters (#197 review)
+		".toolbar-cluster-left",      // truncating (minmax(0,1fr)) title-side cluster
+		".toolbar-cluster-right",     // min-content-guaranteed controls cluster
 		".header-tabs",               // centered Messages/Media tab strip (#190)
 		".header-tab",                // individual tab
 		".header-tab-active",         // active-tab lift
@@ -340,6 +363,14 @@ func TestBuiltCSSCarriesShellComponents(t *testing.T) {
 			t.Errorf("built app.css missing %q (rebuild: rm -rf .tools && make css)", want)
 		}
 	}
+	// The retired 54px sticky-offset arbitrary-value utility must stay dead:
+	// Tailwind v4 scans template AND Go comments, so a literal class token
+	// anywhere in the tree would re-emit the rule into the built artifact
+	// (#197 review, minor 4).
+	if strings.Contains(out, "top:54px") {
+		t.Error("built app.css resurrects the retired 54px sticky-offset utility (reword the comment token, then rm -rf .tools && make css)")
+	}
+
 	// The presence dot reads its color from the theme variables so both slate and
 	// slate-light variants restyle automatically.
 	if !strings.Contains(out, ".presence-dot.src-signal{background:var(--color-info)}") {

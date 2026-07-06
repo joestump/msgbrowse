@@ -60,38 +60,44 @@
      a click and keeps aria-expanded in sync with the drawer checkbox — with
      that, every header control is keyboard operable. */}}
 <header class="app-toolbar z-30 px-3 md:px-4">
-  <label for="nav-drawer" class="toolbar-icon-btn md:hidden" role="button" tabindex="0" aria-expanded="false" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
-  <a href="/" class="toolbar-title" aria-label="msgbrowse home"
-     hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{if .NavTitle}}{{.NavTitle}}{{else}}msgbrowse{{end}}</a>
-  {{/* Centered tabs: absolutely centered on the window (input.css), so the
-       uneven left/right clusters never push them off-center. Active state:
-       "/" and every /c/* transcript read as Messages; /media and the /gallery
-       surface it aliases read as Media; every other route (Search, Settings,
-       …) activates neither — decided in #190, enforced by .NavTab here and by
-       shell.js's location sync after boosted swaps. */}}
+  <div class="toolbar-cluster toolbar-cluster-left">
+    <label for="nav-drawer" class="toolbar-icon-btn md:hidden" role="button" tabindex="0" aria-expanded="false" aria-label="Toggle sidebar">{{template "icon-menu" .}}</label>
+    <a href="/" class="toolbar-title" aria-label="msgbrowse home"
+       hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{if .NavTitle}}{{.NavTitle}}{{else}}msgbrowse{{end}}</a>
+  </div>
+  {{/* Centered tabs: the IN-FLOW middle column of the .app-toolbar grid
+       (input.css) — the grid's 1fr side tracks make overlap with the side
+       clusters structurally impossible, and the tabs center in the header's
+       AVAILABLE space (the #197 review live-reproduced the old absolutely-
+       positioned strip painting over the search pill/icon at narrow widths).
+       Active state: "/" and every /c/* transcript read as Messages; /media
+       and the /gallery surface it aliases read as Media; every other route
+       (Search, Settings, …) activates neither — decided in #190, enforced by
+       .NavTab here and by shell.js's location sync after boosted swaps. */}}
   <nav class="header-tabs" aria-label="Primary"
        hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
     <a href="/" data-nav-tab="messages" class="header-tab{{if eq .NavTab "messages"}} header-tab-active{{end}}"{{if eq .NavTab "messages"}} aria-current="page"{{end}}>Messages</a>
     <a href="/media" data-nav-tab="media" class="header-tab{{if eq .NavTab "media"}} header-tab-active{{end}}"{{if eq .NavTab "media"}} aria-current="page"{{end}}>Media</a>
   </nav>
-  <div class="flex-1"></div>
-  {{/* Header search: a small boosted GET form to /search. Enter submits and
-       htmx swaps the /search page into #main-content (hx-boost on the form),
-       matching the app's boosted-nav contract; degrades to a plain GET
-       without JS. No inline JS (CSP-safe). */}}
-  <form action="/search" method="get" role="search"
-        class="toolbar-search hidden sm:flex"
-        hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-    <span class="toolbar-search-glyph" aria-hidden="true">{{template "icon-search" .}}</span>
-    <input type="search" name="q" class="toolbar-search-input" placeholder="Search messages" aria-label="Search messages" autocomplete="off">
-  </form>
-  {{/* Below sm the pill is hidden and the sidebar Search link is gone (#190),
-       so this icon-only link keeps /search reachable at every width. */}}
-  <a href="/search" class="toolbar-icon-btn toolbar-search-link sm:hidden" aria-label="Search"
-     hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{template "icon-search" .}}</a>
-  <button type="button" data-theme-toggle class="toolbar-icon-btn" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
-  <a href="/settings" class="toolbar-icon-btn" aria-label="Settings"
-     hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{template "icon-settings" .}}</a>
+  <div class="toolbar-cluster toolbar-cluster-right">
+    {{/* Header search: a small boosted GET form to /search. Enter submits and
+         htmx swaps the /search page into #main-content (hx-boost on the form),
+         matching the app's boosted-nav contract; degrades to a plain GET
+         without JS. No inline JS (CSP-safe). */}}
+    <form action="/search" method="get" role="search"
+          class="toolbar-search hidden sm:flex"
+          hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+      <span class="toolbar-search-glyph" aria-hidden="true">{{template "icon-search" .}}</span>
+      <input type="search" name="q" class="toolbar-search-input" placeholder="Search messages" aria-label="Search messages" autocomplete="off">
+    </form>
+    {{/* Below sm the pill is hidden and the sidebar Search link is gone (#190),
+         so this icon-only link keeps /search reachable at every width. */}}
+    <a href="/search" class="toolbar-icon-btn toolbar-search-link sm:hidden" aria-label="Search"
+       hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{template "icon-search" .}}</a>
+    <button type="button" data-theme-toggle class="toolbar-icon-btn" title="Toggle light/dark" aria-label="Toggle theme">{{template "icon-theme" .}}</button>
+    <a href="/settings" class="toolbar-icon-btn" aria-label="Settings"
+       hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{template "icon-settings" .}}</a>
+  </div>
 </header>
 {{/* Below the header, the sidebar and content are independent scroll areas
      (#190): the body never scrolls, so sticky offsets inside #main-content are
