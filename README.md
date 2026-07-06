@@ -41,6 +41,17 @@ messages. Full documentation lives at
 > the editorialized journal and Gitea-primary release publishing
 > ([#99](https://github.com/joestump/msgbrowse/issues/99)).
 
+> [!WARNING]
+> **Alpha software** — expect rough edges while this is under active testing.
+> If you're on the **macOS desktop app**, the `.app` is only ad-hoc signed
+> (Developer ID notarization is pending), so Gatekeeper blocks the first
+> launch. Before opening it, run:
+> ```
+> xattr -dr com.apple.quarantine msgbrowse.app
+> ```
+> See [Desktop app](#desktop-app) for the full explanation and the GUI-only
+> alternative if you'd rather not use the terminal.
+
 ## Contents
 
 - [Quickstart (`go install`)](#quickstart-go-install)
