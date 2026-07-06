@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
-- **Relates to:** [ADR-0001](0001-sqlite-driver-mattn-cgo.md) (the original cgo driver choice, superseded by this one), [ADR-0002](0002-vector-backend.md) (vectors are brute-force Go, so sqlite-vec is no longer pursued)
+- **Supersedes:** [ADR-0001](0001-sqlite-driver-mattn-cgo.md) (the driver/cgo choice; the FTS5 requirement it established still holds) and, in part, [ADR-0002](0002-vector-backend.md) (the sqlite-vec loadable-extension path — the Go brute-force scan is the implemented backend)
 
 ## Context
 

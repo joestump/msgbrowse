@@ -1,6 +1,6 @@
 # ADR-0019: Gitea-primary development with GitHub as the publishing mirror
 
-- **Status:** Accepted
+- **Status:** Accepted (not yet implemented — tracked in [#99](https://github.com/joestump/msgbrowse/issues/99))
 - **Date:** 2026-07-03
 - **Deciders:** Joe Stump
 - **Related:** [ADR-0013 (pure-Go SQLite / toolchain-free builds)](0013-pure-go-sqlite-driver.md), [ADR-0017 (desktop shell)](0017-desktop-shell-wails.md), [ADR-0016 (WhatsApp exporter)](0016-whatsapp-source-exporter.md)
@@ -38,12 +38,17 @@ working, fed automatically from the Gitea side.
 
 ## Decision Outcome
 
-**Option 1.** `gitea.stump.rocks/joestump/msgbrowse` becomes the canonical
-repository. A Gitea **push mirror** (sync-on-commit) keeps
+**Option 1**, describing the target state — *none of it is implemented yet*:
+today the repository lives only on GitHub, there is no `.gitea/` directory,
+and no release/publishing workflow exists; the migration is tracked in
+[#99](https://github.com/joestump/msgbrowse/issues/99).
+
+When implemented, `gitea.stump.rocks/joestump/msgbrowse` becomes the canonical
+repository. A Gitea **push mirror** (sync-on-commit) will keep
 `github.com/joestump/msgbrowse` current using a GitHub PAT, so mirrored pushes
 still trigger GitHub Actions — Pages deployment and the existing PR checks
-keep working unchanged. The three CI checks are ported to `.gitea/workflows/`
-so Gitea PRs gate identically. Release publishing runs on Gitea Actions
+keep working unchanged. The CI checks will be ported to `.gitea/workflows/`
+so Gitea PRs gate identically. Release publishing will run on Gitea Actions
 runners: multi-arch container images push to **ghcr.io** (and optionally the
 Gitea registry), and GitHub Releases are created via the GitHub API with
 built artifacts attached.

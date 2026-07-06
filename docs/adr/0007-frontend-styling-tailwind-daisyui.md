@@ -1,9 +1,8 @@
 # ADR-0007: Frontend styling — Tailwind CSS v4 + daisyUI via the standalone CLI
 
-- **Status:** Accepted (visual choices superseded in part)
+- **Status:** Accepted (visual choices superseded in part by [ADR-0012](0012-slate-redesign-design-system.md) — the stock `dim`/`winter` themes and the chat-bubble transcript are replaced by the slate theme + dense-log transcript; the framework choice, Tailwind + daisyUI via the standalone CLI, stands)
 - **Date:** 2026-06-27
 - **Builds on:** [ADR-0006](0006-web-stack-htmx.md) (server-rendered UI, no runtime npm, strict CSP)
-- **Superseded in part by:** [ADR-0012](0012-slate-redesign-design-system.md) — the stock `dim`/`winter` themes and the chat-bubble transcript are replaced by the slate theme + dense-log transcript. The framework choice (Tailwind + daisyUI via the standalone CLI) stands.
 
 ## Context
 

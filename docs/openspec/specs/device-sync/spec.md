@@ -7,6 +7,13 @@ requires: [SPEC-0001]
 
 # SPEC-0011: Device sync
 
+> **Deprecated.** The bespoke pairing-token + mTLS transfer design specified
+> here was retired before full implementation (#158); device sync is now
+> specified by [SPEC-0014 (Syncthing-based device
+> sync)](../device-sync-syncthing/spec.md) per
+> [ADR-0021](../../../adr/0021-syncthing-sync-engine.md), which preserves this
+> spec's archive-not-DB and importer/replica invariants.
+
 ## Overview
 
 Device sync makes one msgbrowse install's archives browsable on other machines
