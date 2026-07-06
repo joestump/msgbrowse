@@ -215,20 +215,72 @@ html {
  * slate-light variant restyles automatically. No web fonts; CSP-safe.
  * ========================================================================= */
 
-/* --- Unified toolbar (~52px) --------------------------------------------- */
-/* #152 Option A: a native macOS Preview/Finder "unified toolbar" — one frosted
-   translucent row replacing the old navbar. LEFT: drawer toggle + contextual
-   title; RIGHT: a search pill, the theme toggle, a settings gear. The frosted
-   material is a semi-transparent base-300 surface + backdrop-blur with a subtle
-   bottom hairline; both slate and slate-light stay readable because the surface
-   and hairline ride the theme variables. Web-layer only, so it renders the same
-   in the browser and the desktop shell. */
+/* --- App shell frame (#190) ---------------------------------------------- */
+/* The header spans the full window; below it the sidebar and #main-content
+   scroll independently. The body itself NEVER scrolls, so nothing can ever
+   slide between the header and a sticky page header — the old model (toolbar
+   inside the content column, body scroll, conv-header at a hand-tuned 54px
+   offset) leaked a translucent slit of transcript between the two rows. */
+body {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* The daisyUI drawer grid fills the space under the header. minmax(0, 1fr)
+   pins its single implicit row to exactly that height, so tall content clips
+   into the scroll areas below instead of growing the row off-screen. */
+.app-shell {
+  flex: 1 1 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+/* Content column: a flex column whose only flexible child is #main-content. */
+.app-shell > .drawer-content {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* #main-content IS the content scroll container (#190). Boosted navigation
+   swaps it outerHTML, so every navigation lands at the top of a fresh
+   scroller for free; sticky in-page headers (conv-header) pin to ITS top at
+   top-0. Replaces the old `scroll-margin-top: 54px` body-scroll offset. */
+#main-content {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The sidebar column fills the row (overriding daisyUI's 100dvh overlay
+   height) and lets the <aside> manage its own internal scrolling; below md
+   the base .drawer-side rules keep the fixed full-height overlay drawer.
+   48rem is Tailwind's md breakpoint — keep in lockstep with the template's
+   md:drawer-open. */
+@media (min-width: 48rem) {
+  .app-shell > .drawer-side {
+    height: 100%;
+    overflow-y: hidden;
+  }
+}
+
+/* --- Unified header (~52px, full-width) ---------------------------------- */
+/* #152 Option A's frosted toolbar, promoted to a full-window header row
+   (#190). LEFT: the below-md drawer toggle + contextual title; CENTER: the
+   Messages/Media tab pair; RIGHT: a search pill (icon-only link below sm), the
+   theme toggle, a settings gear. The frosted material is a semi-transparent
+   base-300 surface + backdrop-blur with a subtle bottom hairline; both slate
+   and slate-light stay readable because the surface and hairline ride the
+   theme variables. Web-layer only, so it renders the same in the browser and
+   the desktop shell. position: relative anchors the absolutely-centered
+   .header-tabs. */
 .app-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   min-height: 52px;
   height: 52px;
+  flex-shrink: 0;
   /* Frosted unified-toolbar material: a translucent slice of the sidebar/navbar
      surface so content faintly shows through, blurred behind. */
   background: color-mix(in oklab, var(--color-base-300) 80%, transparent);
@@ -245,80 +297,40 @@ html {
      desktop.js only acts on it inside the shell. */
   --wails-draggable: drag;
 }
-/* Interactive toolbar children opt back out of the drag region (#165): custom
-   properties inherit, so without this a click on the search field or a toolbar
+/* Interactive header children opt back out of the drag region (#165): custom
+   properties inherit, so without this a click on the search field or a header
    button would drag the window instead of acting. Covers every interactive
-   element the toolbar renders — links (title, settings), buttons (theme
-   toggle), the drawer-toggle label, and the search form + input. */
+   element the header renders — links (title, tabs, sm-search, settings),
+   buttons (theme toggle), the drawer-toggle label, the search form + input,
+   and the tab <nav> strip (its 2px padding sits between clickable tabs). */
 .app-toolbar a,
 .app-toolbar button,
 .app-toolbar label,
 .app-toolbar form,
-.app-toolbar input {
+.app-toolbar input,
+.app-toolbar nav {
   --wails-draggable: no-drag;
 }
-/* Traffic-light inset (#165): in the desktop shell on macOS (the shell adds
-   the desktop-chrome <body> class — see web.Server.SetDesktopChrome) the
-   hidden-inset title bar overlays the window's top-left with the close/min/max
-   buttons. WHICH element owns that corner depends on the drawer state:
-
-   - Below lg the sidebar drawer is closed and the toolbar spans the full
-     window, so its left cluster steps past the buttons: ~80px clears the
-     three lights at the hidden-inset metrics.
-   - At lg+ (the desktop default, `lg:drawer-open`) the 320px sidebar owns the
-     top-left, so the lights sit over the sidebar surface — the native macOS
-     sidebar-app arrangement (Finder, Notes). The sidebar reserves a
-     toolbar-height (52px) top strip for them, and that empty strip doubles as
-     drag region; the toolbar needs no extra inset there (it starts at x=320).
-
-   64rem is Tailwind's lg breakpoint — keep in lockstep with the template's
-   lg:drawer-open. Browser mode and the Linux shell (native title bar intact)
-   never carry the class. */
+/* Traffic-light inset (#165, simplified by #190): in the desktop shell on
+   macOS (the shell adds the desktop-chrome <body> class — see
+   web.Server.SetDesktopChrome) the hidden-inset title bar overlays the
+   window's top-left with the close/min/max buttons. The header now spans the
+   full window at every width, so it ALWAYS owns that corner: an unconditional
+   ~80px left inset clears the three lights at the hidden-inset metrics. The
+   old drawer-state-dependent corner-ownership rules (sidebar top strip,
+   collapsed-state re-inset) retired with the #175 collapse feature. Browser
+   mode and the Linux shell (native title bar intact) never carry the class. */
 .desktop-chrome .app-toolbar {
   padding-left: 80px;
 }
-@media (min-width: 64rem) {
-  .desktop-chrome .app-toolbar {
-    padding-left: 1rem; /* back to the lg:px-4 metric; the sidebar clears the lights */
-  }
-  .desktop-chrome .app-sidebar {
-    padding-top: 52px; /* toolbar-height strip under the traffic lights */
-  }
-}
-/* The sidebar's reserved strip (the aside's own padding box) drags the window
-   like the toolbar does; every direct content block opts back out, so only
-   clicks landing on the aside itself (the empty strip) move the window. */
-.desktop-chrome .app-sidebar {
-  --wails-draggable: drag;
-}
-.desktop-chrome .app-sidebar > * {
-  --wails-draggable: no-drag;
-}
-/* Sidebar collapse at lg+ (#175): sidebar-toggle.js flips .sidebar-collapsed
-   on <html> when the toolbar burger is clicked at lg+, where the daisyUI
-   lg:drawer-open rules otherwise pin the sidebar visible. display:none (not a
-   translate) so the drawer grid's max-content column collapses to zero and
-   #main-content takes the full width. Below lg the class is inert (this whole
-   block is gated on the lg media query) — the overlay drawer stays the narrow
-   UX. These hand-written rules are un-layered, so they win over daisyUI's
-   layered drawer-open rules regardless of specificity. */
-@media (min-width: 64rem) {
-  html.sidebar-collapsed .drawer-side {
-    display: none;
-  }
-  /* Collapsed in the desktop shell, the toolbar owns the top-left corner
-     again, so it steps past the macOS traffic lights exactly like the
-     below-lg layout does (#165). */
-  html.sidebar-collapsed .desktop-chrome .app-toolbar {
-    padding-left: 80px;
-  }
-}
 /* Contextual title: "msgbrowse" on home / global surfaces, the active
-   conversation name on a transcript. Links home; truncates rather than pushing
-   the right-side controls off-screen. */
+   conversation name on a transcript. Links home; truncates rather than
+   running under the window-centered tabs (#190): the cap ends the title
+   ~150px left of center, clearing the tab strip's half-width with margin;
+   the 3rem floor keeps a legible stub on the narrowest viewports. */
 .toolbar-title {
   min-width: 0;
-  max-width: 46vw;
+  max-width: clamp(3rem, 50vw - 150px, 46vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -333,6 +345,47 @@ html {
 }
 .toolbar-title:hover {
   color: var(--color-primary);
+}
+/* Centered Messages/Media tabs (#190): the header's primary nav, absolutely
+   centered on the window so the uneven left/right clusters can't skew it.
+   Same segmented-control look as .settings-subnav (bordered strip, active tab
+   lifted onto base-100 with full-contrast text), sized up a step for the
+   app-level surface. */
+.header-tabs {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-neutral);
+  border-radius: 0.6rem;
+  background: color-mix(in oklab, var(--color-base-200) 60%, transparent);
+}
+.header-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 0.8rem;
+  border-radius: 0.45rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.header-tab:hover {
+  color: var(--color-base-content);
+}
+.header-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.header-tab-active {
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  border: 1px solid var(--color-neutral);
 }
 /* ~34px square icon button, shared by the drawer toggle, theme toggle, and
    settings gear. Ghost by default; the slate hairline + faint accent wash on
@@ -361,6 +414,24 @@ html {
 .toolbar-icon-btn:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+/* Breakpoint gates for header controls (#190). The hand-written (un-layered)
+   .toolbar-icon-btn display above outranks Tailwind's LAYERED sm:/md:hidden
+   utilities — un-layered rules beat @layer regardless of specificity — so the
+   template's gates are restated here un-layered: the drawer burger exists
+   only below md (at md+ the sidebar is pinned, no burger), and the icon-only
+   search link only below sm (where the search pill is hidden). 48rem/40rem
+   are Tailwind's md/sm breakpoints — keep in lockstep with the template's
+   md:hidden / sm:hidden classes and md:drawer-open. */
+@media (min-width: 48rem) {
+  .app-toolbar label[for="nav-drawer"] {
+    display: none;
+  }
+}
+@media (min-width: 40rem) {
+  .toolbar-search-link {
+    display: none;
+  }
 }
 /* Toolbar search pill: a compact 34px field with a leading glyph, sitting in the
    toolbar's right cluster. Fills with the app background so it reads as an inset
@@ -411,23 +482,8 @@ html {
 .sidebar-filter:focus-within {
   border-color: color-mix(in oklab, var(--color-primary) 55%, var(--color-neutral));
 }
-/* Nav links with leading icons. */
-.sidebar-link {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.625rem;
-  border-radius: 0.5rem;
-  font-size: 13.5px;
-  color: color-mix(in oklab, var(--color-base-content) 78%, transparent);
-  @media (prefers-reduced-motion: no-preference) {
-    transition: background-color 0.12s ease, color 0.12s ease;
-  }
-}
-.sidebar-link:hover {
-  color: var(--color-base-content);
-  background: color-mix(in oklab, var(--color-primary) 7%, transparent);
-}
+/* The old .sidebar-link nav rules retired with the sidebar's Search/Media
+   links (#190) — the header tabs and search pill carry those surfaces now. */
 /* CONVERSATIONS section header label (tracked uppercase). */
 .sidebar-section-label {
   font-size: 10.5px;
@@ -2256,8 +2312,7 @@ a.meta-chip:hover {
   color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
 }
 
-/* Boosted navigation swaps #main-content and htmx scrolls its top into view;
-   offset the 54px sticky navbar so page headings are never covered. */
-#main-content {
-  scroll-margin-top: 54px;
-}
+/* The old `#main-content { scroll-margin-top: 54px }` boosted-nav offset
+   retired with the body-scroll layout (#190): #main-content is now itself the
+   scroll container (see the App shell frame block above), so a boosted swap
+   replaces the scroller and lands at its top with nothing overlaying it. */
