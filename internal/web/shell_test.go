@@ -450,6 +450,50 @@ func TestPinnedSection(t *testing.T) {
 	}
 }
 
+// TestShellScrollRestoreBindings pins the #197 reading-position event wiring
+// in shell.js after the back/forward corruption fix (#190). restoreScroll may
+// bind ONLY to htmx:historyRestore — htmx 2.0.4 fires it after the swap on
+// both history-cache paths (hit and server-refetch miss). A popstate binding
+// is the corruption itself: shell.js loads before htmx.min.js, so its
+// popstate listener runs while the DEPARTING page is still mounted but
+// location already names the destination — it scrolls the departing page to
+// the destination's offset (clamped), which htmx:beforeHistorySave then
+// persists under the departing page's key, clobbering both entries on every
+// back/forward traversal. saveScroll must stay keyed by the event's
+// detail.path (htmx's path-for-history), never by location, for the same
+// URL-already-flipped reason.
+func TestShellScrollRestoreBindings(t *testing.T) {
+	b, err := os.ReadFile("static/shell.js")
+	if err != nil {
+		t.Fatalf("read shell.js: %v", err)
+	}
+	js := string(b)
+
+	if !contains(js, `document.addEventListener("htmx:beforeHistorySave", saveScroll)`) {
+		t.Error("shell.js should save the scroller offset on htmx:beforeHistorySave")
+	}
+	if !contains(js, `document.addEventListener("htmx:historyRestore", restoreScroll)`) {
+		t.Error("shell.js should restore the scroller offset on htmx:historyRestore")
+	}
+	// saveScroll keys by htmx's detail.path, not location (the URL has already
+	// flipped to the destination when htmx saves the departing page).
+	if !contains(js, "e.detail.path") {
+		t.Error("saveScroll should key by the htmx:beforeHistorySave detail.path")
+	}
+	// The corruption regression: restoring on popstate touches the departing
+	// page's scroller with the destination's offset. The only popstate
+	// listener shell.js may register is the idempotent tab-state sync.
+	if contains(js, "popstate\", restoreScroll") {
+		t.Error("restoreScroll must not run on popstate — it fires before htmx swaps the destination in and corrupts both pages' saved offsets")
+	}
+	if got := strings.Count(js, `"popstate"`); got != 1 {
+		t.Errorf("shell.js should register exactly one popstate listener (sync), found %d", got)
+	}
+	if !contains(js, `window.addEventListener("popstate", sync)`) {
+		t.Error("shell.js lost the popstate tab-state sync listener")
+	}
+}
+
 // TestThemeStillSelfHosted re-checks ADR-0010/REQ-0006-001: every script the
 // shell loads is same-origin, so the strict CSP (script-src 'self') holds with
 // the new sidebar.js.

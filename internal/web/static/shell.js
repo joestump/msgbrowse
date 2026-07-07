@@ -34,10 +34,17 @@
 //    destination, so a location-derived key would clobber the destination's
 //    saved offset with the departing page's (live-reproduced during #197
 //    verification). restoreScroll re-applies the destination's offset after
-//    htmx swaps the snapshot back in (htmx:historyRestore; popstate too, for
-//    restores the browser serves without an htmx swap). Boosted forward
-//    navigations never restore: each swap is a fresh scroller that
-//    intentionally lands at the top (#190).
+//    htmx swaps the snapshot back in — on htmx:historyRestore ONLY, which
+//    htmx 2.0.4 fires after the swap on both history-cache paths (hit, and
+//    miss via its server refetch). It must NOT also run on popstate: that
+//    fires before htmx's own popstate handler (shell.js loads first), while
+//    the DEPARTING page is still mounted but location already names the
+//    destination — so it would scroll the departing page to the
+//    destination's offset (clamped), which htmx:beforeHistorySave then
+//    persists under the departing page's key, corrupting both entries on
+//    every traversal (the back/forward/back corruption fixed after #197).
+//    Boosted forward navigations never restore: each swap is a fresh
+//    scroller that intentionally lands at the top (#190).
 (function () {
   "use strict";
 
@@ -119,5 +126,4 @@
 
   document.addEventListener("htmx:beforeHistorySave", saveScroll);
   document.addEventListener("htmx:historyRestore", restoreScroll);
-  window.addEventListener("popstate", restoreScroll);
 })();
