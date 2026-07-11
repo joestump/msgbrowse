@@ -2,6 +2,7 @@ package journal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -100,6 +101,12 @@ func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard
 
 const testPrompt = "Summarize the day."
 
+// jsonDigest is a minimal valid structured-digest response with the given
+// summary — the shape the model must now return (parseDigest rejects prose).
+func jsonDigest(summary string) string {
+	return `{"summary":"` + summary + `","people":[],"themes":[],"mood":"upbeat","highlights":[],"standout_media":[],"notable_links":[]}`
+}
+
 func baseOpts() Options {
 	return Options{Model: "test-model", DigestEnabled: true, DigestPrompt: testPrompt, Logger: quietLogger()}
 }
@@ -112,7 +119,7 @@ func TestRunBuildsMechanicalAndDigests(t *testing.T) {
 		mk("Harper", "2023-05-02 09:00:00", "Harper", "world today"),
 	})
 
-	client := &fakeClient{resp: "A short digest."}
+	client := &fakeClient{resp: jsonDigest("A short digest.")}
 	sum, err := Run(ctx, st, client, baseOpts())
 	if err != nil {
 		t.Fatal(err)
@@ -143,10 +150,10 @@ func TestRunCacheHitSkipsSecondRun(t *testing.T) {
 		mk("Harper", "2023-05-02 09:00:00", "Harper", "world"),
 	})
 
-	if _, err := Run(ctx, st, &fakeClient{resp: "d"}, baseOpts()); err != nil {
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("d")}, baseOpts()); err != nil {
 		t.Fatal(err)
 	}
-	second := &fakeClient{resp: "d"}
+	second := &fakeClient{resp: jsonDigest("d")}
 	sum, err := Run(ctx, st, second, baseOpts())
 	if err != nil {
 		t.Fatal(err)
@@ -165,13 +172,13 @@ func TestRunStalePromptReDigests(t *testing.T) {
 	seedConv(t, st, source.Signal, "Harper", []signal.Message{
 		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
 	})
-	if _, err := Run(ctx, st, &fakeClient{resp: "d"}, baseOpts()); err != nil {
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("d")}, baseOpts()); err != nil {
 		t.Fatal(err)
 	}
 	// A changed prompt bumps prompt_version → the day is stale and re-digested.
 	changed := baseOpts()
 	changed.DigestPrompt = "A completely different instruction."
-	client := &fakeClient{resp: "d2"}
+	client := &fakeClient{resp: jsonDigest("d2")}
 	sum, err := Run(ctx, st, client, changed)
 	if err != nil {
 		t.Fatal(err)
@@ -191,12 +198,12 @@ func TestRunRegenerateWipesCache(t *testing.T) {
 		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
 		mk("Harper", "2023-05-02 09:00:00", "Harper", "world"),
 	})
-	if _, err := Run(ctx, st, &fakeClient{resp: "d"}, baseOpts()); err != nil {
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("d")}, baseOpts()); err != nil {
 		t.Fatal(err)
 	}
 	regen := baseOpts()
 	regen.Regenerate = true
-	client := &fakeClient{resp: "d"}
+	client := &fakeClient{resp: jsonDigest("d")}
 	sum, err := Run(ctx, st, client, regen)
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +222,7 @@ func TestRunDryRunMakesNoCallsOrWrites(t *testing.T) {
 	})
 	dry := baseOpts()
 	dry.DryRun = true
-	client := &fakeClient{resp: "d"}
+	client := &fakeClient{resp: jsonDigest("d")}
 	sum, err := Run(ctx, st, client, dry)
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +257,7 @@ func TestRunMaxDaysPerRunCapsAndResumes(t *testing.T) {
 	opts := baseOpts()
 	opts.MaxDaysPerRun = 2
 
-	first := &fakeClient{resp: "d"}
+	first := &fakeClient{resp: jsonDigest("d")}
 	sum, err := Run(ctx, st, first, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +270,7 @@ func TestRunMaxDaysPerRunCapsAndResumes(t *testing.T) {
 		t.Error("oldest day should be the one deferred by the cap")
 	}
 
-	second := &fakeClient{resp: "d"}
+	second := &fakeClient{resp: jsonDigest("d")}
 	sum, err = Run(ctx, st, second, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +291,7 @@ func TestRunExcludeNeverReachesLLM(t *testing.T) {
 	})
 	opts := baseOpts()
 	opts.Exclude = []string{"Secret"}
-	client := &fakeClient{resp: "d"}
+	client := &fakeClient{resp: jsonDigest("d")}
 	if _, err := Run(ctx, st, client, opts); err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +316,7 @@ func TestRunDigestDisabledBuildsMechanicalOnly(t *testing.T) {
 	})
 	opts := baseOpts()
 	opts.DigestEnabled = false
-	client := &fakeClient{resp: "d"}
+	client := &fakeClient{resp: jsonDigest("d")}
 	sum, err := Run(ctx, st, client, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +341,7 @@ func TestRunNoModelSkipsDigestsWithoutError(t *testing.T) {
 	})
 	opts := baseOpts()
 	opts.Model = "" // digest enabled but no chat model configured
-	client := &fakeClient{resp: "d"}
+	client := &fakeClient{resp: jsonDigest("d")}
 	sum, err := Run(ctx, st, client, opts)
 	if err != nil {
 		t.Fatalf("want no error when model unset, got %v", err)
@@ -361,5 +368,59 @@ func TestRunTransportErrorAborts(t *testing.T) {
 	// The mechanical layer still committed before the digest phase failed.
 	if list, _ := st.ListJournalDays(ctx, "", 30); len(list) != 1 {
 		t.Errorf("mechanical rows = %d, want 1 (built before the digest error)", len(list))
+	}
+}
+
+func TestParseDigest(t *testing.T) {
+	// Valid JSON wrapped in fences + prose, with an empty person and an
+	// empty-text/bad-time highlight → tolerated + cleaned.
+	raw := "here you go:\n```json\n" +
+		`{"summary":"A calm day.","mood":"quiet","people":["Harper"," "],"themes":["travel"],` +
+		`"highlights":[{"text":"Booked the trip","time":"09:14"},{"text":"","time":"nope"}],` +
+		`"standout_media":[],"notable_links":["https://ex.com"]}` + "\n```"
+	pd, err := parseDigest(raw)
+	if err != nil {
+		t.Fatalf("parseDigest(valid) err = %v", err)
+	}
+	if pd.Summary != "A calm day." || pd.Mood != "quiet" {
+		t.Errorf("summary/mood = %q/%q", pd.Summary, pd.Mood)
+	}
+	var d Digest
+	if err := json.Unmarshal([]byte(pd.Canonical), &d); err != nil {
+		t.Fatalf("canonical not valid JSON: %v", err)
+	}
+	if len(d.People) != 1 || d.People[0] != "Harper" {
+		t.Errorf("people = %v, want the empty one dropped", d.People)
+	}
+	if len(d.Highlights) != 1 || d.Highlights[0].Time != "09:14" {
+		t.Errorf("highlights = %v, want the empty-text one dropped", d.Highlights)
+	}
+
+	// Unknown mood → coerced to neutral (never fails).
+	if pd, err := parseDigest(`{"summary":"x","mood":"ecstatic"}`); err != nil || pd.Mood != "neutral" {
+		t.Errorf("unknown mood → %q (err %v), want neutral", pd.Mood, err)
+	}
+
+	// No JSON, empty/blank summary, or broken JSON → errBadDigest.
+	for _, bad := range []string{"just prose", "", `{"summary":"   ","mood":"upbeat"}`, `{not json`} {
+		if _, err := parseDigest(bad); !errors.Is(err, errBadDigest) {
+			t.Errorf("parseDigest(%q) err = %v, want errBadDigest", bad, err)
+		}
+	}
+}
+
+func TestRunSkipsMalformedDigest(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	seedConv(t, st, source.Signal, "Harper", []signal.Message{
+		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
+	})
+	// A response with no JSON must skip the day, not wedge the run.
+	sum, err := Run(ctx, st, &fakeClient{resp: "sorry, I can't do that"}, baseOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Digested != 0 || sum.Skipped != 1 {
+		t.Errorf("malformed-digest run = %+v, want Digested:0 Skipped:1", sum)
 	}
 }

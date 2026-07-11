@@ -20,6 +20,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -97,10 +99,10 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		log = slog.Default()
 	}
 	if opts.Temperature == 0 {
-		opts.Temperature = 0.3
+		opts.Temperature = 0.2 // low, for stable structured JSON (like facts)
 	}
 	if opts.MaxTokens == 0 {
-		opts.MaxTokens = 1024
+		opts.MaxTokens = 2048 // a structured object (highlights/media/links) is larger than prose
 	}
 	if opts.Timeout <= 0 {
 		opts.Timeout = defaultDigestTimeout
@@ -214,21 +216,25 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		if len(lines) == 0 {
 			continue // no real content after exclusion; nothing to digest
 		}
-		body, err := digestDay(ctx, client, model, opts, d.Day, lines)
+		raw, err := digestDay(ctx, client, model, opts, d.Day, lines)
 		if err != nil {
 			// Transport/LLM error: fatal, resumable. Days already persisted stay;
 			// the next run resumes at this day.
 			return sum, fmt.Errorf("digest %s: %w", d.Day, err)
 		}
-		if strings.TrimSpace(body) == "" {
-			// An empty/whitespace response must not wedge the run: skip this day so
-			// a re-run retries it.
-			log.Warn("journal: empty digest response, skipping day", "day", d.Day)
+		pd, perr := parseDigest(raw)
+		if perr != nil {
+			// A malformed / empty / truncated JSON response must not wedge the run:
+			// skip this day so a re-run retries it (same posture as an empty body).
+			log.Warn("journal: unparseable digest response, skipping day", "day", d.Day, "error", perr)
 			sum.Skipped++
 			continue
 		}
 		if err := st.PutDayDigest(ctx, store.JournalDigest{
-			Day: d.Day, Model: model, PromptVersion: pv, Body: strings.TrimSpace(body),
+			Day: d.Day, Model: model, PromptVersion: pv,
+			Body:       pd.Summary,   // plain-text summary: fallback + empty-response guard
+			Structured: pd.Canonical, // canonical JSON of the editorial digest
+			Mood:       pd.Mood,      // denormalized for the calendar tint
 		}); err != nil {
 			return sum, err
 		}
@@ -299,6 +305,137 @@ func renderDayUser(day string, lines []store.DayTranscriptLine) string {
 		}
 	}
 	return b.String()
+}
+
+// Moods is the mood allowlist the digest prompt offers and parseDigest enforces.
+// Keep in sync with config.DefaultDigestPrompt's mood list; an unknown value is
+// coerced to "neutral", so drift degrades gracefully rather than failing a day.
+var Moods = []string{"upbeat", "neutral", "quiet", "tense"}
+
+func isKnownMood(m string) bool {
+	for _, k := range Moods {
+		if k == m {
+			return true
+		}
+	}
+	return false
+}
+
+// errBadDigest marks a digest response that carried no usable JSON (as opposed to
+// a transport error). Like facts' errBadResponse, the day is skipped-and-logged
+// so one deterministically-bad response can't wedge the resumable run.
+var errBadDigest = errors.New("unparseable digest response")
+
+// Digest is the validated editorial digest — the canonical shape stored as JSON
+// in journal_digests.structured and re-hydrated by the web layer for the day
+// card. Every field is model-derived and untrusted (render escaped).
+type Digest struct {
+	Summary       string      `json:"summary"`
+	People        []string    `json:"people"`
+	Themes        []string    `json:"themes"`
+	Mood          string      `json:"mood"`
+	Highlights    []Highlight `json:"highlights"`
+	StandoutMedia []string    `json:"standout_media"`
+	NotableLinks  []string    `json:"notable_links"`
+}
+
+// Highlight is one notable moment: prose plus an optional "HH:MM" time ("" when
+// the model gave no valid time).
+type Highlight struct {
+	Text string `json:"text"`
+	Time string `json:"time"`
+}
+
+// parsedDigest carries the promoted summary/mood plus the canonical JSON of the
+// validated Digest (for journal_digests.structured).
+type parsedDigest struct {
+	Summary   string
+	Mood      string
+	Canonical string
+}
+
+// extractJSONObject returns the substring from the first '{' to the last '}',
+// stripping markdown fences and surrounding prose — the object twin of facts'
+// extractJSONArray. Returns "" when no object is present.
+func extractJSONObject(s string) string {
+	s = strings.TrimSpace(s)
+	start := strings.IndexByte(s, '{')
+	end := strings.LastIndexByte(s, '}')
+	if start < 0 || end < 0 || end < start {
+		return ""
+	}
+	return s[start : end+1]
+}
+
+// parseDigest turns a raw model response into a validated, canonicalized digest.
+// It tolerates fences/prose (extractJSONObject) and COERCES every field rather
+// than failing on any one (trim + drop empty list items, unknown mood → neutral,
+// blank a malformed highlight time) — only a total absence of JSON or an empty
+// summary is an error, mirroring facts.parseFacts.
+func parseDigest(raw string) (parsedDigest, error) {
+	obj := extractJSONObject(raw)
+	if obj == "" {
+		return parsedDigest{}, errBadDigest
+	}
+	var rd Digest
+	if err := json.Unmarshal([]byte(obj), &rd); err != nil {
+		return parsedDigest{}, fmt.Errorf("%w: %v", errBadDigest, err)
+	}
+	summary := strings.TrimSpace(rd.Summary)
+	if summary == "" {
+		return parsedDigest{}, errBadDigest
+	}
+	mood := strings.ToLower(strings.TrimSpace(rd.Mood))
+	if !isKnownMood(mood) {
+		mood = "neutral"
+	}
+	clean := Digest{
+		Summary:       summary,
+		Mood:          mood,
+		People:        cleanStrings(rd.People),
+		Themes:        cleanStrings(rd.Themes),
+		StandoutMedia: cleanStrings(rd.StandoutMedia),
+		NotableLinks:  cleanStrings(rd.NotableLinks),
+		Highlights:    cleanHighlights(rd.Highlights),
+	}
+	canonical, err := json.Marshal(clean)
+	if err != nil {
+		return parsedDigest{}, fmt.Errorf("%w: %v", errBadDigest, err)
+	}
+	return parsedDigest{Summary: summary, Mood: mood, Canonical: string(canonical)}, nil
+}
+
+// cleanStrings trims each item and drops the empties.
+func cleanStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// cleanHighlights keeps highlights with non-empty text; a malformed time is
+// blanked (kept as "") rather than dropping the whole highlight.
+func cleanHighlights(in []Highlight) []Highlight {
+	out := make([]Highlight, 0, len(in))
+	for _, h := range in {
+		text := strings.TrimSpace(h.Text)
+		if text == "" {
+			continue
+		}
+		out = append(out, Highlight{Text: text, Time: normalizeHHMM(h.Time)})
+	}
+	return out
+}
+
+// normalizeHHMM returns the time as "HH:MM" when it parses, else "".
+func normalizeHHMM(s string) string {
+	if t, err := time.Parse("15:04", strings.TrimSpace(s)); err == nil {
+		return t.Format("15:04")
+	}
+	return ""
 }
 
 // promptVersion is the cache key for a digest prompt: a sha256 of the normalized

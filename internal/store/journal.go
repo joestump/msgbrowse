@@ -58,7 +58,9 @@ type JournalDigest struct {
 	Day           string
 	Model         string
 	PromptVersion string
-	Body          string
+	Body          string // plain-text summary (fallback + empty-response guard)
+	Structured    string // canonical JSON of the editorial digest ("" = prose-only)
+	Mood          string // denormalized mood label ("" = none), for the calendar tint
 	UpdatedAt     string
 }
 
@@ -67,8 +69,10 @@ type JournalDigest struct {
 // in which case the page renders the mechanical summary instead.
 type JournalDayView struct {
 	JournalDay
-	DigestBody  string
-	DigestModel string
+	DigestBody       string
+	DigestModel      string
+	DigestStructured string // canonical JSON ("" = prose-only / no digest); parsed on read in the web layer
+	Mood             string // "" = no digest
 }
 
 // DayTranscriptLine is one message in a day's cross-conversation transcript,
@@ -341,14 +345,16 @@ func (s *Store) GetDayDigest(ctx context.Context, day string) (body, model, prom
 func (s *Store) PutDayDigest(ctx context.Context, d JournalDigest) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO journal_digests(day, model, prompt_version, body, updated_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO journal_digests(day, model, prompt_version, body, structured, mood, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(day) DO UPDATE SET
     model          = excluded.model,
     prompt_version = excluded.prompt_version,
     body           = excluded.body,
+    structured     = excluded.structured,
+    mood           = excluded.mood,
     updated_at     = excluded.updated_at`,
-		d.Day, d.Model, d.PromptVersion, d.Body, now)
+		d.Day, d.Model, d.PromptVersion, d.Body, d.Structured, d.Mood, now)
 	if err != nil {
 		return fmt.Errorf("put day digest: %w", err)
 	}
@@ -375,7 +381,7 @@ func (s *Store) ListJournalDays(ctx context.Context, beforeDay string, limit int
 	}
 	args := []any{}
 	q := `SELECT jd.day, jd.message_count, jd.conversation_count, jd.source_counts, jd.top_senders, jd.updated_at,
-	             COALESCE(dg.body, ''), COALESCE(dg.model, '')
+	             COALESCE(dg.body, ''), COALESCE(dg.model, ''), COALESCE(dg.structured, ''), COALESCE(dg.mood, '')
 	        FROM journal_days jd
 	        LEFT JOIN journal_digests dg ON dg.day = jd.day`
 	if beforeDay != "" {
@@ -395,7 +401,7 @@ func (s *Store) ListJournalDays(ctx context.Context, beforeDay string, limit int
 		var v JournalDayView
 		var srcJSON, sendersJSON string
 		if err := rows.Scan(&v.Day, &v.MessageCount, &v.ConversationCount, &srcJSON, &sendersJSON, &v.UpdatedAt,
-			&v.DigestBody, &v.DigestModel); err != nil {
+			&v.DigestBody, &v.DigestModel, &v.DigestStructured, &v.Mood); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(srcJSON), &v.SourceCounts); err != nil {

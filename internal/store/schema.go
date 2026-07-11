@@ -483,11 +483,20 @@ CREATE TABLE sync_state (
 // so stale entries are harmless and a DELETE+rebuild is cheap. source_counts
 // and top_senders are JSON blobs (the shapes are tiny and always read whole).
 //
-// journal_digests is the LLM layer — one prose digest per day. It is versioned
-// by (model, prompt_version) so switching llm.chat_model or editing
+// journal_digests is the LLM layer — one digest per day. It is versioned by
+// (model, prompt_version) so switching llm.chat_model or editing
 // journal.digest_prompt invalidates the cached digest and re-runs make that day
 // eligible again. prompt_version is a sha256 of the normalized effective prompt,
 // the same recipe contact_facts uses (internal/store/facts.go factHash).
+//
+// body holds the plain-text summary (also the empty-response guard + the
+// fallback when structured parsing fails). structured is the canonical JSON of
+// the editorial digest (summary/people/themes/highlights/standout_media/
+// notable_links) — a read-whole blob, like journal_days.source_counts. mood is
+// denormalized out of the digest into its own column so the calendar/heatmap can
+// tint up to 366 day cells with one bounded range query, never unmarshaling 366
+// blobs (the schemaV7/V8 denormalization rationale). Both default ” so a
+// pre-structured (prose-only) digest row and a legacy DB read cleanly.
 //
 // Like embeddings (schemaV3) and contact_facts (schemaV4), NEITHER table has a
 // foreign key to messages: ReplaceConversationMessages deletes and re-inserts a
@@ -512,6 +521,8 @@ CREATE TABLE IF NOT EXISTS journal_digests (
     model          TEXT    NOT NULL,
     prompt_version TEXT    NOT NULL,
     body           TEXT    NOT NULL,
+    structured     TEXT    NOT NULL DEFAULT '',
+    mood           TEXT    NOT NULL DEFAULT '',
     updated_at     TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_journal_digests_updated ON journal_digests(updated_at);
