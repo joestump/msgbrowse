@@ -1208,6 +1208,18 @@ a.meta-chip:hover {
   color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
 }
 
+/* --- Contact profile message-volume sparkline (redesign Phase 1) ---------- */
+/* The bars/labels inherit currentColor (the accent) via fill="currentColor";
+   geometry + opacity are presentational SVG attributes (CSP forbids inline
+   style=). */
+.spark {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 64px;
+  color: var(--color-primary);
+}
+
 /* --- Search ------------------------------------------------------------- */
 /* Large search field (48px) with a leading glyph. */
 .search-field {
