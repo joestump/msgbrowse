@@ -1,0 +1,65 @@
+{{define "journal"}}{{template "page_start" .}}{{template "journal_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* journal_content is the boosted-swap unit (like index_content): the <title>
+     rides along so htmx keeps history entries titled, and it owns the single
+     <main id="main-content"> so a partial response carries no shell. The
+     journal is a centered reading column (ADR-0023): a day-by-day list, newest
+     first, each day showing its LLM digest or — until one is generated — the
+     mechanical who/how-many summary. */}}
+{{define "journal_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1" tabindex="0">
+  <div class="px-6 lg:px-10 py-10">
+    <div class="screen-col">
+      <header class="mb-8">
+        <h1 class="home-hero-title">Journal</h1>
+        <p class="home-hero-tagline">A day-by-day look back over your archive —
+          editorialized by your local model.</p>
+      </header>
+
+      {{if not .Days}}
+      <div class="notice-card">
+        <p class="link-card-title">No journal entries yet.</p>
+        <p class="link-card-sub">Run <code class="font-mono">msgbrowse journal</code> to build the
+          day-by-day journal and (if enabled) its digests.</p>
+      </div>
+      {{else}}
+      {{/* One #journal-list container; continuation pages swap the load-more
+           sentinel for their own day sections + next sentinel (like the gallery). */}}
+      <div id="journal-list" class="flex flex-col gap-4">
+        {{template "journal_page" .}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+    </main>
+{{end}}
+
+{{/* journal_page renders a run of day cards and, while more days remain, a
+     revealed-triggered load-more sentinel that fetches the next keyset page.
+     Rendered verbatim by render() on the continuation route (no _content
+     sibling). Digest text is untrusted model output — printed as escaped text
+     (never template.HTML); .journal-digest preserves its line breaks in CSS. */}}
+{{define "journal_page"}}
+  {{- range .Days}}
+  <section class="journal-day">
+    <div class="journal-day-head">
+      <h2 class="journal-day-title">{{dateLabel .Day}}</h2>
+      <span class="journal-day-meta">{{num .MessageCount}} messages · {{num .ConversationCount}} conversations</span>
+    </div>
+    {{- if .DigestBody}}
+    <div class="journal-digest">{{.DigestBody}}</div>
+    {{- else}}
+    <p class="journal-day-mechanical">
+      {{- if .TopSenders}}Most with {{range $i, $s := .TopSenders}}{{if $i}}, {{end}}{{humanName $s.Name}}{{end}}.
+      {{- else}}A quiet day — nothing but your own notes.{{end}}
+    </p>
+    {{- end}}
+  </section>
+  {{- end}}
+  {{- if .NextURL}}
+  <div class="load-more flex justify-center py-4" hx-get="{{.NextURL}}"
+       hx-trigger="revealed" hx-swap="outerHTML">
+    <span class="opacity-50 text-sm">Loading earlier days…</span>
+  </div>
+  {{- end}}
+{{end}}

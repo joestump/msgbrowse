@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 10
+const schemaVersion = 11
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -49,6 +49,7 @@ var migrations = []string{
 	8:  schemaV8,
 	9:  schemaV9,
 	10: schemaV10,
+	11: schemaV11,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -471,4 +472,47 @@ CREATE TABLE sync_state (
     last_import_at TEXT    NOT NULL DEFAULT '',
     updated_at     TEXT    NOT NULL
 );
+`
+
+// schemaV11 adds the AI-editorialized journal (ADR-0023): a two-layer feature
+// over the archive, both layers keyed by calendar DAY ('YYYY-MM-DD').
+//
+// journal_days is the MECHANICAL layer — a deterministic per-day rollup
+// (message/conversation counts, per-source counts, top senders) derived purely
+// from messages. It is a cache/index: always rebuildable from the source rows,
+// so stale entries are harmless and a DELETE+rebuild is cheap. source_counts
+// and top_senders are JSON blobs (the shapes are tiny and always read whole).
+//
+// journal_digests is the LLM layer — one prose digest per day. It is versioned
+// by (model, prompt_version) so switching llm.chat_model or editing
+// journal.digest_prompt invalidates the cached digest and re-runs make that day
+// eligible again. prompt_version is a sha256 of the normalized effective prompt,
+// the same recipe contact_facts uses (internal/store/facts.go factHash).
+//
+// Like embeddings (schemaV3) and contact_facts (schemaV4), NEITHER table has a
+// foreign key to messages: ReplaceConversationMessages deletes and re-inserts a
+// conversation's message rows on every re-ingest (rowids change, content does
+// not), so a CASCADE would wipe every derived journal row on each import. Both
+// tables are day-keyed and FK-less, so the migration's foreign_key_check passes
+// trivially. Day bucketing is UTC (substr(ts,1,10) == date(ts_unix,'unixepoch'))
+// because ts_unix is the wall-clock string parsed AS UTC — any 'localtime'
+// conversion would double-shift and misfile messages across day boundaries.
+const schemaV11 = `
+CREATE TABLE IF NOT EXISTS journal_days (
+    day                TEXT    PRIMARY KEY,
+    message_count      INTEGER NOT NULL,
+    conversation_count INTEGER NOT NULL,
+    source_counts      TEXT    NOT NULL DEFAULT '{}',
+    top_senders        TEXT    NOT NULL DEFAULT '[]',
+    updated_at         TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS journal_digests (
+    day            TEXT    PRIMARY KEY,
+    model          TEXT    NOT NULL,
+    prompt_version TEXT    NOT NULL,
+    body           TEXT    NOT NULL,
+    updated_at     TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journal_digests_updated ON journal_digests(updated_at);
 `

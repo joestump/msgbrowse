@@ -61,6 +61,7 @@ type Store interface {
 	ListLinks(ctx context.Context, f store.GalleryFilter, cur store.LinkCursor) (*store.LinkPage, error)
 	LatestIngestRun(ctx context.Context) (*store.IngestRun, error)
 	ListSnapshots(ctx context.Context) ([]store.Snapshot, error)
+	ListJournalDays(ctx context.Context, beforeDay string, limit int) ([]store.JournalDayView, error)
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
@@ -289,6 +290,11 @@ func (s *Server) routes() http.Handler {
 	// never shadows the attachment route below ("GET /media/{id}/{path...}").
 	mux.HandleFunc("GET /media", s.handleGallery)
 	mux.HandleFunc("GET /gallery/items", s.handleGalleryItems)
+	// The editorialized journal (ADR-0023): a day-by-day list with each day's LLM
+	// digest (or its mechanical summary when no digest exists). /journal/items
+	// serves the keyset infinite-scroll continuation, mirroring the gallery.
+	mux.HandleFunc("GET /journal", s.handleJournal)
+	mux.HandleFunc("GET /journal/items", s.handleJournalItems)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	mux.HandleFunc("POST /c/{id}/pin", s.handlePin)
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)

@@ -23,6 +23,7 @@ cmd/msgbrowse-desktop    Wails v2 desktop shell + systray, embedding the same we
     ├── internal/llm     OpenAI-compatible client (the only internet egress)
     ├── internal/embed   batch embedding orchestration
     ├── internal/facts   incremental, cited contact-fact extraction (LLM)
+    ├── internal/journal per-day mechanical rollup + optional LLM digest (ADR-0023)
     ├── internal/imageconv  transcode HEIC/TIFF → cached JPEG (external converter, ADR-0014)
     ├── internal/archivepath shared, traversal-safe attachment path resolution
     ├── internal/setup   source detection + permission probes for guided setup
@@ -61,6 +62,13 @@ desktop's embedded server.
   — AI-extracted, cited facts deduped per contact (`UNIQUE(contact_id, fact_hash)`),
   no FK to messages (provenance by stable hash; see ADR-0011). `fact_state` is the
   per-conversation incremental cursor (last message hash + model).
+- `journal_days`, `journal_digests` (schemaV11) — the day-keyed AI-editorialized
+  journal (ADR-0023): `journal_days` is the deterministic mechanical rollup
+  (message/conversation counts, per-source counts, top senders), `journal_digests`
+  the optional cached LLM prose digest, versioned by `(model, prompt_version)` so a
+  model swap or `journal.digest_prompt` edit re-derives affected days. Days are
+  bucketed in UTC; no FK to messages (same rationale as embeddings/contact_facts —
+  re-ingest rewrites message rowids).
 - `snapshots`, `ingest_state`, `ingest_runs` — backup inventory + incremental
   bookkeeping + per-run summaries.
 - `paired_devices`, `sync_state` — device sync (ADR-0021): the explicitly
