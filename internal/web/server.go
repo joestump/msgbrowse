@@ -61,7 +61,12 @@ type Store interface {
 	ListLinks(ctx context.Context, f store.GalleryFilter, cur store.LinkCursor) (*store.LinkPage, error)
 	LatestIngestRun(ctx context.Context) (*store.IngestRun, error)
 	ListSnapshots(ctx context.Context) ([]store.Snapshot, error)
-	ListJournalDays(ctx context.Context, beforeDay string, limit int) ([]store.JournalDayView, error)
+	LatestJournalDay(ctx context.Context) (string, error)
+	LatestJournalDayInYear(ctx context.Context, year int) (string, bool, error)
+	JournalYears(ctx context.Context) ([]int, error)
+	JournalMonth(ctx context.Context, year int, month time.Month) ([]store.JournalMonthDay, error)
+	JournalStats(ctx context.Context, year int, exclude []string) (store.JournalStats, error)
+	GetJournalDay(ctx context.Context, day string) (store.JournalDayView, bool, error)
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
@@ -147,6 +152,11 @@ type Server struct {
 	// llmBoot is the boot-time LLM config snapshot (file + defaults merged),
 	// the tab's display fallback when no configurator is wired.
 	llmBoot llm.Settings
+	// journalExclude mirrors journal.exclude_conversations so the /journal stat
+	// tiles (most-active weekday, peak hour) honor the same denylist the
+	// mechanical journal_days was built with — otherwise the message-scanning
+	// stats would leak an excluded conversation's activity (ADR-0023).
+	journalExclude []string
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -175,6 +185,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		log:               log,
 		deviceSyncEnabled: cfg.DeviceSync.Enabled,
 		setupTokens:       newSetupTokens(),
+		journalExclude:    cfg.Journal.ExcludeConversations,
 		llmBoot: llm.Settings{
 			BaseURL:    cfg.LLM.BaseURL,
 			EmbedModel: cfg.LLM.EmbedModel,
@@ -290,11 +301,10 @@ func (s *Server) routes() http.Handler {
 	// never shadows the attachment route below ("GET /media/{id}/{path...}").
 	mux.HandleFunc("GET /media", s.handleGallery)
 	mux.HandleFunc("GET /gallery/items", s.handleGalleryItems)
-	// The editorialized journal (ADR-0023): a day-by-day list with each day's LLM
-	// digest (or its mechanical summary when no digest exists). /journal/items
-	// serves the keyset infinite-scroll continuation, mirroring the gallery.
+	// The editorialized journal (ADR-0023): a mood-tinted month calendar + an
+	// editorial day card. Navigation is by query params (?year&month&day), all
+	// boosted — no separate continuation route.
 	mux.HandleFunc("GET /journal", s.handleJournal)
-	mux.HandleFunc("GET /journal/items", s.handleJournalItems)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	mux.HandleFunc("POST /c/{id}/pin", s.handlePin)
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)

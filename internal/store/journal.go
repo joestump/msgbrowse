@@ -404,11 +404,8 @@ func (s *Store) ListJournalDays(ctx context.Context, beforeDay string, limit int
 			&v.DigestBody, &v.DigestModel, &v.DigestStructured, &v.Mood); err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal([]byte(srcJSON), &v.SourceCounts); err != nil {
-			return nil, fmt.Errorf("unmarshal source counts for %s: %w", v.Day, err)
-		}
-		if err := json.Unmarshal([]byte(sendersJSON), &v.TopSenders); err != nil {
-			return nil, fmt.Errorf("unmarshal top senders for %s: %w", v.Day, err)
+		if err := unmarshalDayJSON(srcJSON, sendersJSON, &v); err != nil {
+			return nil, err
 		}
 		out = append(out, v)
 	}

@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,7 +18,7 @@ import (
 )
 
 // newJournalServer wires a Server over an EMPTY store (no fixture archive) so
-// journal-day counts are exactly what the test seeds — deterministic pagination.
+// journal-day counts are exactly what the test seeds.
 func newJournalServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "journal-web.sqlite"))
@@ -35,8 +34,7 @@ func newJournalServer(t *testing.T) (*Server, *store.Store) {
 	return srv, st
 }
 
-// seedJournalDays inserts one message per date into a conversation and builds
-// the mechanical journal, so journal_days holds exactly len(dates) rows.
+// seedJournalDays inserts one message per date and builds the mechanical journal.
 func seedJournalDays(t *testing.T, st *store.Store, conv string, dates []string) {
 	t.Helper()
 	ctx := context.Background()
@@ -66,6 +64,15 @@ func seedJournalDays(t *testing.T, st *store.Store, conv string, dates []string)
 	}
 }
 
+func putDigest(t *testing.T, st *store.Store, day, summary, mood, structured string) {
+	t.Helper()
+	if err := st.PutDayDigest(context.Background(), store.JournalDigest{
+		Day: day, Model: "m", PromptVersion: "pv", Body: summary, Structured: structured, Mood: mood,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestJournalEmptyState(t *testing.T) {
 	srv, _ := newJournalServer(t)
 	rec := get(t, srv, "/journal")
@@ -73,37 +80,68 @@ func TestJournalEmptyState(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "No journal entries yet") {
-		t.Error("empty state message missing")
-	}
-	if !strings.Contains(body, "msgbrowse journal") {
-		t.Error("empty state should point at the `msgbrowse journal` command")
+	if !strings.Contains(body, "No journal yet") || !strings.Contains(body, "msgbrowse journal") {
+		t.Error("empty state should point at `msgbrowse journal`")
 	}
 }
 
-func TestJournalRendersDaysAndDigest(t *testing.T) {
+func TestJournalCalendarRendersMonthAndStats(t *testing.T) {
 	srv, st := newJournalServer(t)
-	seedJournalDays(t, st, "Harper", []string{"2023-05-01", "2023-05-02"})
-	if err := st.PutDayDigest(context.Background(), store.JournalDigest{
-		Day: "2023-05-02", Model: "m", PromptVersion: "pv", Body: "A bright day with Harper.",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	seedJournalDays(t, st, "Harper", []string{"2023-05-01", "2023-05-02", "2023-05-03"})
 
-	rec := get(t, srv, "/journal")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	body := get(t, srv, "/journal?year=2023&month=5").Body.String()
+	for _, want := range []string{
+		`<main id="main-content"`, "May 2023", "days with entries", "longest streak",
+		"/journal?day=2023-05-01", ">2023<", "cal-day",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("calendar missing %q", want)
+		}
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `<main id="main-content"`) {
-		t.Error("full page missing #main-content")
+}
+
+func TestJournalDayCardStructured(t *testing.T) {
+	srv, st := newJournalServer(t)
+	seedJournalDays(t, st, "Harper", []string{"2023-05-01"})
+	putDigest(t, st, "2023-05-01", "A calm day with Harper.", "upbeat",
+		`{"summary":"A calm day with Harper.","people":["Harper"],"themes":["travel"],"mood":"upbeat",`+
+			`"highlights":[{"text":"Booked the cabin","time":"09:14"}],"standout_media":[],"notable_links":["https://ex.com/trip"]}`)
+
+	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
+	for _, want := range []string{
+		"This day, editorialized", "A calm day with Harper.", "Booked the cabin", "09:14",
+		"Harper", "travel", "upbeat", "https://ex.com/trip",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("day card missing %q", want)
+		}
 	}
-	if !strings.Contains(body, "May 2, 2023") || !strings.Contains(body, "A bright day with Harper.") {
-		t.Error("digested day's label or digest body missing")
+}
+
+func TestJournalDefaultsToLatestDay(t *testing.T) {
+	srv, st := newJournalServer(t)
+	seedJournalDays(t, st, "Harper", []string{"2023-04-15", "2023-05-20"})
+	putDigest(t, st, "2023-05-20", "The latest editorialized day.", "quiet",
+		`{"summary":"The latest editorialized day.","people":[],"themes":[],"mood":"quiet","highlights":[],"standout_media":[],"notable_links":[]}`)
+
+	// No params → defaults to the newest day (2023-05-20) and its month.
+	body := get(t, srv, "/journal").Body.String()
+	if !strings.Contains(body, "May 2023") || !strings.Contains(body, "The latest editorialized day.") {
+		t.Error("no-param journal should open on the latest day's card")
 	}
-	// The undigested day falls back to its mechanical who-summary.
-	if !strings.Contains(body, "May 1, 2023") || !strings.Contains(body, "Most with Harper") {
-		t.Error("undigested day should show the mechanical summary")
+}
+
+func TestJournalYearTabOpensLatestMonth(t *testing.T) {
+	srv, st := newJournalServer(t)
+	// 2023 activity starts in June — a year tab must open on the latest active
+	// month, not an empty January.
+	seedJournalDays(t, st, "Harper", []string{"2023-06-10", "2023-09-20"})
+	body := get(t, srv, "/journal?year=2023").Body.String()
+	if !strings.Contains(body, "September 2023") {
+		t.Error("year tab should open on the year's latest active month")
+	}
+	if strings.Contains(body, "January 2023") {
+		t.Error("year tab must not open on an empty January")
 	}
 }
 
@@ -115,7 +153,6 @@ func TestJournalPartialOmitsShell(t *testing.T) {
 	if !strings.Contains(full, "<!doctype html>") {
 		t.Error("full-page render should carry the document shell")
 	}
-
 	req := httptest.NewRequest(http.MethodGet, "/journal", nil)
 	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
@@ -125,57 +162,22 @@ func TestJournalPartialOmitsShell(t *testing.T) {
 		t.Error("boosted partial must not carry the document shell")
 	}
 	if !strings.Contains(partial, `<main id="main-content"`) {
-		t.Error("boosted partial should still carry the #main-content region")
+		t.Error("partial should carry #main-content")
 	}
 }
 
-func TestJournalDigestTextIsEscaped(t *testing.T) {
+func TestJournalDigestFieldsEscaped(t *testing.T) {
 	srv, st := newJournalServer(t)
 	seedJournalDays(t, st, "Harper", []string{"2023-05-01"})
-	// Untrusted model output containing markup must be escaped, never live.
-	if err := st.PutDayDigest(context.Background(), store.JournalDigest{
-		Day: "2023-05-01", Model: "m", PromptVersion: "pv", Body: "<script>alert(1)</script> sneaky",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	body := get(t, srv, "/journal").Body.String()
-	if strings.Contains(body, "<script>alert(1)</script>") {
-		t.Error("digest markup was rendered live — html/template escaping bypassed")
+	// Untrusted model output with markup in the summary + a person.
+	putDigest(t, st, "2023-05-01", "<script>alert(1)</script> ok", "neutral",
+		`{"summary":"<script>alert(1)</script> ok","people":["<b>x</b>"],"themes":[],"mood":"neutral","highlights":[],"standout_media":[],"notable_links":[]}`)
+
+	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
+	if strings.Contains(body, "<script>alert(1)</script>") || strings.Contains(body, "<b>x</b>") {
+		t.Error("structured digest markup rendered live — escaping bypassed")
 	}
 	if !strings.Contains(body, "&lt;script&gt;alert(1)&lt;/script&gt;") {
-		t.Error("digest markup should appear HTML-escaped")
-	}
-}
-
-func TestJournalPaginationFirstPageAndContinuation(t *testing.T) {
-	srv, st := newJournalServer(t)
-	dates := make([]string, 31)
-	for i := range dates {
-		dates[i] = fmt.Sprintf("2023-01-%02d", i+1) // 2023-01-01 .. 2023-01-31
-	}
-	seedJournalDays(t, st, "Harper", dates)
-
-	body := get(t, srv, "/journal").Body.String()
-	if got := strings.Count(body, "journal-day-head"); got != journalPageSize {
-		t.Errorf("first page day cards = %d, want %d", got, journalPageSize)
-	}
-	// Newest-first: the first page ends at 2023-01-02, so the cursor is that day.
-	if !strings.Contains(body, "/journal/items?after_day=2023-01-02") {
-		t.Errorf("expected a continuation link cursored at 2023-01-02")
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/journal/items?after_day=2023-01-02", nil)
-	req.Header.Set("HX-Request", "true")
-	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, req)
-	cont := rec.Body.String()
-	if got := strings.Count(cont, "journal-day-head"); got != 1 {
-		t.Errorf("continuation day cards = %d, want 1 (the leftover oldest day)", got)
-	}
-	if !strings.Contains(cont, "January 1, 2023") {
-		t.Error("continuation should carry the oldest day")
-	}
-	if strings.Contains(cont, "after_day=") {
-		t.Error("last page must not advertise a further continuation")
+		t.Error("digest summary should appear HTML-escaped")
 	}
 }
